@@ -1,0 +1,1284 @@
+:root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  color-scheme: light !important;
+}
+
+html,
+body {
+  margin: 0;
+  background: #f3f4f6 !important;
+  color: #111111 !important;
+  /* 💡 横方向にはスクロールバーを出さない */
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.app-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 100%;
+}
+
+.header {
+  padding: 8px 20px;
+  border-bottom: 1px solid #e5e7eb;
+  background: linear-gradient(90deg, #eff6ff, #ecfeff);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 20px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+}
+/* 左側：タイトル＋サブタイトル用の箱 */
+.header-main {
+  flex: 1;
+  min-width: 0;
+}
+/* 左側（タイトル＋サブタイトル） */
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #9ca3af;
+  background: #f9fafb;
+  cursor: pointer;
+}
+.settings-button:hover {
+  background: #e5e7eb;
+}
+
+/* 右側：凡例をヘッダー用に少しコンパクトに */
+.header-legend {
+  margin-top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  padding: 4px;
+  background: transparent;   /* 背景と枠はヘッダーに合わせて消す */
+  border: none;
+}
+/* 1行目：ラベル */
+.legend-header-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 24px;                /* ラベル間の間隔はお好みで */
+  font-weight: 600;
+  color: #374151;
+}
+
+.legend-header-cell {
+  min-width: 60px;          /* 3列がそろうように少し幅を確保 */
+  text-align: left;
+}
+
+/* 2行目：アイコン行（3ブロック横並び） */
+.legend-icons-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 24px;
+}
+
+/* ヘッダー内の凡例用に少しコンパクトに */
+.header-legend .legend-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+
+.header-legend .legend-title {
+  margin: 0;
+  font-weight: 600;
+  display: none;
+}
+/* ヘッダー右側の凡例のアイコン行をキレイに揃える */
+.header-legend .legend-icons-row {
+  display: flex;
+  align-items: center;   /* 各グループの縦位置を揃える */
+  gap: 24px;
+}
+
+.header-legend .legend-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+.header-legend .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;        /* 行間を詰めて高さを揃える */
+  padding: 0;
+  margin: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 30px;
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.main {
+  display: flex;
+  gap: 1px;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: visible;
+  overflow-y: visible; /* 基本ここは visible でOK */
+  margin-top: 72px;  /* ヘッダーの高さに合わせて調整 */
+}
+
+/* パネル共通 */
+
+.resizer {
+  width: 4px;
+  cursor: col-resize;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.resizer::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: #e5e7eb;
+  border-radius: 999px;
+}
+
+.resizer:hover::before {
+  background: #3b82f6;
+}
+
+/* 配送分パネル自体は箱として固定 */
+.delivery-panel {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  padding: 12px;
+  box-sizing: border-box;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.left-panel,
+.driver-panel,
+.delivery-panel {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  padding: 12px;
+  box-sizing: border-box;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+
+  /* ここから追加：縦方向だけスクロール可能に */
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 80px); /* ヘッダー分を引いた高さ */
+  overflow-y: auto;
+  overflow-x: visible;
+  position: relative; /* z-index の基準としては残す */
+}
+
+.left-panel h2,
+.driver-panel h2,
+.delivery-panel h2 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.left-panel h2::before {
+  content: "🛞";
+}
+
+.driver-panel h2::before {
+  content: "👷";
+}
+
+.delivery-panel h2::before {
+  content: "📅";
+}
+
+/* ドロップ領域 */
+
+/* ベース（多くの枠） */
+.card-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: 8px;
+  background: #f9fafb !important;
+  color: #111 !important;
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
+  border: 1px dashed #e2e8f0;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+/* ドライバーC/A+C用：少し高め */
+.card-container.slot-tall {
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
+}
+/* ▼ 川口車庫・現場（カスタム）用：横並び＋折り返し */
+.card-container.slot-pool-single {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;     /* ★ 横いっぱいになったら縦に折り返す */
+  gap: 6px;
+
+  height: auto;
+  min-height: 38px;
+  max-height: none;    /* 伸び放題OK */
+  padding: 4px 6px;
+
+  align-items: center;
+}
+
+
+/* 横並び＋折り返し用（予備車・日付自動振分・一時保管・完了） */
+.card-container.slot-row-wrap {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  height: auto;
+  min-height: 40px;
+  max-height: none;
+  overflow-y: visible;
+}
+
+/* 配送分の「大井／青海／品川／本牧」枠は高さを固定しない */
+.card-container.slot-auto {
+  height: auto;
+  min-height: 40px;
+  max-height: none;
+  overflow-y: visible;
+}
+/* ドライバーの車両枠：40px × 60px 固定 */
+.card-container.slot-driver-truck {
+  width: 75px;
+  min-width: 75px;
+  max-width: 75px;
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+/* 空C：車両と同じ高さ 40px に固定 */
+.chassis-card.group-empty {
+  height: 26px;
+  min-height: 26px;
+  max-height: 26px;
+}
+
+/* A+C：最低40pxは確保しつつ、内容に応じて下側に伸びる */
+.chassis-card.group-loaded {
+  min-height: 26px;
+  max-height: 40px;
+  height: auto;      /* ★ カード内容に応じて伸びる */
+}
+
+/* ドライバーの C / A+C 枠：高さは内容に合わせるが、最低40pxに */
+.card-container.slot-driver-group {
+  min-height: 40px;
+  height: auto;
+  max-height: none;
+  padding: 2px 4px;
+  align-items: flex-end; /* 中のカードの下端を枠の下に揃える */
+}
+.card-container:hover {
+  border-color: #93c5fd;
+}
+
+/* カード共通（イラスト風） */
+.obj-card {
+  position: relative;
+  overflow: hidden;              /* ★ ここを必ず hidden に */
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  background: #ffffff !important;
+  color: #111111 !important;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  cursor: grab;
+  transition: box-shadow 0.15s ease, transform 0.05s ease, border-color 0.15s ease;
+}
+
+.obj-card:active {
+  cursor: grabbing;
+  transform: scale(0.99);
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.12);
+}
+
+/* アイコン＆テキスト構造 */
+
+.card-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.card-body {
+  position: relative;
+  z-index: 1; /* 色帯より上に表示 */
+  flex: 1;
+  min-width: 0;
+}
+
+.card-title {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap; /* 1行にして「…」 */
+}
+
+.card-sub {
+  margin-top: 1px;
+  font-size: 11px;
+}
+
+.card-sub-text {
+  color: #4b5563;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A+C の2行目だけ黒っぽく（デフォは少しグレーなので上書き） */
+.card-sub-text.ac-loaded {
+  color: #111827;  /* ほぼ黒 */
+}
+/* 搬入ヤードとシャーシ番号の間に置くグレーのスラッシュ */
+.ac-slash {
+  color: #9ca3af;
+}
+
+/* シャーシ番号を赤＆太字で強調 */
+.chassis-no-highlight {
+  color: #ef4444;
+  font-weight: 700;
+}
+/* バッジ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  border: 1px solid transparent;
+}
+
+.badge-size {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  background: #fef3c7;
+  border: 1px solid #facc15;
+  color: #92400e;
+}
+
+.badge-a {
+  background: #eff6ff;
+  border-color: #60a5fa;
+  color: #1d4ed8;
+}
+
+.badge-b {
+  background: #ecfdf5;
+  border-color: #34d399;
+  color: #047857;
+}
+
+.badge-empty {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #4b5563;
+}
+
+/* 種別ごとの色味 */
+
+.truck-card .card-icon {
+  background: #dcfce7;
+}
+
+/* 車両カード内の文字だけ変更 */
+.truck-card .card-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+
+/* A+C のときのタイトル用（必要なら微調整用） */
+.card-title-container {
+  font-size: 13px;
+}
+
+/* A+C のときのシャーシサブテキスト */
+.card-sub-chassis .card-sub-text {
+  font-size: 12px;
+}
+/* Cだけのときの行全体 */
+.chassis-only-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+/* 左側：シャーシ番号（太め） */
+.chassis-only-label {
+  font-size: 20px;      /* お好みで 18px とかでもOK */
+  font-weight: 700;
+  color: #111827;
+}
+
+/* 右側：サイズ / 種別（右寄せ） */
+.chassis-only-meta {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.container-card .card-icon {
+  background: #dbeafe;
+}
+
+.obj-a {
+  border-color: #60a5fa !important;
+}
+
+.obj-b {
+  border-color: #34d399 !important;
+}
+
+.obj-c {
+  border-color: #f97316 !important;
+}
+
+/* ===== シャーシカード共通レイアウト ===== */
+.chassis-card {
+  position: relative;
+  background: #fef2f2;
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
+
+  display: flex;
+  align-items: center;
+  overflow: hidden;         /* ★ ここで帯をカード内に閉じ込める */
+  z-index: 1;
+}
+/* A+C の2行目のシャーシ番号だけ赤く強調 */
+.chassis-no-highlight {
+  color: #ef4444;   /* 赤 */
+  font-weight: 700; /* 太字 */
+}
+
+/* 帯より上に本文 */
+.chassis-card .card-body {
+  position: relative;
+  z-index: 1;
+}
+/* 帯の共通部分 */
+.chassis-band-left,
+.chassis-band-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+}
+
+/* 左：サイズ帯 */
+.chassis-band-left {
+  left: 0;
+  width: 33%;
+  opacity: 0.2;
+}
+
+.chassis-band-left.size-20 {
+  background: #3b82f6;   /* 20F 青 */
+}
+.chassis-band-left.size-40 {
+  background: #f97316;   /* 40F オレンジ */
+}
+
+/* 右：積載帯 */
+.chassis-band-right {
+  right: 0;
+  width: 33%;
+  opacity: 0.25;
+}
+.chassis-band-right.load-empty {
+  background: #d1d5db;   /* 空：グレー */
+}
+
+.chassis-band-right.load-loaded {
+  background: #ef25ca;   /* 積載：緑 */
+}
+
+/* コンテナカード（A） */
+.container-card {
+  background: #eff6ff;
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
+  height: 24px;
+  min-height: 24px;
+  max-height: 24px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+/* シャーシプールの枠を 38px に固定 */
+.card-container.slot-pool {
+  height: 44px;
+  min-height: 40px;
+  max-height: 44px;
+  width: 160px;    /* 好きな幅 */
+  min-width: 160px;
+  max-width: 160px;
+
+  padding: 2px 3px;          /* ← ここはお好み（おすすめ値） */
+  overflow: visible;          /* カードがはみ出さないようにする */
+  display: flex;
+  align-items: center;
+}
+
+/* ドライバー行レイアウト */
+
+.driver-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px 16px; /* 行間と列間 */
+  /*overflow: visible !important;  外側は絶対に visible */
+}
+
+/* ドライバーパネルの中身を2列グリッドに */
+.driver-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;        /* ドライバー同士の縦の間隔 */
+}
+
+.driver-row {
+  display: grid;
+  grid-template-columns: 90px 1fr; /* 160px → 140px くらいに */
+  column-gap: 0px;
+  align-items: flex-end;            /* ★ 下端を揃える（重要） */
+  padding: 2px 0;                   /* 縦方向の余白を最小限に */
+  border-bottom: none;              /* もし線が残っていたら消す */
+}
+.driver-name {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 2px;              /* ここも狭めに */
+}
+
+.slot-title {
+  display: none;
+}
+
+/* 車両カード */
+.truck-card {
+  background: #ecfdf5;
+  width: 65px;
+  min-width: 65px;
+  max-width: 65px;
+  height: 36px;
+  min-height: 36px;
+  max-height: 36px;
+  font-size: 10px;
+  padding: 2px 4px;
+  display: flex;
+  align-items: center;
+}
+.driver-row:last-child {
+  border-bottom: none;
+}
+
+.driver-col {
+  min-width: 0;
+}
+
+.driver-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.truck-label {
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.driver-slot-col {
+  flex: 1;
+}
+
+.slot-title {
+  font-size: 11px;
+  margin-bottom: 4px;
+  color: #6b7280;
+}
+
+.placeholder {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+/* 配送レーン（右） */
+
+/* 日付ごとの列：最大260pxまで、基本はパネルの50% */
+.day-column {
+  flex: 0 0 200px;   /* ← ここだけ変えれば1日の横幅を調整できる */
+  min-width: 200px;      /* あまり狭くならないように下限を決める */
+  max-width: 200px;      /* ★ これが「ビヨーンと横長」を防ぐポイント */
+  scroll-snap-align: start;  /* ← スクロールしたときに列の頭で止まる（任意） */
+}
+/* ▼ 日付列の中のドロップ枠は列幅いっぱいに広げる */
+.delivery-panel .slot-auto.card-container {
+  width: 180px;       /* ← 固定 */
+  min-width: 180px;
+  max-width: 180px;
+  box-sizing: border-box;
+}
+.days-scroll {
+  display: inline-flex;
+  gap: 30px;
+  padding-bottom: 4px;
+  scroll-snap-type: x mandatory;  /* ← あると1日単位でパチッと止まって気持ちいい（任意） */
+}
+/* 配送分の “日付エリア全体” をスクロールできる箱 */
+.delivery-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;   /* ★ ここだけ横スクロール */
+  overflow-y: auto;
+}
+
+/*配送分の日付のフォントサイズ*/
+.day-column h3 {
+  margin: 0 0 4px 0;
+  font-size: 16px;  /* ← 好きなサイズ */
+  font-weight: 700; /* 太字にしたければ追加 */
+}
+
+/* レスポンシブ（画面が狭いときは縦 stacked） */
+
+@media (max-width: 1100px) {
+  .main {
+    grid-template-columns: 1fr;
+  }
+
+  .driver-panel,
+  .delivery-panel,
+  .left-panel {
+    width: 100%;
+  }
+}
+/* === シャーシプール（レーン表示） ================================== */
+
+.yard-section {
+  margin-bottom: 14px;
+  padding-top: 6px;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.yard-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.yard-title {
+  font-size: 25px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.yard-table {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 4px 6px 6px;
+}
+
+.yard-header-row,
+.yard-lane-row {
+  display: grid;
+  grid-template-columns: 70px repeat(3, minmax(70px, 1fr)); /* レーン名 + 前中奥 */
+  gap: 4px;
+  align-items: stretch;
+}
+
+.yard-header-row {
+  margin-bottom: 4px;
+}
+
+.yard-header-cell {
+  font-size: 11px;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.yard-header-pos {
+  font-weight: 500;
+}
+
+.yard-lane-row + .yard-lane-row {
+  margin-top: 3px;
+}
+
+.yard-lane-name {
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 4px;
+  color: #4b5563;
+}
+
+/* === 配送完了エリア ================================== */
+
+.delivery-completed {
+  margin-top: 12px;
+}
+
+.delivery-completed h3 {
+  margin: 8px 0 4px 0;
+  font-size: 18px;
+}
+/* 完了したコンテナの見た目 */
+.container-card.container-completed {
+  background: #e5e7eb !important;
+  border-color: #9ca3af;
+  color: #374151 !important;
+}
+
+.container-card .card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;  /* 好きなサイズに変更してOK */
+}
+
+
+/* 完了全削除ボタン */
+.clear-completed-btn {
+  margin-left: 8px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid #9ca3af;
+  background: #f9fafb;
+  cursor: pointer;
+}
+
+.clear-completed-btn:hover {
+  background: #e5e7eb;
+}
+
+/* 1軸：紫 */
+.chassis-card.axle-1 {
+  border-top: 6px solid #a855f7;
+}
+
+/* 2軸：黄 */
+.chassis-card.axle-2 {
+  border-top: 6px solid #facc15; /* 明るくて見やすい黄色 */
+}
+
+/* 3軸：赤 */
+.chassis-card.axle-3 {
+  border-top: 6px solid #ef4444;
+}
+
+/* MG：水色 */
+.chassis-card.axle-MG {
+  border-top: 6px solid #22d3ee;
+}
+
+/* 2個積み：黒 */
+.chassis-card.axle-2stack {
+  border-top: 6px solid #111827;
+}
+
+/* ★ 兼用：緑 */
+.chassis-card.axle-both {
+  border-top: 6px solid #22c55e;
+}
+
+.delivery-yard-row {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 4px;
+  align-items: stretch;
+  margin-bottom: 4px;
+}
+/*配送分の搬出ヤードの文字*/
+.delivery-yard-name {
+  font-size: 13px;
+  color: #4b5563;
+  padding-top: 6px;
+}
+.chassis-legend {
+  font-size: 11px;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+
+.legend-group + .legend-group {
+  margin-top: 4px;
+}
+
+.legend-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: #4b5563;
+}
+
+.legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-color {
+  width: 14px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid #9ca3af;
+}
+
+/* サイズ */
+.legend-size-20 {
+  background: #3b82f6;
+}
+
+.legend-size-40 {
+  background: #f97316;
+}
+
+/* 軸種別 */
+.legend-axle-1 {
+  background: #a855f7;
+}
+.legend-axle-2 {
+  background: #facc15;
+}
+.legend-axle-3 {
+  background: #ef4444;
+}
+.legend-axle-MG {
+  background: #22d3ee;
+}
+.legend-axle-2stack {
+  background: #111827;
+}
+.legend-axle-both {
+  background: #22c55e;
+}
+
+
+/* 空 / 積載 */
+.legend-load-empty {
+  background: #d1d5db;
+}
+.legend-load-loaded {
+  background: #ef25ca;
+}
+/* ★ dnd-kit でドラッグ中の要素を最前面にする */
+[data-dnd-kit-dragging="true"] {
+  position: relative;              /* 念のため明示 */
+  z-index: 99999 !important;        /* 他のルールより優先させる */
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+/* 軸種別／MG／2個積み別の色（上辺にカラーライン） */
+.chassis-card.axle-1 {
+  border-top: 6px solid #a855f7;  /* 1軸：紫 */
+}
+
+.chassis-card.axle-2 {
+  border-top: 6px solid #facc15;  /* 2軸：黄 */
+}
+
+.chassis-card.axle-3 {
+  border-top: 6px solid #ef4444;  /* 3軸：赤 */
+}
+
+.chassis-card.axle-MG {
+  border-top: 6px solid #22d3ee;  /* MG：水色 */
+}
+
+.chassis-card.axle-2stack {
+  border-top: 6px solid #111827;  /* 2個積み：黒 */
+}
+
+.chassis-card.axle-both {
+  border-top: 6px solid #22c55e;  /* 兼用：緑 */
+}
+
+/* === シャーシのサイズ帯＋積載帯（chassis-band 専用） === */
+
+.chassis-card.chassis-band {
+  position: relative;
+  background: #fef2f2;
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
+  height: 24px;
+  min-height: 24px;
+  max-height: 24px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;   /* 帯をカードの中に閉じ込める */
+  z-index: 1;
+}
+
+
+
+/* 帯より上にテキストを出す */
+.chassis-card.chassis-band .card-body {
+  position: relative;
+  z-index: 1;
+}
+
+/* C だけのときの番号（大きめ） */
+.chassis-card.chassis-band .card-title-chassis-only {
+  font-size: 20px;
+  font-weight: 700;
+  text-align: left;
+  line-height: 1.2;
+}
+
+/* === シャーシ：サイズ別 左端色 ==================== */
+.chassis-card.size-20 {
+  border-left: 5px solid #3b82f6;  /* 20F 青 */
+}
+
+.chassis-card.size-40 {
+  border-left: 5px solid #f97316;  /* 40F オレンジ */
+}
+
+/* === シャーシ：空 / 積載 右端色 ==================== */
+.chassis-card.chassis-empty {
+  border-right: 3px solid #d1d5db; /* 空：グレー */
+}
+
+.chassis-card.chassis-loaded {
+  border-right: 3px solid #ef25ca; /* 積載：緑 */
+}
+
+/* === コンテナ A：サイズ別 左端色（必要なら） ======= */
+.container-card.size-20 {
+  border-left: 5px solid #3b82f6;
+}
+.container-card.size-40 {
+  border-left: 5px solid #f97316;
+}
+.mail-context-menu {
+  position: fixed;
+  z-index: 9999;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.15);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+}
+
+.mail-context-menu button {
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mail-context-menu button:hover {
+  background: #eff6ff;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  width: 900px;
+  max-height: 80vh;
+  font-size: 13px;   /* 設定画面の標準文字サイズ */
+  overflow-y: auto;
+  background: #fff;
+  padding: 16px 20px;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.3);
+}
+
+.modal-section {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 12px;
+}
+
+.modal-yard-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.modal-yard-name-input {
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #d1d5db;
+}
+
+.modal-lanes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.modal-lane-input {
+  width: 60px;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: 1px solid #e5e7eb;
+}
+
+.modal-footer {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.driver-group-list {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.driver-group-name-input {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #d1d5db;
+}
+
+.driver-assign-table {
+  border-top: 1px solid #e5e7eb;
+  margin-top: 6px;
+  padding-top: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.driver-assign-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.driver-assign-name {
+  flex: 1;
+}
+.driver-assign-row select {
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.driver-group-section {
+  margin-bottom: 8px;
+}
+
+.driver-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 4px 0 2px;
+  color: #4b5563;
+}
+.driver-groups-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)); /* 自車 / 傭車 の2列 */
+  column-gap: 16px;
+  row-gap: 12px;
+}
+
+.driver-group-column-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: #111827;
+}
+
+.driver-group {
+  margin-bottom: 8px;
+}
+
+.driver-group-name {
+  font-size: 15px;
+  color: #d8420b;
+  margin-bottom: 2px;
+}
+/* 共通ボタン */
+.btn-primary,
+.btn-add,
+.btn-delete {
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* メインの青ボタン（設定／閉じるなど） */
+.btn-primary,
+.settings-button {
+  background-color: #2563eb; /* 明るめの青 */
+  color: #ffffff;
+}
+
+.btn-primary:hover,
+.settings-button:hover {
+  background-color: #1d4ed8;
+}
+
+/* 追加系（グループ追加・レーン追加・ヤード追加） */
+.btn-add {
+  background-color: #22c55e; /* 緑 */
+  color: #ffffff;
+}
+
+.btn-add:hover {
+  background-color: #16a34a;
+}
+
+/* 削除系（レーン削除・ヤード削除） */
+.btn-delete {
+  background-color: #ef4444; /* 赤 */
+  color: #ffffff;
+}
+
+.btn-delete:hover {
+  background-color: #dc2626;
+}
+
+.btn-delete:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* ===== 設定モーダル全体の文字サイズ ===== */
+
+/* 見出しだけ少し大きく */
+.modal h2 {
+  font-size: 20px;
+}
+
+.modal h3 {
+  font-size: 18px;
+}
+
+/* ===== ヘッダー右上の「設定」ボタン ===== */
+.settings-button {
+  padding: 16px 20px;   /* ボタンの高さ＆横幅感 */
+  font-size: 16px;     /* ボタンの文字サイズ */
+}
+
+/* ===== 設定モーダル内のボタンたち ===== */
+/* レーン追加／削除、ヤード削除など */
+.modal .btn-small,
+.modal .btn-add,
+.modal .btn-delete,
+.modal-footer button {
+  padding: 6px 10px;   /* ボタンの大きさ */
+  font-size: 14px;     /* 文字サイズ */
+  border-radius: 4px;  /* 角丸（お好みで） */
+}
+
+/* ===== 設定モーダル内の入力欄 ===== */
+.modal-yard-name-input,
+.modal-lane-input,
+.driver-group-key-input,
+.driver-group-name-input,
+.modal-pos-input {
+  font-size: 14px;     /* 入力文字のサイズ */
+  height: 28px;        /* 高さ */
+  padding: 4px 6px;    /* 内側の余白 */
+}
