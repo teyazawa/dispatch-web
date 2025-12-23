@@ -537,6 +537,7 @@ function DroppableArea({
 
 function App() {
 
+    const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
     const [groups, setGroups] = useState<ChassisGroup[]>([]);
     // 一時保管枠
     const [tempContainers, setTempContainers] = useState<Container[]>([]);
@@ -556,26 +557,6 @@ function App() {
     useEffect(() => { doneRef.current = completedContainers; }, [completedContainers]);
     useEffect(() => { groupsRef.current = groups; }, [groups]);
     
-    const moveToDelivered = (c: Container) => {
-    const id = c.id;
-
-    // 1) シャーシ上に載っていたら「コンテナだけ外す」
-    setGroups((prev) =>
-      prev.map((g) => (g.container?.id === id ? { ...g, container: undefined } : g))
-    );
-
-    // 2) 他のリストから消す
-    setContainers((prev) => prev.filter((x) => x.id !== id));
-    setTempContainers((prev) => prev.filter((x) => x.id !== id));
-
-    // 3) 完了へ（重複防止＋情報更新）
-    setCompletedContainers((prev) => {
-      const exists = prev.find((x) => x.id === id);
-      if (exists) return prev.map((x) => (x.id === id ? { ...x, ...c } : x));
-      return [...prev, c];
-    });
-  };
-
 
   // ドライバーグループ設定（自車／傭車）
   const [driverGroups, setDriverGroups] = useState<DriverGroupConfig>(() => {
@@ -718,7 +699,7 @@ function App() {
   useEffect(() => {
   async function fetchDrivers() {
     try {
-      const res = await fetch("http://localhost:3001/api/drivers");
+      const res = await fetch(`${API_BASE}/api/drivers`);
       if (!res.ok) {
         console.error("ドライバーAPIエラー", await res.text());
         return;
@@ -761,7 +742,7 @@ function App() {
 useEffect(() => {
   async function fetchTrucks() {
     try {
-      const res = await fetch("http://localhost:3001/api/trucks");
+      const res = await fetch(`${API_BASE}/api/trucks`);
       if (!res.ok) {
         console.error("車両APIエラー", await res.text());
         return;
@@ -810,7 +791,7 @@ useEffect(() => {
 useEffect(() => {
   async function fetchChassis() {
     try {
-      const res = await fetch("http://localhost:3001/api/chassis");
+      const res = await fetch(`${API_BASE}/api/chassis`);
       if (!res.ok) {
         console.error("シャーシAPIエラー", await res.text());
         return;
@@ -910,7 +891,7 @@ useEffect(() => {
 
   async function syncContainersOnce() {
     try {
-      const res = await fetch("http://localhost:3001/api/containers");
+      const res = await fetch(`${API_BASE}/api/containers`);
       if (!res.ok) {
         console.error("コンテナAPIエラー", await res.text());
         return;
@@ -976,7 +957,7 @@ useEffect(() => {
 
   async function syncContainerUpdatesOnce() {
     try {
-      const res = await fetch("http://localhost:3001/api/containers/updates");
+      const res = await fetch(`${API_BASE}/api/containers/updates`);
       if (!res.ok) {
         console.error("updates APIエラー", await res.text());
         return;
@@ -2209,7 +2190,7 @@ useEffect(() => {
                         updateOutsourcedGroup(index, { label: e.target.value })
                       }
                     />
-                    <button className="btn-small btn-delete" onClick={() => removeOwnedGroup(index)}>
+                    <button className="btn-small btn-delete" onClick={() => removeOutsourcedGroup(index)}>
                       削除
                     </button>
                   </div>

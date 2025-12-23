@@ -541,7 +541,7 @@ app.get("/api/containers/updates", async (req, res) => {
 
 
 // サーバー起動
-const port = process.env.PORT || 3001;
-app.listen(port, () => {
-  console.log(`Driver API server running at http://localhost:${port}`);
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`API server listening on ${PORT}`);
 });
