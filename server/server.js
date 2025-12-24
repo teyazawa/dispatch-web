@@ -25,6 +25,14 @@ const CHASSIS_API_TOKEN = process.env.KINTONE_CHASSIS_API_TOKEN;
 const CONTAINER_APP_ID = process.env.KINTONE_CONTAINER_APP_ID;
 const CONTAINER_API_TOKEN = process.env.KINTONE_CONTAINER_API_TOKEN;
 
+const cors = require("cors");
+
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://dispatch-web.vercel.app",
+];
+
 
 function shouldSkipDestination(destRaw) {
   const s = (destRaw ?? "").toString().trim();
@@ -59,7 +67,24 @@ function stripCompanyTokens(destRaw) {
 }
 
 
-app.use(cors());
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // curl / サーバー間通信など origin 無しは許可
+      if (!origin) return cb(null, true);
+
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+
+      // Vercel の Preview URL も将来使うなら有効化（必要なら残す）
+      if (origin.endsWith(".vercel.app")) return cb(null, true);
+
+      return cb(new Error(`CORS blocked: ${origin}`));
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 // server/server.js のどこか（app 定義のあと）に

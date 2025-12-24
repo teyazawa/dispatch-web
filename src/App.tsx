@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { DndContext, useDraggable, useDroppable } from "@dnd-kit/core";
+import { supabase } from "./lib/supabase";
+import AuthBar from "./components/AuthBar";
+
 
 
 /** サイズ種別 */
@@ -297,6 +300,13 @@ function buildDeliveryMail(container: Container, driver: Driver): {
   };
 }
 
+const BOARD_LS_KEY = "dispatch-board-id";
+
+function getInitialBoardId() {
+  const qs = new URLSearchParams(window.location.search);
+  return qs.get("board") || localStorage.getItem(BOARD_LS_KEY) || "";
+}
+
 /** DnD コンポーネント */
 type DraggableGroupCardProps = {
   group: ChassisGroup;
@@ -537,6 +547,92 @@ function DroppableArea({
 
 function App() {
 
+    const [boardId, setBoardId] = useState<string>("");
+    const [userId, setUserId] = useState<string>("");
+    
+    // ✅ ログイン状態（userId）だけを App で保持
+    useEffect(() => {
+      let mounted = true;
+
+      supabase.auth.getUser().then(({ data, error }) => {
+        if (!mounted) return;
+        if (error) {
+          console.error("getUser error", error);
+          return;
+        }
+        setUserId(data.user?.id ?? "");
+      });
+
+      const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (!mounted) return;
+        setUserId(session?.user?.id ?? "");
+      });
+
+      return () => {
+        mounted = false;
+        sub.subscription.unsubscribe();
+      };
+    }, []);
+
+    // ✅ ログイン後に boardId を確定（URL優先 → localStorage → 新規作成）
+    const initBoardRanRef = useRef(false);
+
+    useEffect(() => {
+      // 未ログインなら何もしない
+      if (!userId) {
+        initBoardRanRef.current = false; // ログアウト→再ログイン時に再実行できるように
+        setBoardId("");
+        return;
+      }
+
+      // React(Vite)の StrictMode で useEffect が2回走る対策
+      if (initBoardRanRef.current) return;
+      initBoardRanRef.current = true;
+
+      const initBoard = async () => {
+        const url = new URL(window.location.href);
+
+        // 1) URL ?board=xxxx
+        const q = url.searchParams.get("board");
+        if (q) {
+          setBoardId(q);
+          localStorage.setItem("dispatch-board-id", q);
+          return;
+        }
+
+        // 2) localStorage
+        const ls = localStorage.getItem("dispatch-board-id");
+        if (ls) {
+          url.searchParams.set("board", ls);
+          window.history.replaceState({}, "", url.toString());
+          setBoardId(ls);
+          return;
+        }
+
+        // 3) 新規作成（RPC）
+        const { data, error } = await supabase.rpc("create_dispatch_board", {
+          p_name: "テスト配車表",
+        });
+
+        if (error) {
+          console.error("create_dispatch_board error", error);
+          alert("ボード作成に失敗しました。コンソールを見てください。");
+          initBoardRanRef.current = false; // 失敗時は再試行できるように戻す
+          return;
+        }
+
+        const newId = String(data);
+        url.searchParams.set("board", newId);
+        window.history.replaceState({}, "", url.toString());
+        localStorage.setItem("dispatch-board-id", newId);
+        setBoardId(newId);
+      };
+
+      initBoard();
+    }, [userId]);
+
+    
+
     const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
     const [groups, setGroups] = useState<ChassisGroup[]>([]);
     // 一時保管枠
@@ -632,6 +728,8 @@ function App() {
   }
   return applyDefaults(defaultYards);
 });
+
+
 
   useEffect(() => {
     localStorage.setItem("dispatch-yards", JSON.stringify(yards));
@@ -737,6 +835,68 @@ function App() {
 }, []);
 
   const [trucks, setTrucks] = useState<Truck[]>([]);
+
+  useEffect(() => {
+    if (!boardId) return;
+
+      (async () => {
+        const { data, error } = await supabase
+        .from("dispatch_board_state")
+        .select("state")
+        .eq("board_id", boardId)
+        .maybeSingle();
+
+      if (error) {
+        console.error("load board state error", error);
+        return;
+      }
+      const s = (data?.state ?? {}) as any;
+
+      // 保存が無い（初回）なら何もしない
+      if (!s || Object.keys(s).length === 0) return;
+
+      if (s.groups) setGroups(s.groups);
+      if (s.trucks) setTrucks(s.trucks);
+      if (s.containers) setContainers(s.containers);
+      if (s.tempContainers) setTempContainers(s.tempContainers);
+      if (s.completedContainers) setCompletedContainers(s.completedContainers);
+      if (s.driverGroups) setDriverGroups(s.driverGroups);
+      if (s.yards) setYards(s.yards);
+    })();
+  }, [boardId]);
+
+  useEffect(() => {
+    if (!boardId) return;
+
+    const timer = window.setTimeout(async () => {
+      const state = {
+        groups,
+        trucks,
+        containers,
+        tempContainers,
+        completedContainers,
+        driverGroups,
+        yards,
+      };
+
+      const { error } = await supabase
+        .from("dispatch_board_state")
+        .upsert({ board_id: boardId, state }, { onConflict: "board_id" });
+
+      if (error) console.error("save board state error", error);
+    }, 800);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    boardId,
+    groups,
+    trucks,
+    containers,
+    tempContainers,
+    completedContainers,
+    driverGroups,
+    yards,
+  ]);
 
 // ★ kintone から車両一覧を取得して、基本車両をドライバーに割り当てる
 useEffect(() => {
@@ -1032,8 +1192,6 @@ useEffect(() => {
     clearInterval(timer);
   };
 }, []);
-
-
 
   
   const [leftWidth, setLeftWidth] = useState<number>(650);   // シャーシプール
@@ -1516,10 +1674,14 @@ useEffect(() => {
   const dayKeys = Array.from(new Set(containers.map((c) => c.date))).sort();
 
   return (
-    <div className="app-root">
-  <header className="header">
+    <>
+      <div className="app-root">
+      <header className="header">
+        
+
     {/* 左側：タイトル＋サブタイトル */}
     <div className="header-main">
+
       <h1 className="title">
         配車表
       </h1>
@@ -1530,6 +1692,8 @@ useEffect(() => {
     </div>
 
     <div className="header-right">
+
+        <AuthBar />
 
         {/* ★ ここがヘッダー右側の凡例 */}
         <div className="header-legend">
@@ -2227,7 +2391,7 @@ useEffect(() => {
         </div>
       )}
     </div>
-    
+  </>
   );
 }
 
