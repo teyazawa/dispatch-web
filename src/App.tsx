@@ -836,67 +836,7 @@ function App() {
 
   const [trucks, setTrucks] = useState<Truck[]>([]);
 
-  useEffect(() => {
-    if (!boardId) return;
 
-      (async () => {
-        const { data, error } = await supabase
-        .from("dispatch_board_state")
-        .select("state")
-        .eq("board_id", boardId)
-        .maybeSingle();
-
-      if (error) {
-        console.error("load board state error", error);
-        return;
-      }
-      const s = (data?.state ?? {}) as any;
-
-      // 保存が無い（初回）なら何もしない
-      if (!s || Object.keys(s).length === 0) return;
-
-      if (s.groups) setGroups(s.groups);
-      if (s.trucks) setTrucks(s.trucks);
-      if (s.containers) setContainers(s.containers);
-      if (s.tempContainers) setTempContainers(s.tempContainers);
-      if (s.completedContainers) setCompletedContainers(s.completedContainers);
-      if (s.driverGroups) setDriverGroups(s.driverGroups);
-      if (s.yards) setYards(s.yards);
-    })();
-  }, [boardId]);
-
-  useEffect(() => {
-    if (!boardId) return;
-
-    const timer = window.setTimeout(async () => {
-      const state = {
-        groups,
-        trucks,
-        containers,
-        tempContainers,
-        completedContainers,
-        driverGroups,
-        yards,
-      };
-
-      const { error } = await supabase
-        .from("dispatch_board_state")
-        .upsert({ board_id: boardId, state }, { onConflict: "board_id" });
-
-      if (error) console.error("save board state error", error);
-    }, 800);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    boardId,
-    groups,
-    trucks,
-    containers,
-    tempContainers,
-    completedContainers,
-    driverGroups,
-    yards,
-  ]);
 
 // ★ kintone から車両一覧を取得して、基本車両をドライバーに割り当てる
 useEffect(() => {
@@ -1197,6 +1137,68 @@ useEffect(() => {
   const [leftWidth, setLeftWidth] = useState<number>(650);   // シャーシプール
   const [middleWidth, setMiddleWidth] = useState<number>(600); // ドライバー
   const [deliveryWidth, setDeliveryWidth] = useState<number>(480); // 配送分
+
+    useEffect(() => {
+    if (!boardId) return;
+
+      (async () => {
+        const { data, error } = await supabase
+        .from("dispatch_board_state")
+        .select("state")
+        .eq("board_id", boardId)
+        .maybeSingle();
+
+      if (error) {
+        console.error("load board state error", error);
+        return;
+      }
+      const s = (data?.state ?? {}) as any;
+
+      // 保存が無い（初回）なら何もしない
+      if (!s || Object.keys(s).length === 0) return;
+
+      if (s.groups) setGroups(s.groups);
+      if (s.trucks) setTrucks(s.trucks);
+      if (s.containers) setContainers(s.containers);
+      if (s.tempContainers) setTempContainers(s.tempContainers);
+      if (s.completedContainers) setCompletedContainers(s.completedContainers);
+      if (s.driverGroups) setDriverGroups(s.driverGroups);
+      if (s.yards) setYards(s.yards);
+    })();
+  }, [boardId]);
+
+  useEffect(() => {
+    if (!boardId) return;
+
+    const timer = window.setTimeout(async () => {
+      const state = {
+        groups,
+        trucks,
+        containers,
+        tempContainers,
+        completedContainers,
+        driverGroups,
+        yards,
+      };
+
+      const { error } = await supabase
+        .from("dispatch_board_state")
+        .upsert({ board_id: boardId, state }, { onConflict: "board_id" });
+
+      if (error) console.error("save board state error", error);
+    }, 800);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    boardId,
+    groups,
+    trucks,
+    containers,
+    tempContainers,
+    completedContainers,
+    driverGroups,
+    yards,
+  ]);
 
   // ヤードグループ（大井・青海・品川・本牧）
   const yardGroups = ["大井", "青海", "中防","品川", "本牧",  "その他"];
