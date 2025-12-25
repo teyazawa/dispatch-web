@@ -25,8 +25,6 @@ const CHASSIS_API_TOKEN = process.env.KINTONE_CHASSIS_API_TOKEN;
 const CONTAINER_APP_ID = process.env.KINTONE_CONTAINER_APP_ID;
 const CONTAINER_API_TOKEN = process.env.KINTONE_CONTAINER_API_TOKEN;
 
-const cors = require("cors");
-
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
