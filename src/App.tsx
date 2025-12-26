@@ -1148,15 +1148,14 @@ useEffect(() => {
 
       // ② worker4 が入ったものは「コンテナだけ」配送完了へ移動
       for (const p of patches) {
-        const worker4 = (p.worker4 ?? "").toString().trim();
-        if (!worker4) continue;
+        const stepNum = Number(p.step);
+        if (stepNum !== 4) continue;
 
-        // move は ref を使って “最新状態から” 探す（interval問題を回避）
         moveContainerToDelivered(String(p.id), {
           no: p.no,
           dropoffYard: p.dropoffYard,
-          step: p.step,
-          worker4,
+          step: stepNum,
+          worker4: (p.worker4 ?? "").toString().trim(), // あれば入る
         });
       }
     } catch (err) {
