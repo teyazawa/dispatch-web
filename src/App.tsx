@@ -548,6 +548,11 @@ function DroppableArea({
 function App() {
 
     const [boardId, setBoardId] = useState<string>("");
+
+    useEffect(() => {
+      setBoardId(getInitialBoardId());
+    }, []);
+
     const [userId, setUserId] = useState<string>("");
     
     // ✅ ログイン状態（userId）だけを App で保持
@@ -1138,67 +1143,7 @@ useEffect(() => {
   const [middleWidth, setMiddleWidth] = useState<number>(600); // ドライバー
   const [deliveryWidth, setDeliveryWidth] = useState<number>(480); // 配送分
 
-    useEffect(() => {
-    if (!boardId) return;
 
-      (async () => {
-        const { data, error } = await supabase
-        .from("dispatch_board_state")
-        .select("state")
-        .eq("board_id", boardId)
-        .maybeSingle();
-
-      if (error) {
-        console.error("load board state error", error);
-        return;
-      }
-      const s = (data?.state ?? {}) as any;
-
-      // 保存が無い（初回）なら何もしない
-      if (!s || Object.keys(s).length === 0) return;
-
-      if (s.groups) setGroups(s.groups);
-      if (s.trucks) setTrucks(s.trucks);
-      if (s.containers) setContainers(s.containers);
-      if (s.tempContainers) setTempContainers(s.tempContainers);
-      if (s.completedContainers) setCompletedContainers(s.completedContainers);
-      if (s.driverGroups) setDriverGroups(s.driverGroups);
-      if (s.yards) setYards(s.yards);
-    })();
-  }, [boardId]);
-
-  useEffect(() => {
-    if (!boardId) return;
-
-    const timer = window.setTimeout(async () => {
-      const state = {
-        groups,
-        trucks,
-        containers,
-        tempContainers,
-        completedContainers,
-        driverGroups,
-        yards,
-      };
-
-      const { error } = await supabase
-        .from("dispatch_board_state")
-        .upsert({ board_id: boardId, state }, { onConflict: "board_id" });
-
-      if (error) console.error("save board state error", error);
-    }, 800);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    boardId,
-    groups,
-    trucks,
-    containers,
-    tempContainers,
-    completedContainers,
-    driverGroups,
-    yards,
-  ]);
 
   // ヤードグループ（大井・青海・品川・本牧）
   const yardGroups = ["大井", "青海", "中防","品川", "本牧",  "その他"];
@@ -1670,6 +1615,83 @@ useEffect(() => {
       return { ...prev, outsourced };
     });
   };
+
+  // ✅ 初回ロード中フラグ（ロード完了まで save しない）
+  const hydratingRef = useRef(true);
+
+  // ✅ boardId が確定したら DB から復元
+  useEffect(() => {
+    if (!boardId) return;
+
+    hydratingRef.current = true;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("dispatch_board_state")
+        .select("state")
+        .eq("board_id", boardId)
+        .maybeSingle();
+
+      if (error) {
+        console.error("load board state error", error);
+        hydratingRef.current = false;
+        return;
+      }
+
+      const s = (data?.state ?? {}) as any;
+      if (!s || Object.keys(s).length === 0) {
+        hydratingRef.current = false;
+        return;
+      }
+
+      if (s.groups) setGroups(s.groups);
+      if (s.trucks) setTrucks(s.trucks);
+      if (s.containers) setContainers(s.containers);
+      if (s.tempContainers) setTempContainers(s.tempContainers);
+      if (s.completedContainers) setCompletedContainers(s.completedContainers);
+      if (s.driverGroups) setDriverGroups(s.driverGroups);
+      if (s.yards) setYards(s.yards);
+
+      hydratingRef.current = false;
+    })();
+  }, [boardId]);
+
+  // ✅ state が変わったら DB に保存（デバウンス）
+  // ※ロード中は保存しない
+  useEffect(() => {
+    if (!boardId) return;
+    if (hydratingRef.current) return;
+
+    const timer = window.setTimeout(async () => {
+      const state = {
+        groups,
+        trucks,
+        containers,
+        tempContainers,
+        completedContainers,
+        driverGroups,
+        yards,
+      };
+
+      const { error } = await supabase
+        .from("dispatch_board_state")
+        .upsert({ board_id: boardId, state }, { onConflict: "board_id" });
+
+      if (error) console.error("save board state error", error);
+    }, 800);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    boardId,
+    groups,
+    trucks,
+    containers,
+    tempContainers,
+    completedContainers,
+    driverGroups,
+    yards,
+  ]);
+
 
 
   // 配送レーンに表示すべき日付一覧（containers から動的に）

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Session } from "@supabase/supabase-js";
+import type { Session } from '@supabase/supabase-js';
 import { supabase } from "./lib/supabase";
 
 export function AuthGate(props: { children: (session: Session) => React.ReactNode }) {
