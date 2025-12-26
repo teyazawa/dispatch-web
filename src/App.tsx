@@ -652,6 +652,9 @@ function App() {
     const doneRef = useRef<Container[]>([]);
     const groupsRef = useRef<ChassisGroup[]>([]);
 
+    // ★ 追加：この端末が ACK 済みにしたコンテナID（再送防止）
+    const ackedContainerIdsRef = useRef<Set<string>>(new Set());
+
     // state が変わったら ref へ反映
     useEffect(() => { containersRef.current = containers; }, [containers]);
     useEffect(() => { tempRef.current = tempContainers; }, [tempContainers]);
@@ -935,25 +938,19 @@ useEffect(() => {
 }, []);
 
 
-
-
 const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
   const findBase = (): Container | null => {
     const gid = String(id);
 
-    // 1) A+C（積載中）から優先
     const fromAC = groupsRef.current.find((g) => g.container?.id === gid)?.container;
     if (fromAC) return fromAC;
 
-    // 2) A（配送枠）
     const fromA = containersRef.current.find((c) => c.id === gid);
     if (fromA) return fromA;
 
-    // 3) temp
     const fromT = tempRef.current.find((c) => c.id === gid);
     if (fromT) return fromT;
 
-    // 4) done（既に完了にいる場合）
     const fromD = doneRef.current.find((c) => c.id === gid);
     if (fromD) return fromD;
 
@@ -970,16 +967,16 @@ const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
     worker4: (patch?.worker4 ?? base.worker4 ?? "").toString().trim(),
   };
 
-  // ① シャーシ上にあれば「コンテナだけ外す」（シャーシはそのまま）
+  // ① シャーシ上にあれば「コンテナだけ外す」
   setGroups((prev) =>
     prev.map((g) => (g.container?.id === String(id) ? { ...g, container: undefined } : g))
   );
 
-  // ② 他リストから消す
+  // ② リストから消す（ここで fetched を使わない）
   setContainers((prev) => prev.filter((c) => c.id !== String(id)));
   setTempContainers((prev) => prev.filter((c) => c.id !== String(id)));
 
-  // ③ 完了へ upsert（重複防止）
+  // ③ 完了へ upsert
   setCompletedContainers((prev) => {
     const exists = prev.find((c) => c.id === String(id));
     if (exists) {
@@ -988,6 +985,7 @@ const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
     return [...prev, merged];
   });
 };
+
 
 
 // ★ kintone からコンテナをポーリングで取得（新規追加＋更新を両方反映）
@@ -1003,27 +1001,68 @@ useEffect(() => {
       }
       const data = await res.json();
 
-      // サーバ側の JSON → Container 型に整形
-      const fetched: Container[] = (data.containers ?? []).map((c: any) => ({
-        id: String(c.id),
-        size: c.size as Size,
-        date: c.date,
-        eta: c.eta,
-        pickupYardGroup: c.pickupYardGroup,
-        pickupYard: c.pickupYard,
-        no: c.no,
-        kindCode: c.kindCode,
-        destination: c.destination,
-        dropoffYard: c.dropoffYard,
-        ship: c.ship,
-        booking: c.booking,
-        destadd: c.destadd,
-        desttel: c.desttel,
-        worker4: (c.worker4 ?? "").toString().trim(),
-        step: c.step ?? undefined, // ← サーバーが渡してくれる場合
-      }));
+      // fetched はここで作っている前提
+const fetched: Container[] = (data.containers ?? []).map((c: any) => ({
+  id: String(c.id),
+  size: c.size as Size,
+  date: c.date,
+  eta: c.eta,
+  pickupYardGroup: c.pickupYardGroup,
+  pickupYard: c.pickupYard,
+  no: c.no,
+  kindCode: c.kindCode,
+  destination: c.destination,
+  dropoffYard: c.dropoffYard,
+  ship: c.ship,
+  booking: c.booking,
+  destadd: c.destadd,
+  desttel: c.desttel,
+  worker4: (c.worker4 ?? "").toString().trim(),
+  step: c.step ?? undefined,
+}));
 
-      if (isCancelled) return;
+if (isCancelled) return;
+
+      // ★ 1) 既存IDをRefから取って「新規だけ」を判定（setStateの外でやる）
+const existingIds = new Set(containersRef.current.map((c) => c.id));
+const newIdsToAck = fetched
+  .map((c) => c.id)
+  .filter((id) => !existingIds.has(id) && !ackedContainerIdsRef.current.has(id));
+
+// ★ 2) 画面更新（マージ）は今まで通り
+setContainers((prev) => {
+  const map = new Map<string, Container>();
+  prev.forEach((p) => map.set(p.id, p));
+
+  for (const nc of fetched) {
+    const existing = map.get(nc.id);
+    map.set(nc.id, existing ? { ...existing, ...nc } : nc);
+  }
+  return Array.from(map.values());
+});
+
+// ★ 3) 新規分だけ ACK（配車_連携2 を済にする）
+if (newIdsToAck.length > 0) {
+  // 先に登録して二重送信防止
+  newIdsToAck.forEach((id) => ackedContainerIdsRef.current.add(id));
+
+  try {
+    const ackRes = await fetch(`${API_BASE}/api/containers/mark-board-done`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: newIdsToAck }),
+    });
+
+    if (!ackRes.ok) {
+      console.warn("mark-board-done failed:", ackRes.status, await ackRes.text());
+      // 失敗時は再送できるように戻す
+      newIdsToAck.forEach((id) => ackedContainerIdsRef.current.delete(id));
+    }
+  } catch (e) {
+    console.warn("mark-board-done error:", e);
+    newIdsToAck.forEach((id) => ackedContainerIdsRef.current.delete(id));
+  }
+}
 
       setContainers((prev) => {
         // id → 既存コンテナ のマップ
