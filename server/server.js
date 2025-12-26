@@ -105,12 +105,17 @@ async function sendMail({ to, subject, text, html }) {
 }
 
 app.post("/api/send-driver-mail", async (req, res) => {
+  // ★ 追加：メール設定が無いなら無効化（変な挙動防止）
+  if (!process.env.MAIL_HOST || !process.env.MAIL_USER || !process.env.MAIL_PASS) {
+    return res.status(501).json({
+      error: "メール送信は未設定のため無効です（mailto方式を使用してください）",
+    });
+  }
+
   try {
     const { to, subject, text, html } = req.body;
     if (!to || !subject || !(text || html)) {
-      return res
-        .status(400)
-        .json({ error: "to / subject / text(html) は必須です" });
+      return res.status(400).json({ error: "to / subject / text(html) は必須です" });
     }
 
     await sendMail({ to, subject, text, html });
@@ -120,14 +125,9 @@ app.post("/api/send-driver-mail", async (req, res) => {
     console.error("msg:", err.message);
     console.error("stack:", err.stack);
     console.error("====================================");
-    res.status(500).json({
-      error: "メール送信に失敗しました",
-      detail: err.message,
-    });
+    res.status(500).json({ error: "メール送信に失敗しました", detail: err.message });
   }
 });
-
-
 
 
 
@@ -458,23 +458,27 @@ app.get("/api/containers", async (req, res) => {
       };
     });
 
-    // ③ 取得したレコードの「配車_連携」を「済」に更新（※eligibleだけ）
-    const updateBody = {
-      app: CONTAINER_APP_ID,
-      records: eligibleRecords.map((r) => ({
-        id: r.$id.value,
-        record: {
-          配車_連携: { value: ["済"] },
-        },
-      })),
-    };
+    // ③ 取得したレコードを「済」に更新（※副作用なので環境で制御）
+    if (process.env.ALLOW_KINTONE_WRITE === "true") {
+      const updateBody = {
+        app: CONTAINER_APP_ID,
+        records: eligibleRecords.map((r) => ({
+          id: r.$id.value,
+          record: {
+            配車_連携2: { value: ["済"] },
+          },
+        })),
+      };
 
-    await axios.put(`${baseUrl}/records.json`, updateBody, {
-      headers: {
-        "X-Cybozu-API-Token": CONTAINER_API_TOKEN,
-        "Content-Type": "application/json",
-      },
-    });
+      await axios.put(`${baseUrl}/records.json`, updateBody, {
+        headers: {
+          "X-Cybozu-API-Token": CONTAINER_API_TOKEN,
+          "Content-Type": "application/json",
+        },
+      });
+    } else {
+      console.log("[containers] skip kintone update (ALLOW_KINTONE_WRITE != true)");
+    }
 
     // ④ フロントに新規コンテナだけ返す
     res.json({ containers });
@@ -498,7 +502,7 @@ app.get("/api/containers/updates", async (req, res) => {
 
     const getParams = {
       app: CONTAINER_APP_ID,
-      query: '配車_更新 in ("未") order by 更新日時 asc',
+      query: '配車_更新2 in ("未") order by 更新日時 asc',
     };
 
     const getRes = await axios.get(`${baseUrl}/records.json`, {
