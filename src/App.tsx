@@ -1023,11 +1023,10 @@ const fetched: Container[] = (data.containers ?? []).map((c: any) => ({
 
 if (isCancelled) return;
 
-      // ★ 1) 既存IDをRefから取って「新規だけ」を判定（setStateの外でやる）
-const existingIds = new Set(containersRef.current.map((c) => c.id));
+// ★ 1) 既存IDをRefから取って「新規だけ」を判定（setStateの外でやる）
 const newIdsToAck = fetched
   .map((c) => c.id)
-  .filter((id) => !existingIds.has(id) && !ackedContainerIdsRef.current.has(id));
+  .filter((id) => !ackedContainerIdsRef.current.has(id));
 
 // ★ 2) 画面更新（マージ）は今まで通り
 setContainers((prev) => {
