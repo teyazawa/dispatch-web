@@ -522,31 +522,32 @@ app.get("/api/containers/updates", async (req, res) => {
     const containers = [];
     const ackTargets = [];
 
-    for (const r of records) {
-      const stepRaw = (r["配車_工程"]?.value ?? "").toString().trim();
+for (const r of records) {
+  const stepRaw = (r["配車_工程"]?.value ?? "").toString().trim();
+  if (!stepRaw) continue;
 
-      // 工程が無いものは誤ACKの可能性が高いので未のまま放置
-      if (!stepRaw) continue;
+  const step = Number(stepRaw); // ★これが必要
+  if (!Number.isFinite(step)) continue;
 
-      const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
-      const dropoffBase = (r["搬入"]?.value ?? "").toString().trim();
-      const dropoffYard = dropoffOverride || dropoffBase;
+  const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
+  const dropoffBase = (r["搬入"]?.value ?? "").toString().trim();
+  const dropoffYard = dropoffOverride || dropoffBase;
 
-      const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
+  const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
 
-      containers.push({
-        id: r.$id.value,
-        no: (r["コンテナ番号_配送依頼"]?.value ?? "").toString(),
-        dropoffYard,
-        step: Number(stepRaw),
-        worker4,
-      });
+  containers.push({
+    id: r.$id.value,
+    no: (r["コンテナ番号_配送依頼"]?.value ?? "").toString(),
+    dropoffYard,
+    step,
+    worker4,
+  });
 
-	  // ★ ここがポイント：step=4 のときだけ「済」にする
-	  if (step === 4) {
-	    ackTargets.push(r.$id.value);
-	  }
-	}
+  // ★ step=4 のときだけ ACK 対象にする
+  if (step === 4) {
+    ackTargets.push(r.$id.value);
+  }
+}
 
     // 返すものが無いなら更新もしない
     if (!containers.length) return res.json({ containers: [] });
