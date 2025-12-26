@@ -542,8 +542,11 @@ app.get("/api/containers/updates", async (req, res) => {
         worker4,
       });
 
-      ackTargets.push(r.$id.value);
-    }
+	  // ★ ここがポイント：step=4 のときだけ「済」にする
+	  if (step === 4) {
+	    ackTargets.push(r.$id.value);
+	  }
+	}
 
     // 返すものが無いなら更新もしない
     if (!containers.length) return res.json({ containers: [] });
