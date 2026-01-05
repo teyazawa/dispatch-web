@@ -117,6 +117,19 @@ function resolvePickupYardGroup(pickupYard) {
   return "その他";
 }
 
+function parseStepValue(rec) {
+  const raw = (rec["配車_工程"]?.value ?? "").toString().trim();
+  if (!raw) return 0;
+
+  // "4" だけでなく "④" や "step4" も拾える保険
+  const m = raw.match(/\d+/);
+  if (m) return Number(m[0]);
+
+  // 数字が取れない形式は 0 扱い（必要ならログ出してもOK）
+  return 0;
+}
+
+
 async function kintoneGetRecords({ appId, apiToken, query }) {
   const baseUrl = kintoneBaseUrl();
   const res = await axios.get(`${baseUrl}/records.json`, {
@@ -426,6 +439,7 @@ app.get("/api/containers", async (req, res) => {
     }
   }
 
+  const step = parseStepValue(r);
   const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
 
   return {
@@ -564,6 +578,11 @@ for (const r of records) {
     step,
     worker4,
   });
+
+const step = parseStepValue(r);
+if (!step) continue; // 0 は未設定なのでスキップしたいなら
+
+containers.push({ ... , step, worker4 });
 
   // ★ step=4 のときだけ ACK 対象にする
   if (step === 4) {
