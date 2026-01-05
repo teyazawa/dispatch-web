@@ -683,6 +683,16 @@ function App() {
     // ★ 追加：この端末が ACK 済みにしたコンテナID（再送防止）
     const ackedContainerIdsRef = useRef<Set<string>>(new Set());
 
+    // ✅ DB復元が完了したか（fetchChassisの初期配置を走らせる/止める判定に使う）
+    const [hydrationDone, setHydrationDone] = useState(false);
+
+    // ✅ DBにgroupsが保存されていたか（trueならfetchChassisで川口車庫初期配置をしない）
+    const [hasStoredGroups, setHasStoredGroups] = useState(false);
+
+    // ✅ 保存済みstateがあるか（trucksの「基本車両の自動割当」を抑止する用）
+    const hasSavedStateRef = useRef(false);
+
+
     // state が変わったら ref へ反映
     useEffect(() => { containersRef.current = containers; }, [containers]);
     useEffect(() => { tempRef.current = tempContainers; }, [tempContainers]);
@@ -965,8 +975,17 @@ useEffect(() => {
   fetchTrucks();
 }, [API_BASE, drivers]);
 
-// ★ 初回マウント時に kintone からシャーシ一覧を取得（全部 川口車庫 に初期配置）
+// ★ シャーシ一覧を取得（ただし保存済みboardでは初期配置で上書きしない）
 useEffect(() => {
+  // boardIdが確定して、DB復元が終わるまで待つ
+  if (!boardId) return;
+  if (!hydrationDone) return;
+
+  // ✅ すでにDBにgroupsがあるなら、川口車庫初期配置の setGroups をしない
+  if (hasStoredGroups) return;
+
+  let cancelled = false;
+
   async function fetchChassis() {
     try {
       const res = await fetch(`${API_BASE}/api/chassis`);
@@ -978,7 +997,7 @@ useEffect(() => {
 
       const apiGroups: ChassisGroup[] = (data.chassis ?? []).map(
         (c: ApiChassis) => ({
-          id: String(c.id),
+          id: c.id,
           chassisLabel: c.displayNo,
           size: c.size,
           axle: c.axle,
@@ -998,45 +1017,19 @@ useEffect(() => {
         })
       );
 
-      setGroups((prev) => {
-        // ✅ 保存済みがあるなら「location/containerは維持」してマスタだけ更新
-        if (hasSavedStateRef.current && prev.length > 0) {
-          const apiMap = new Map(apiGroups.map((g) => [g.id, g]));
-          const seen = new Set<string>();
-
-          const merged = prev.map((g) => {
-            const fresh = apiMap.get(g.id);
-            if (!fresh) return g; // APIに無いものは維持（好みで削除でもOK）
-            seen.add(g.id);
-
-            return {
-              ...g,
-              chassisLabel: fresh.chassisLabel,
-              size: fresh.size,
-              axle: fresh.axle,
-              extra: fresh.extra,
-              // location / container は prev を残す
-            };
-          });
-
-          // ✅ API側に新規シャーシが増えたら追加（初期位置は川口車庫）
-          for (const g of apiGroups) {
-            if (!seen.has(g.id)) merged.push(g);
-          }
-
-          return merged;
-        }
-
-        // ✅ 保存済みが無いときだけ初期配置
-        return apiGroups;
-      });
+      if (cancelled) return;
+      setGroups(apiGroups);
     } catch (err) {
       console.error("シャーシ取得に失敗", err);
     }
   }
 
   fetchChassis();
-}, [API_BASE]);
+
+  return () => {
+    cancelled = true;
+  };
+}, [boardId, hydrationDone, hasStoredGroups, API_BASE]);
 
 
 const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
@@ -1757,8 +1750,6 @@ useEffect(() => {
   
   // ✅ 初回ロード中フラグ（ロード完了まで save しない）
   const hydratingRef = useRef(true);
-  // ✅ 追加：このboardに保存済みstateがあるか
-  const hasSavedStateRef = useRef(false);
 
   const clientIdRef = useRef<string>(getOrCreateClientId());
 
@@ -1773,6 +1764,11 @@ useEffect(() => {
   let cancelled = false;
   hydratingRef.current = true;
 
+  // いったん初期化
+  setHydrationDone(false);
+  setHasStoredGroups(false);
+  hasSavedStateRef.current = false;
+
   (async () => {
     const { data, error } = await supabase
       .from("dispatch_board_state")
@@ -1785,27 +1781,29 @@ useEffect(() => {
     if (error) {
       console.error("load board state error", error);
       hydratingRef.current = false;
+      setHydrationDone(true); // 失敗でも初期配置へ進める
       return;
     }
 
     const s = (data?.state ?? {}) as any;
 
-    // ✅ 保存済みがあるか
-    hasSavedStateRef.current = !!s && Object.keys(s).length > 0;
-
-    // データが無いなら何もしない
-    if (!hasSavedStateRef.current) {
+    // 保存が無い場合：初期配置へ進める
+    if (!s || Object.keys(s).length === 0) {
       hydratingRef.current = false;
+      setHydrationDone(true);
       return;
     }
 
-    // ✅ version をRefへ反映（無ければ0）
-    if (typeof s.version === "number") {
-      versionRef.current = s.version;
-    } else {
-      versionRef.current = 0;
-    }
+    // ✅ 保存済みstateあり
+    hasSavedStateRef.current = true;
 
+    // ✅ groups が保存されていたら true（fetchChassisの初期配置を止める）
+    const storedGroups =
+      Array.isArray(s.groups) && s.groups.length > 0;
+
+    setHasStoredGroups(storedGroups);
+
+    // state反映
     if (s.groups) setGroups(s.groups);
     if (s.trucks) setTrucks(s.trucks);
     if (s.containers) setContainers(s.containers);
@@ -1815,12 +1813,14 @@ useEffect(() => {
     if (s.yards) setYards(s.yards);
 
     hydratingRef.current = false;
+    setHydrationDone(true);
   })();
 
   return () => {
     cancelled = true;
   };
 }, [boardId]);
+
 
 // ✅ 他PCの変更を Realtime で反映
 useEffect(() => {
@@ -1879,12 +1879,13 @@ useEffect(() => {
 // ※ロード中は保存しない
 useEffect(() => {
   if (!boardId) return;
+  if (!hydrationDone) return;
   if (hydratingRef.current) return;
 
   const timer = window.setTimeout(async () => {
     const nextVersion = versionRef.current + 1;
 
-    const state: BoardState = {
+    const state = {
       groups,
       trucks,
       containers,
