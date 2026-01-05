@@ -460,7 +460,11 @@ function getOrCreateClientId() {
   const existing = localStorage.getItem(key);
   if (existing) return existing;
 
-  const id = crypto.randomUUID();
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `client-${Math.random().toString(16).slice(2)}-${Date.now()}`;
+
   localStorage.setItem(key, id);
   return id;
 }
@@ -1750,20 +1754,13 @@ useEffect(() => {
     });
   };
 
+  
   // ✅ 初回ロード中フラグ（ロード完了まで save しない）
   const hydratingRef = useRef(true);
   // ✅ 追加：このboardに保存済みstateがあるか
   const hasSavedStateRef = useRef(false);
-  // ✅ 同一端末（タブ）識別子：Realtimeで「自分の更新」を無視する用
-  const clientIdRef = useRef<string>(
-    (() => {
-      try {
-        return crypto.randomUUID();
-      } catch {
-        return `client-${Math.random().toString(16).slice(2)}-${Date.now()}`;
-      }
-    })()
-  );
+
+  const clientIdRef = useRef<string>(getOrCreateClientId());
 
   // ✅ Realtimeの古い更新を捨てる用（あなたのversion方式を使うなら）
   const versionRef = useRef<number>(0);
