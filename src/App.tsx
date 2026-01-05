@@ -881,43 +881,85 @@ useEffect(() => {
       }
       const data = await res.json();
 
-      // 1) まず全部「予備車」として作成
+      // 1) APIの車両をまず素直に作る（初期はspare）
       const apiTrucks: Truck[] = (data.trucks ?? []).map((t: any) => ({
         id: String(t.id),
-        label: t.number,      // 車両_番号
-        carNo: t.carNo,       // 車両_車番
+        label: t.number, // 車両_番号
+        carNo: t.carNo,  // 車両_車番
         location: { type: "spare" as const },
       }));
 
-      // 2) drivers の baseTruckNo に合わせてドライバー枠に割り当て
-      const trucksWithLocation = [...apiTrucks];
-      const usedIndex = new Set<number>();
+      // 2) 保存済みstateが無いときだけ「基本車両」自動割当を適用
+      let apiTrucksWithDefaultLocation = apiTrucks;
 
-      drivers.forEach((d) => {
-        const num = d.baseTruckNo?.trim();
-        if (!num) return;
+      if (!hasSavedStateRef.current) {
+        const trucksWithLocation = [...apiTrucks];
+        const usedIndex = new Set<number>();
 
-        const idx = trucksWithLocation.findIndex(
-          (t, i) => t.label === num && !usedIndex.has(i)
-        );
-        if (idx === -1) return;
+        drivers.forEach((d) => {
+          const num = d.baseTruckNo?.trim();
+          if (!num) return;
 
-        trucksWithLocation[idx] = {
-          ...trucksWithLocation[idx],
-          location: { type: "driver", driverId: d.id },
-        };
-        usedIndex.add(idx);
+          const idx = trucksWithLocation.findIndex(
+            (t, i) => t.label === num && !usedIndex.has(i)
+          );
+          if (idx === -1) return;
+
+          trucksWithLocation[idx] = {
+            ...trucksWithLocation[idx],
+            location: { type: "driver", driverId: d.id },
+          };
+          usedIndex.add(idx);
+        });
+
+        apiTrucksWithDefaultLocation = trucksWithLocation;
+      }
+
+      // 3) ✅ ここが重要：保存済みstateがあるなら「locationは維持」してlabel/carNoだけ更新
+      setTrucks((prev) => {
+        // 保存済みがある ＆ prevがある → 既存配置を守る
+        if (hasSavedStateRef.current && prev.length > 0) {
+          const apiMap = new Map(apiTrucks.map((t) => [t.id, t]));
+          const merged: Truck[] = [];
+
+          // 既存トラックは location を維持しつつ、表示情報だけ最新化
+          for (const p of prev) {
+            const fresh = apiMap.get(p.id);
+            if (!fresh) {
+              // APIに無い（廃車など）場合は残す/消すは好み
+              // 残したいなら `merged.push(p);`
+              // 現実に合わせて消すならスキップ（ここでは消す）
+              continue;
+            }
+            merged.push({
+              ...p,
+              label: fresh.label,
+              carNo: fresh.carNo,
+              // location は p.location を維持
+            });
+          }
+
+          // APIに新規追加された車両があれば追加（初期は spare）
+          const prevIds = new Set(prev.map((t) => t.id));
+          for (const t of apiTrucks) {
+            if (!prevIds.has(t.id)) {
+              merged.push(t);
+            }
+          }
+
+          return merged;
+        }
+
+        // 保存済みが無いなら「自動割当込み」の結果を採用
+        return apiTrucksWithDefaultLocation;
       });
-
-      setTrucks(trucksWithLocation);
     } catch (err) {
       console.error("車両取得に失敗", err);
     }
   }
 
-  // ドライバー情報（baseTruckNo）が入ってから読み込んだ方が都合が良いので drivers を依存にしておく
   fetchTrucks();
-}, [drivers]);
+}, [API_BASE, drivers]);
 
 // ★ 初回マウント時に kintone からシャーシ一覧を取得（全部 川口車庫 に初期配置）
 useEffect(() => {
@@ -932,14 +974,14 @@ useEffect(() => {
 
       const apiGroups: ChassisGroup[] = (data.chassis ?? []).map(
         (c: ApiChassis) => ({
-          id: c.id,
+          id: String(c.id),
           chassisLabel: c.displayNo,
           size: c.size,
           axle: c.axle,
           container: undefined,
           location: {
             type: "pool",
-            yardId: "kawaguchi", // ★ 初期位置は全部 川口車庫
+            yardId: "kawaguchi",
             laneId: "single",
             pos: "front",
           },
@@ -952,14 +994,45 @@ useEffect(() => {
         })
       );
 
-      setGroups(apiGroups);
+      setGroups((prev) => {
+        // ✅ 保存済みがあるなら「location/containerは維持」してマスタだけ更新
+        if (hasSavedStateRef.current && prev.length > 0) {
+          const apiMap = new Map(apiGroups.map((g) => [g.id, g]));
+          const seen = new Set<string>();
+
+          const merged = prev.map((g) => {
+            const fresh = apiMap.get(g.id);
+            if (!fresh) return g; // APIに無いものは維持（好みで削除でもOK）
+            seen.add(g.id);
+
+            return {
+              ...g,
+              chassisLabel: fresh.chassisLabel,
+              size: fresh.size,
+              axle: fresh.axle,
+              extra: fresh.extra,
+              // location / container は prev を残す
+            };
+          });
+
+          // ✅ API側に新規シャーシが増えたら追加（初期位置は川口車庫）
+          for (const g of apiGroups) {
+            if (!seen.has(g.id)) merged.push(g);
+          }
+
+          return merged;
+        }
+
+        // ✅ 保存済みが無いときだけ初期配置
+        return apiGroups;
+      });
     } catch (err) {
       console.error("シャーシ取得に失敗", err);
     }
   }
 
   fetchChassis();
-}, []);
+}, [API_BASE]);
 
 
 const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
@@ -1679,7 +1752,20 @@ useEffect(() => {
 
   // ✅ 初回ロード中フラグ（ロード完了まで save しない）
   const hydratingRef = useRef(true);
-  const clientIdRef = useRef<string>(getOrCreateClientId());
+  // ✅ 追加：このboardに保存済みstateがあるか
+  const hasSavedStateRef = useRef(false);
+  // ✅ 同一端末（タブ）識別子：Realtimeで「自分の更新」を無視する用
+  const clientIdRef = useRef<string>(
+    (() => {
+      try {
+        return crypto.randomUUID();
+      } catch {
+        return `client-${Math.random().toString(16).slice(2)}-${Date.now()}`;
+      }
+    })()
+  );
+
+  // ✅ Realtimeの古い更新を捨てる用（あなたのversion方式を使うなら）
   const versionRef = useRef<number>(0);
 
 
@@ -1705,17 +1791,23 @@ useEffect(() => {
       return;
     }
 
-    const s = (data?.state ?? null) as Partial<BoardState> | null;
+    const s = (data?.state ?? {}) as any;
+
+    // ✅ 保存済みがあるか
+    hasSavedStateRef.current = !!s && Object.keys(s).length > 0;
 
     // データが無いなら何もしない
-    if (!s || Object.keys(s).length === 0) {
-      versionRef.current = 0;
+    if (!hasSavedStateRef.current) {
       hydratingRef.current = false;
       return;
     }
 
     // ✅ version をRefへ反映（無ければ0）
-    versionRef.current = typeof s.version === "number" ? s.version : 0;
+    if (typeof s.version === "number") {
+      versionRef.current = s.version;
+    } else {
+      versionRef.current = 0;
+    }
 
     if (s.groups) setGroups(s.groups);
     if (s.trucks) setTrucks(s.trucks);
