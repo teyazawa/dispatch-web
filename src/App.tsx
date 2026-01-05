@@ -58,6 +58,21 @@ type Container = {
   worker4?: string; 
 };
 
+type BoardState = {
+  groups: ChassisGroup[];
+  trucks: Truck[];
+  containers: Container[];
+  tempContainers: Container[];
+  completedContainers: Container[];
+  driverGroups: DriverGroupConfig;
+  yards: YardConfig[];
+
+  // Realtime同期用（追加）
+  version: number;
+  updatedAt: string;
+  updatedBy: string;
+};
+
 
 type PoolLocation = {
   type: "pool";
@@ -440,6 +455,15 @@ function DraggableGroupCard({ group, onContextMenuGroup }: DraggableGroupCardPro
   );
 }
 
+function getOrCreateClientId() {
+  const key = "dispatch-client-id";
+  const existing = localStorage.getItem(key);
+  if (existing) return existing;
+
+  const id = crypto.randomUUID();
+  localStorage.setItem(key, id);
+  return id;
+}
 
 function DraggableTruckCard({ truck }: { truck: Truck }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
@@ -1655,80 +1679,160 @@ useEffect(() => {
 
   // ✅ 初回ロード中フラグ（ロード完了まで save しない）
   const hydratingRef = useRef(true);
+  const clientIdRef = useRef<string>(getOrCreateClientId());
+  const versionRef = useRef<number>(0);
 
-  // ✅ boardId が確定したら DB から復元
-  useEffect(() => {
-    if (!boardId) return;
 
-    hydratingRef.current = true;
+// ✅ boardId が確定したら DB から復元
+useEffect(() => {
+  if (!boardId) return;
 
-    (async () => {
-      const { data, error } = await supabase
-        .from("dispatch_board_state")
-        .select("state")
-        .eq("board_id", boardId)
-        .maybeSingle();
+  let cancelled = false;
+  hydratingRef.current = true;
 
-      if (error) {
-        console.error("load board state error", error);
-        hydratingRef.current = false;
-        return;
-      }
+  (async () => {
+    const { data, error } = await supabase
+      .from("dispatch_board_state")
+      .select("state")
+      .eq("board_id", boardId)
+      .maybeSingle();
 
-      const s = (data?.state ?? {}) as any;
-      if (!s || Object.keys(s).length === 0) {
-        hydratingRef.current = false;
-        return;
-      }
+    if (cancelled) return;
 
-      if (s.groups) setGroups(s.groups);
-      if (s.trucks) setTrucks(s.trucks);
-      if (s.containers) setContainers(s.containers);
-      if (s.tempContainers) setTempContainers(s.tempContainers);
-      if (s.completedContainers) setCompletedContainers(s.completedContainers);
-      if (s.driverGroups) setDriverGroups(s.driverGroups);
-      if (s.yards) setYards(s.yards);
-
+    if (error) {
+      console.error("load board state error", error);
       hydratingRef.current = false;
-    })();
-  }, [boardId]);
+      return;
+    }
 
-  // ✅ state が変わったら DB に保存（デバウンス）
-  // ※ロード中は保存しない
-  useEffect(() => {
-    if (!boardId) return;
-    if (hydratingRef.current) return;
+    const s = (data?.state ?? null) as Partial<BoardState> | null;
 
-    const timer = window.setTimeout(async () => {
-      const state = {
-        groups,
-        trucks,
-        containers,
-        tempContainers,
-        completedContainers,
-        driverGroups,
-        yards,
-      };
+    // データが無いなら何もしない
+    if (!s || Object.keys(s).length === 0) {
+      versionRef.current = 0;
+      hydratingRef.current = false;
+      return;
+    }
 
-      const { error } = await supabase
-        .from("dispatch_board_state")
-        .upsert({ board_id: boardId, state }, { onConflict: "board_id" });
+    // ✅ version をRefへ反映（無ければ0）
+    versionRef.current = typeof s.version === "number" ? s.version : 0;
 
-      if (error) console.error("save board state error", error);
-    }, 800);
+    if (s.groups) setGroups(s.groups);
+    if (s.trucks) setTrucks(s.trucks);
+    if (s.containers) setContainers(s.containers);
+    if (s.tempContainers) setTempContainers(s.tempContainers);
+    if (s.completedContainers) setCompletedContainers(s.completedContainers);
+    if (s.driverGroups) setDriverGroups(s.driverGroups);
+    if (s.yards) setYards(s.yards);
 
-    return () => window.clearTimeout(timer);
-  }, [
-    boardId,
-    groups,
-    trucks,
-    containers,
-    tempContainers,
-    completedContainers,
-    driverGroups,
-    yards,
-  ]);
+    hydratingRef.current = false;
+  })();
 
+  return () => {
+    cancelled = true;
+  };
+}, [boardId]);
+
+// ✅ 他PCの変更を Realtime で反映
+useEffect(() => {
+  if (!boardId) return;
+
+  const channel = supabase
+    .channel(`dispatch-board-state:${boardId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*", // INSERT/UPDATE両方拾う（upsert対策）
+        schema: "public",
+        table: "dispatch_board_state",
+        filter: `board_id=eq.${boardId}`,
+      },
+      (payload) => {
+        const next = ((payload.new as any)?.state ?? null) as Partial<BoardState> | null;
+        if (!next) return;
+
+        // ① 自分の更新は無視
+        if (next.updatedBy && next.updatedBy === clientIdRef.current) return;
+
+        // ② 古い更新は無視
+        const incomingVersion = typeof next.version === "number" ? next.version : 0;
+        if (incomingVersion <= versionRef.current) return;
+
+        // ③ 反映中は保存を止める（ループ防止）
+        hydratingRef.current = true;
+
+        try {
+          if (next.groups) setGroups(next.groups);
+          if (next.trucks) setTrucks(next.trucks);
+          if (next.containers) setContainers(next.containers);
+          if (next.tempContainers) setTempContainers(next.tempContainers);
+          if (next.completedContainers) setCompletedContainers(next.completedContainers);
+          if (next.driverGroups) setDriverGroups(next.driverGroups);
+          if (next.yards) setYards(next.yards);
+
+          versionRef.current = incomingVersion;
+        } finally {
+          // state反映後のuseEffect暴発を避けて少し遅延解除
+          setTimeout(() => {
+            hydratingRef.current = false;
+          }, 50);
+        }
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [boardId]);
+
+// ✅ state が変わったら DB に保存（デバウンス）
+// ※ロード中は保存しない
+useEffect(() => {
+  if (!boardId) return;
+  if (hydratingRef.current) return;
+
+  const timer = window.setTimeout(async () => {
+    const nextVersion = versionRef.current + 1;
+
+    const state: BoardState = {
+      groups,
+      trucks,
+      containers,
+      tempContainers,
+      completedContainers,
+      driverGroups,
+      yards,
+
+      version: nextVersion,
+      updatedAt: new Date().toISOString(),
+      updatedBy: clientIdRef.current,
+    };
+
+    const { error } = await supabase
+      .from("dispatch_board_state")
+      .upsert({ board_id: boardId, state }, { onConflict: "board_id" });
+
+    if (error) {
+      console.error("save board state error", error);
+      return;
+    }
+
+    // ✅ 保存成功したら version を進める
+    versionRef.current = nextVersion;
+  }, 800);
+
+  return () => window.clearTimeout(timer);
+}, [
+  boardId,
+  groups,
+  trucks,
+  containers,
+  tempContainers,
+  completedContainers,
+  driverGroups,
+  yards,
+]);
 
 
   // 配送レーンに表示すべき日付一覧（containers から動的に）
