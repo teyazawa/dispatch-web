@@ -382,52 +382,74 @@ app.get("/api/containers", async (req, res) => {
     if (!eligibleRecords.length) return res.json({ containers: [] });
 
     const containers = eligibleRecords.map((r) => {
-      const pickupYard = (r["搬出"]?.value ?? "").toString();
-      const pickupYardGroup = resolvePickupYardGroup(pickupYard);
+  const pickupYard = (r["搬出"]?.value ?? "").toString();
+  const pickupYardGroup = resolvePickupYardGroup(pickupYard);
 
-      const sizeRaw = (r["サイズ"]?.value ?? "").toString();
-      let size = "20";
-      if (sizeRaw.includes("40")) size = "40";
+  const sizeRaw = (r["サイズ"]?.value ?? "").toString();
+  let size = "20";
+  if (sizeRaw.includes("40")) size = "40";
 
-      const rawDate = (r["配送日"]?.value ?? "").toString();
-      let date = "";
-      if (rawDate) {
-        const [, mm, dd] = rawDate.split("-");
-        if (mm && dd) date = `${mm}/${dd}`;
-      }
+  const rawDate = (r["配送日"]?.value ?? "").toString();
+  let date = "";
+  if (rawDate) {
+    const [, mm, dd] = rawDate.split("-");
+    if (mm && dd) date = `${mm}/${dd}`;
+  }
 
-      const eta = (r["着時間0"]?.value ?? "").toString();
-      const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
-      const dropoffBase = (r["搬入"]?.value ?? "").toString().trim();
-      const dropoffYard = dropoffOverride || dropoffBase;
+  const eta = (r["着時間0"]?.value ?? "").toString();
 
-      const destinationRaw = (r["配送先_配送依頼"]?.value ?? "").toString();
-      const destination = stripCompanyTokens(destinationRaw);
+  const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
+  const dropoffBase     = (r["搬入"]?.value ?? "").toString().trim();
+  const dropoffYard     = dropoffOverride || dropoffBase;
 
-      const destadd = (r["配送先住所"]?.value ?? "").toString();
-      const desttel = (r["連絡先電話番号"]?.value ?? "").toString();
-      const no = (r["コンテナ番号_配送依頼"]?.value ?? "").toString();
-      const ship = (r["本船名_配送依頼"]?.value ?? "").toString();
-      const booking = (r["BL_BK"]?.value ?? "").toString();
-      const kindCode = (r["種類"]?.value ?? "").toString();
+  const destinationRaw = (r["配送先_配送依頼"]?.value ?? "").toString();
+  const destination = stripCompanyTokens(destinationRaw);
 
-      return {
-        id: r.$id.value,
-        size,
-        date,
-        eta,
-        pickupYard,
-        pickupYardGroup,
-        dropoffYard,
-        destination,
-        destadd,
-        desttel,
-        no,
-        ship,
-        booking,
-        kindCode,
-      };
-    });
+  const destadd  = (r["配送先住所"]?.value ?? "").toString();
+  const desttel  = (r["連絡先電話番号"]?.value ?? "").toString();
+  const no       = (r["コンテナ番号_配送依頼"]?.value ?? "").toString();
+  const ship     = (r["本船名_配送依頼"]?.value ?? "").toString();
+  const booking  = (r["BL_BK"]?.value ?? "").toString();
+  const kindCode = (r["種類"]?.value ?? "").toString();
+
+  // ✅ 追加：step / worker4
+  const stepRaw = (r["配車_工程"]?.value ?? "").toString().trim();
+  let step;
+  if (stepRaw) {
+    const n = Number(stepRaw);
+    if (Number.isFinite(n)) {
+      step = n;
+    } else {
+      // "④" や "step4" みたいな表現が混ざっても拾える保険
+      const m = stepRaw.match(/\d+/);
+      if (m) step = Number(m[0]);
+    }
+  }
+
+  const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
+
+  return {
+    id: r.$id.value,
+    size,
+    date,
+    eta,
+    pickupYard,
+    pickupYardGroup,
+    dropoffYard,
+    destination,
+    destadd,
+    desttel,
+    no,
+    ship,
+    booking,
+    kindCode,
+
+    // ✅ 追加
+    step,     // 数値（取れない場合は undefined → JSONでは省略されます）
+    worker4,  // 文字列（空なら ""）
+  };
+});
+
 
     return res.json({ containers });
   } catch (err) {
