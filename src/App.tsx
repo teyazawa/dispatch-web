@@ -315,13 +315,6 @@ function buildDeliveryMail(container: Container, driver: Driver): {
   };
 }
 
-const BOARD_LS_KEY = "dispatch-board-id";
-
-function getInitialBoardId() {
-  const qs = new URLSearchParams(window.location.search);
-  return qs.get("board") || localStorage.getItem(BOARD_LS_KEY) || "";
-}
-
 /** DnD コンポーネント */
 type DraggableGroupCardProps = {
   group: ChassisGroup;
@@ -577,10 +570,6 @@ function App() {
 
     const [boardId, setBoardId] = useState<string>("");
 
-    useEffect(() => {
-      setBoardId(getInitialBoardId());
-    }, []);
-
     const [userId, setUserId] = useState<string>("");
     
     // ✅ ログイン状態（userId）だけを App で保持
@@ -686,12 +675,10 @@ function App() {
     // ✅ DB復元が完了したか（fetchChassisの初期配置を走らせる/止める判定に使う）
     const [hydrationDone, setHydrationDone] = useState(false);
 
-    // ✅ DBにgroupsが保存されていたか（trueならfetchChassisで川口車庫初期配置をしない）
-    const [hasStoredGroups, setHasStoredGroups] = useState(false);
-
     // ✅ 保存済みstateがあるか（trucksの「基本車両の自動割当」を抑止する用）
     const hasSavedStateRef = useRef(false);
 
+    const hasStoredGroupsRef = useRef(false);
 
     // state が変わったら ref へ反映
     useEffect(() => { containersRef.current = containers; }, [containers]);
@@ -977,12 +964,19 @@ useEffect(() => {
 
 // ★ シャーシ一覧を取得（ただし保存済みboardでは初期配置で上書きしない）
 useEffect(() => {
+
+  console.log("[fetchChassis guard]", {
+  boardId,
+  hydrationDone,
+  hasStoredGroupsRef: hasStoredGroupsRef.current,
+  hasSavedState: hasSavedStateRef.current,
+});
   // boardIdが確定して、DB復元が終わるまで待つ
   if (!boardId) return;
   if (!hydrationDone) return;
 
   // ✅ すでにDBにgroupsがあるなら、川口車庫初期配置の setGroups をしない
-  if (hasStoredGroups) return;
+  if (hasStoredGroupsRef.current) return;
 
   let cancelled = false;
 
@@ -1029,7 +1023,7 @@ useEffect(() => {
   return () => {
     cancelled = true;
   };
-}, [boardId, hydrationDone, hasStoredGroups, API_BASE]);
+}, [boardId, hydrationDone, API_BASE]);
 
 
 const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
@@ -1766,7 +1760,6 @@ useEffect(() => {
 
   // いったん初期化
   setHydrationDone(false);
-  setHasStoredGroups(false);
   hasSavedStateRef.current = false;
 
   (async () => {
@@ -1800,9 +1793,8 @@ useEffect(() => {
     // ✅ groups が保存されていたら true（fetchChassisの初期配置を止める）
     const storedGroups =
       Array.isArray(s.groups) && s.groups.length > 0;
-
-    setHasStoredGroups(storedGroups);
-
+    hasStoredGroupsRef.current = storedGroups;
+  
     // state反映
     if (s.groups) setGroups(s.groups);
     if (s.trucks) setTrucks(s.trucks);
