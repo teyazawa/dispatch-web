@@ -395,75 +395,59 @@ app.get("/api/containers", async (req, res) => {
     if (!eligibleRecords.length) return res.json({ containers: [] });
 
     const containers = eligibleRecords.map((r) => {
-  const pickupYard = (r["搬出"]?.value ?? "").toString();
-  const pickupYardGroup = resolvePickupYardGroup(pickupYard);
+      const pickupYard = (r["搬出"]?.value ?? "").toString();
+      const pickupYardGroup = resolvePickupYardGroup(pickupYard);
 
-  const sizeRaw = (r["サイズ"]?.value ?? "").toString();
-  let size = "20";
-  if (sizeRaw.includes("40")) size = "40";
+      const sizeRaw = (r["サイズ"]?.value ?? "").toString();
+      let size = "20";
+      if (sizeRaw.includes("40")) size = "40";
 
-  const rawDate = (r["配送日"]?.value ?? "").toString();
-  let date = "";
-  if (rawDate) {
-    const [, mm, dd] = rawDate.split("-");
-    if (mm && dd) date = `${mm}/${dd}`;
-  }
+      const rawDate = (r["配送日"]?.value ?? "").toString();
+      let date = "";
+      if (rawDate) {
+        const [, mm, dd] = rawDate.split("-");
+        if (mm && dd) date = `${mm}/${dd}`;
+      }
 
-  const eta = (r["着時間0"]?.value ?? "").toString();
+      const eta = (r["着時間0"]?.value ?? "").toString();
 
-  const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
-  const dropoffBase     = (r["搬入"]?.value ?? "").toString().trim();
-  const dropoffYard     = dropoffOverride || dropoffBase;
+      const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
+      const dropoffBase = (r["搬入"]?.value ?? "").toString().trim();
+      const dropoffYard = dropoffOverride || dropoffBase;
 
-  const destinationRaw = (r["配送先_配送依頼"]?.value ?? "").toString();
-  const destination = stripCompanyTokens(destinationRaw);
+      const destinationRaw = (r["配送先_配送依頼"]?.value ?? "").toString();
+      const destination = stripCompanyTokens(destinationRaw);
 
-  const destadd  = (r["配送先住所"]?.value ?? "").toString();
-  const desttel  = (r["連絡先電話番号"]?.value ?? "").toString();
-  const no       = (r["コンテナ番号_配送依頼"]?.value ?? "").toString();
-  const ship     = (r["本船名_配送依頼"]?.value ?? "").toString();
-  const booking  = (r["BL_BK"]?.value ?? "").toString();
-  const kindCode = (r["種類"]?.value ?? "").toString();
+      const destadd = (r["配送先住所"]?.value ?? "").toString();
+      const desttel = (r["連絡先電話番号"]?.value ?? "").toString();
+      const no = (r["コンテナ番号_配送依頼"]?.value ?? "").toString();
+      const ship = (r["本船名_配送依頼"]?.value ?? "").toString();
+      const booking = (r["BL_BK"]?.value ?? "").toString();
+      const kindCode = (r["種類"]?.value ?? "").toString();
 
-  // ✅ 追加：step / worker4
-  const stepRaw = (r["配車_工程"]?.value ?? "").toString().trim();
-  let step;
-  if (stepRaw) {
-    const n = Number(stepRaw);
-    if (Number.isFinite(n)) {
-      step = n;
-    } else {
-      // "④" や "step4" みたいな表現が混ざっても拾える保険
-      const m = stepRaw.match(/\d+/);
-      if (m) step = Number(m[0]);
-    }
-  }
+      // ✅ ここが重要：step を必ず数値で返す（0なら未設定）
+      const step = parseStepValue(r);
+      const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
 
-  const step = parseStepValue(r);
-  const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
-
-  return {
-    id: r.$id.value,
-    size,
-    date,
-    eta,
-    pickupYard,
-    pickupYardGroup,
-    dropoffYard,
-    destination,
-    destadd,
-    desttel,
-    no,
-    ship,
-    booking,
-    kindCode,
-
-    // ✅ 追加
-    step,     // 数値（取れない場合は undefined → JSONでは省略されます）
-    worker4,  // 文字列（空なら ""）
-  };
-});
-
+      return {
+        id: r.$id.value,
+        size,
+        date,
+        eta,
+        pickupYard,
+        pickupYardGroup,
+        dropoffYard,
+        destination,
+        destadd,
+        desttel,
+        no,
+        ship,
+        booking,
+        kindCode,
+        step,     // ★ 常に 0〜4 が入る（undefinedにならない）
+        worker4,  // ★ 空なら ""
+      };
+    });
 
     return res.json({ containers });
   } catch (err) {
@@ -558,53 +542,48 @@ app.get("/api/containers/updates", async (req, res) => {
     const containers = [];
     const ackTargets = [];
 
-for (const r of records) {
-  const stepRaw = (r["配車_工程"]?.value ?? "").toString().trim();
-  if (!stepRaw) continue;
+    for (const r of records) {
+      const step = parseStepValue(r);
 
-  const step = Number(stepRaw); // ★これが必要
-  if (!Number.isFinite(step)) continue;
+      // 工程が入ってない(=0)ものは誤更新の可能性があるので返さない＆ACKもしない
+      if (!step) continue;
 
-  const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
-  const dropoffBase = (r["搬入"]?.value ?? "").toString().trim();
-  const dropoffYard = dropoffOverride || dropoffBase;
+      const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
+      const dropoffBase = (r["搬入"]?.value ?? "").toString().trim();
+      const dropoffYard = dropoffOverride || dropoffBase;
 
-  const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
+      const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
 
-  containers.push({
-    id: r.$id.value,
-    no: (r["コンテナ番号_配送依頼"]?.value ?? "").toString(),
-    dropoffYard,
-    step,
-    worker4,
-  });
+      containers.push({
+        id: r.$id.value,
+        no: (r["コンテナ番号_配送依頼"]?.value ?? "").toString(),
+        dropoffYard,
+        step,
+        worker4,
+      });
 
-const step = parseStepValue(r);
-if (!step) continue; // 0 は未設定なのでスキップしたいなら
+      // ★ step=4 のときだけ ACK 対象にする
+      if (step === 4) {
+        ackTargets.push(r.$id.value);
+      }
+    }
 
-containers.push({ ... , step, worker4 });
-
-  // ★ step=4 のときだけ ACK 対象にする
-  if (step === 4) {
-    ackTargets.push(r.$id.value);
-  }
-}
-
-    // 返すものが無いなら更新もしない
     if (!containers.length) return res.json({ containers: [] });
 
-    // ACK（配車_更新2 を済）…ただし書き込み許可のときのみ
+    // ACK（配車_更新2 を済）…ただし書き込み許可のときのみ ＆ step=4 のものだけ
     if (ALLOW_KINTONE_WRITE) {
-      const chunks = chunk(ackTargets, 100);
-      for (const part of chunks) {
-        await kintonePutRecords({
-          appId: CONTAINER_APP_ID,
-          apiToken: CONTAINER_API_TOKEN,
-          records: part.map((id) => ({
-            id,
-            record: { 配車_更新2: { value: ["済"] } }, // ← ここが修正点（配車_更新2）
-          })),
-        });
+      if (ackTargets.length > 0) {
+        const chunks = chunk(ackTargets, 100);
+        for (const part of chunks) {
+          await kintonePutRecords({
+            appId: CONTAINER_APP_ID,
+            apiToken: CONTAINER_API_TOKEN,
+            records: part.map((id) => ({
+              id,
+              record: { 配車_更新2: { value: ["済"] } },
+            })),
+          });
+        }
       }
     } else {
       console.log("[updates] skip kintone update (ALLOW_KINTONE_WRITE != true)");
