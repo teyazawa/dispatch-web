@@ -283,12 +283,35 @@ function buildDayLabel(date: string): string {
   return `${day.replace(/^0/, "")}日`;
 }
 
+function normalizeSizeRaw(sizeRaw?: string): string {
+  const s = (sizeRaw ?? "").toString().trim();
+  if (!s) return "";
+  return s.replace(/’/g, "'").replace(/\s+/g, " ");
+}
+
+function mailBodySizeLabel(container: Container, sizeRaw?: string): string {
+  const raw = normalizeSizeRaw(sizeRaw);
+
+  const heightMatch = raw.match(/\b(8'6|9'6)\b/);
+  const height = heightMatch?.[1];
+
+  const base = container.size === "40" ? "40" : "20";
+
+  if (height) return `${base} ${height}`;
+  if (raw) return raw;
+
+  return container.size === "40" ? "40F" : "20F";
+}
+
+
 /** 取り用の件名＋本文 */
 function buildPickupMail(
   container: Container,
-  apiBase: string
+  apiBase: string,
+  sizeRaw?: string
 ): { subject: string; body: string } {
-  const sizeLabel = container.size === "40" ? "40F" : "20F";
+  const subjectSize = container.size === "40" ? "40F" : "20F"; // 件名用
+  const bodySize = mailBodySizeLabel(container, sizeRaw);      // 本文用（フル）
 
   const handoverLine = container.handoverNo
     ? `引渡番号：${container.handoverNo}`
@@ -300,7 +323,7 @@ function buildPickupMail(
     apiBase
   );
 
-  const subject = `【${container.pickupYard}取り】 ${sizeLabel} ${container.no}`;
+  const subject = `【${container.pickupYard}取り】 ${subjectSize} ${container.no}`;
 
   const bodyLines = [
     "",
@@ -308,7 +331,7 @@ function buildPickupMail(
     container.booking ? `BL/BK：${container.booking}` : "",
     `搬出：${container.pickupYard}`,
     `コンテナ：${container.no}`,
-    `サイズ：${sizeLabel}／${container.kindCode}`,
+    `サイズ：${bodySize}／${container.kindCode}`,
     handoverLine,
     dispatchBlock,
     "",
@@ -321,10 +344,12 @@ function buildPickupMail(
 /** 配送用の件名＋本文 */
 function buildDeliveryMail(
   container: Container,
-  apiBase: string
+  apiBase: string,
+  sizeRaw?: string
 ): { subject: string; body: string } {
   const dayLabel = buildDayLabel(container.date);
-  const sizeLabel = container.size === "40" ? "40F" : "20F";
+  const subjectSize = container.size === "40" ? "40F" : "20F"; // 件名用
+  const bodySize = mailBodySizeLabel(container, sizeRaw);      // 本文用（フル）
 
   const receiptBlock = fileLinksText(
     "受領書",
@@ -332,13 +357,13 @@ function buildDeliveryMail(
     apiBase
   );
 
-  const subject = `【${dayLabel}分配送】 ${container.eta}着 ${container.destination} ${sizeLabel} ${container.no}`;
+  const subject = `【${dayLabel}配送分】 ${container.eta}着 ${container.destination} ${subjectSize} ${container.no}`;
 
   const bodyLines = [
     "",
     `時間：${container.eta}`,
     `コンテナ：${container.no}`,
-    `サイズ：${sizeLabel}／${container.kindCode}`,
+    `サイズ：${bodySize}／${container.kindCode}`,
     `配送先：${container.destination}`,
     container.destadd ? `住所：${container.destadd}` : "",
     container.desttel ? `TEL：${container.desttel}` : "",
@@ -633,6 +658,7 @@ function App() {
 
     // ✅ ログイン後に boardId を確定（URL優先 → localStorage → 新規作成）
     const initBoardRanRef = useRef(false);
+    const containerMetaRef = useRef<Map<string, { sizeRaw?: string }>>(new Map());
 
     useEffect(() => {
       // 未ログインなら何もしない
@@ -844,11 +870,13 @@ function App() {
       alert("このドライバーにはメールアドレスが設定されていません。");
       return;
     }
+    
+    const sizeRaw = containerMetaRef.current.get(c.id)?.sizeRaw;
 
     const { subject, body } =
       mode === "pickup"
-        ? buildPickupMail(c, API_BASE)
-        : buildDeliveryMail(c, API_BASE);
+        ? buildPickupMail(c, API_BASE, sizeRaw)
+        : buildDeliveryMail(c, API_BASE, sizeRaw);
 
     const mailto = `mailto:${encodeURIComponent(
       d.email
@@ -1124,28 +1152,47 @@ useEffect(() => {
       }
       const data = await res.json();
 
-      // fetched はここで作っている前提
-const fetched: Container[] = (data.containers ?? []).map((c: any) => ({
-  id: String(c.id),
-  size: c.size as Size,
-  date: c.date,
-  eta: c.eta,
-  pickupYardGroup: c.pickupYardGroup,
-  pickupYard: c.pickupYard,
-  no: c.no,
-  kindCode: c.kindCode,
-  destination: c.destination,
-  dropoffYard: c.dropoffYard,
-  ship: c.ship,
-  booking: c.booking,
-  destadd: c.destadd,
-  desttel: c.desttel,
-  handoverNo: (c.handoverNo ?? "").toString().trim(),
-  receiptFiles: Array.isArray(c.receiptFiles) ? c.receiptFiles : [],
-  dispatchFiles: Array.isArray(c.dispatchFiles) ? c.dispatchFiles : [],
-  worker4: (c.worker4 ?? "").toString().trim(),
-  step: c.step ?? undefined,
-}));
+// fetched はここで作っている前提
+const fetched: Container[] = (data.containers ?? []).map((c: any) => {
+  const id = String(c.id);
+
+  // ★ sizeRaw は state に入れず Ref に保存（メール本文用）
+  const sizeRaw = (c.sizeRaw ?? "").toString().trim();
+  if (sizeRaw) {
+    containerMetaRef.current.set(id, {
+      sizeRaw: sizeRaw.replace(/’/g, "'").replace(/\s+/g, " "),
+    });
+  } else {
+    // APIがsizeRawを返さない/空のときは一応消しておく（任意）
+    containerMetaRef.current.delete(id);
+  }
+
+  return {
+    id,
+
+    // stateは軽く：サイズは従来通り 20/40 のみ
+    size: c.size as Size,
+    date: c.date,
+    eta: c.eta,
+    pickupYardGroup: c.pickupYardGroup,
+    pickupYard: c.pickupYard,
+    no: c.no,
+    kindCode: c.kindCode,
+    destination: c.destination,
+    dropoffYard: c.dropoffYard,
+    ship: c.ship,
+    booking: c.booking,
+    destadd: c.destadd,
+    desttel: c.desttel,
+
+    handoverNo: (c.handoverNo ?? "").toString().trim(),
+    receiptFiles: Array.isArray(c.receiptFiles) ? c.receiptFiles : [],
+    dispatchFiles: Array.isArray(c.dispatchFiles) ? c.dispatchFiles : [],
+
+    worker4: (c.worker4 ?? "").toString().trim(),
+    step: c.step ?? undefined,
+  };
+});
 
 if (isCancelled) return;
 

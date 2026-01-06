@@ -447,6 +447,7 @@ app.get("/api/containers", async (req, res) => {
       return {
         id: r.$id.value,
         size,
+	sizeRaw
         date,
         eta,
         pickupYard,
