@@ -47,10 +47,13 @@ type KintoneFileLink = {
 function fileLinksText(
   label: string,
   files: Array<{ fileKey: string; name?: string }> | undefined,
-  apiBase?: string
+  apiBase?: string,
+  emptyText: string = "" // ✅ 追加：未指定なら今まで通り「空文字」
 ) {
   const list = (files ?? []).filter((f) => f?.fileKey);
-  if (list.length === 0) return "";
+
+  // ✅ 変更：空のときは emptyText があれば返す
+  if (list.length === 0) return emptyText ? `${label}：${emptyText}` : "";
 
   const base = (apiBase ?? "").replace(/\/$/, "");
   if (!base) {
@@ -334,6 +337,7 @@ function buildPickupMail(
     `サイズ：${bodySize}／${container.kindCode}`,
     handoverLine,
     dispatchBlock,
+    "備考",
     "",
     "よろしくお願いします。",
   ].filter(Boolean);
@@ -354,7 +358,7 @@ function buildDeliveryMail(
   const receiptBlock = fileLinksText(
     "受領書",
     container.receiptFiles,
-    apiBase
+    apiBase, "なし"
   );
 
   const subject = `【${dayLabel}配送分】 ${container.eta}着 ${container.destination} ${subjectSize} ${container.no}`;
@@ -368,6 +372,7 @@ function buildDeliveryMail(
     container.destadd ? `住所：${container.destadd}` : "",
     container.desttel ? `TEL：${container.desttel}` : "",
     receiptBlock,
+    "備考",
     "",
     "よろしくお願いします。",
   ].filter(Boolean);
