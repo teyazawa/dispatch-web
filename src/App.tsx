@@ -36,6 +36,30 @@ type Truck = {
 /** どこまで進んでいるか（将来用） */
 type ContainerStep = 0 | 1 | 2 | 3 | 4; // 0=未着手, 1〜4=①〜④
 
+type KintoneFileLink = {
+  name: string;
+  fileKey: string;
+  contentType?: string;
+  size?: string;
+  url: string; // /api/kintone/file?...（相対）
+};
+
+function fileLinksText(
+  title: string,
+  files?: KintoneFileLink[],
+  apiBase?: string
+): string {
+  const arr = Array.isArray(files) ? files : [];
+  if (arr.length === 0) return "";
+
+  const lines = arr.map((f) => {
+    const abs = apiBase ? `${apiBase}${f.url}` : f.url;
+    return `- ${f.name}\n  ${abs}`;
+  });
+
+  return `${title}\n${lines.join("\n")}`;
+}
+
 /** コンテナ（A） */
 type Container = {
   id: string;
@@ -52,7 +76,9 @@ type Container = {
   kindCode: string;     // D, R など略称
   destination: string;  // 配送先名 例: "千葉RDC"
   dropoffYard: string;  // 搬入ヤード 例: "青海EIR"
-
+  handoverNo?: string;  // 引渡番号
+  receiptFiles?: KintoneFileLink[];  //受領書link
+  dispatchFiles?: KintoneFileLink[];  //ディスパッチlink
   /** 工程ステップ（サーバーから渡してもらう想定） */
   step?: ContainerStep;
   worker4?: string; 
@@ -250,28 +276,38 @@ function buildDayLabel(date: string): string {
 }
 
 /** 取り用の件名＋本文 */
-function buildPickupMail(container: Container, driver: Driver): {
-  subject: string;
-  body: string;
-} {
-  const dayLabel = buildDayLabel(container.date);
+function buildPickupMail(
+  container: Container,
+  driver: Driver,
+  apiBase?: string
+): { subject: string; body: string } {
   const sizeLabel = container.size === "40" ? "40F" : "20F";
 
-  const subject = `【取り】${dayLabel} ${container.eta} ${container.pickupYard} ${sizeLabel} ${container.no}`;
+  const handoverLine = container.handoverNo
+    ? `引渡番号：${container.handoverNo}`
+    : "";
+
+  const dispatchBlock = fileLinksText(
+    "ディスパッチ",
+    (container as any).dispatchFiles,
+    apiBase
+  );
+
+  const subject = `【取り】${container.pickupYard} ${sizeLabel} ${container.no}`;
 
   const bodyLines = [
     `${driver.name} さん`,
     "",
-    "下記コンテナの取りのご依頼です。",
+    "お疲れ様です。",
+    "下記コンテナの取りをお願いします。",
     "",
-    `日付：${dayLabel}`,
-    `時間：${container.eta}`,
+    container.ship ? `本船名：${container.ship}` : "",
+    container.booking ? `BL/BK：${container.booking}` : "",
     `搬出：${container.pickupYard}`,
-    `搬入：${container.dropoffYard}`,
-    `コンテナ：${container.no}（${sizeLabel}／${container.kindCode}）`,
-    `配送先：${container.destination}`,
-    container.destadd ? `住所：${container.destadd}` : "",
-    container.desttel ? `TEL：${container.desttel}` : "",
+    `コンテナ：${container.no}`,
+    `サイズ：${sizeLabel}`,
+    handoverLine,
+    dispatchBlock ? `\n${dispatchBlock}` : "",
     "",
     "よろしくお願いします。",
   ].filter(Boolean);
@@ -283,28 +319,40 @@ function buildPickupMail(container: Container, driver: Driver): {
 }
 
 /** 配送用の件名＋本文 */
-function buildDeliveryMail(container: Container, driver: Driver): {
-  subject: string;
-  body: string;
-} {
+function buildDeliveryMail(
+  container: Container,
+  driver: Driver,
+  apiBase?: string
+): { subject: string; body: string } {
   const dayLabel = buildDayLabel(container.date);
   const sizeLabel = container.size === "40" ? "40F" : "20F";
+
+  const handoverLine = container.handoverNo
+    ? `引渡番号：${container.handoverNo}`
+    : "";
+
+  const receiptBlock = fileLinksText(
+    "受領書",
+    (container as any).receiptFiles,
+    apiBase
+  );
 
   const subject = `【配送】${dayLabel} ${container.eta} ${container.destination} ${sizeLabel} ${container.no}`;
 
   const bodyLines = [
     `${driver.name} さん`,
     "",
-    "下記コンテナの配送のご依頼です。",
+    "お疲れ様です。",
+    "下記コンテナの配送をお願いします。",
     "",
     `日付：${dayLabel}`,
     `時間：${container.eta}`,
-    `搬出：${container.pickupYard}`,
-    `搬入：${container.dropoffYard}`,
     `コンテナ：${container.no}（${sizeLabel}／${container.kindCode}）`,
     `配送先：${container.destination}`,
     container.destadd ? `住所：${container.destadd}` : "",
     container.desttel ? `TEL：${container.desttel}` : "",
+    handoverLine,
+    receiptBlock ? `\n${receiptBlock}` : "",
     "",
     "よろしくお願いします。",
   ].filter(Boolean);
@@ -812,8 +860,8 @@ function App() {
 
     const { subject, body } =
       mode === "pickup"
-        ? buildPickupMail(c, d)
-        : buildDeliveryMail(c, d);
+        ? buildPickupMail(c, d, API_BASE)
+        : buildDeliveryMail(c, d, API_BASE);
 
     const mailto = `mailto:${encodeURIComponent(
       d.email
@@ -1105,6 +1153,9 @@ const fetched: Container[] = (data.containers ?? []).map((c: any) => ({
   booking: c.booking,
   destadd: c.destadd,
   desttel: c.desttel,
+  handoverNo: (c.handoverNo ?? "").toString().trim(),
+  receiptFiles: Array.isArray(c.receiptFiles) ? c.receiptFiles : [],
+  dispatchFiles: Array.isArray(c.dispatchFiles) ? c.dispatchFiles : [],
   worker4: (c.worker4 ?? "").toString().trim(),
   step: c.step ?? undefined,
 }));
@@ -1221,6 +1272,9 @@ useEffect(() => {
           dropoffYard: p.dropoffYard ?? c.dropoffYard,
           step: p.step ?? c.step,
           worker4: (p.worker4 ?? c.worker4 ?? "").toString().trim(),
+          handoverNo: p.handoverNo ?? c.handoverNo,
+          receiptFiles: p.receiptFiles ?? c.receiptFiles,
+          dispatchFiles: p.dispatchFiles ?? c.dispatchFiles,
         };
       };
 
