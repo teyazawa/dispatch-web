@@ -45,19 +45,27 @@ type KintoneFileLink = {
 };
 
 function fileLinksText(
-  title: string,
-  files?: KintoneFileLink[],
+  label: string,
+  files: Array<{ fileKey: string; name?: string }> | undefined,
   apiBase?: string
-): string {
-  const arr = Array.isArray(files) ? files : [];
-  if (arr.length === 0) return "";
+) {
+  const list = (files ?? []).filter((f) => f?.fileKey);
+  if (list.length === 0) return "";
 
-  const lines = arr.map((f) => {
-    const abs = apiBase ? `${apiBase}${f.url}` : f.url;
-    return `- ${f.name}\n  ${abs}`;
+  const base = (apiBase ?? "").replace(/\/$/, "");
+  if (!base) {
+    // apiBase が無いとURLが作れないので、ラベルだけ返す（デバッグしやすい）
+    return `${label}：ファイルあり（apiBase未設定）`;
+  }
+
+  const urls = list.map((f) => {
+    const name = (f.name ?? "file").toString();
+    return `${base}/api/kintone/file?fileKey=${encodeURIComponent(
+      f.fileKey
+    )}&name=${encodeURIComponent(name)}`;
   });
 
-  return `${title}\n${lines.join("\n")}`;
+  return `${label}：\n${urls.map((u) => `- ${u}`).join("\n")}`;
 }
 
 /** コンテナ（A） */
@@ -279,7 +287,7 @@ function buildDayLabel(date: string): string {
 function buildPickupMail(
   container: Container,
   driver: Driver,
-  apiBase?: string
+  apiBase: string
 ): { subject: string; body: string } {
   const sizeLabel = container.size === "40" ? "40F" : "20F";
 
@@ -289,7 +297,7 @@ function buildPickupMail(
 
   const dispatchBlock = fileLinksText(
     "ディスパッチ",
-    (container as any).dispatchFiles,
+    container.dispatchFiles,
     apiBase
   );
 
@@ -306,35 +314,27 @@ function buildPickupMail(
     `搬出：${container.pickupYard}`,
     `コンテナ：${container.no}`,
     `サイズ：${sizeLabel}`,
-    `引渡番号：${container.handoverNo}`,
     handoverLine,
-    dispatchBlock ? `\n${dispatchBlock}` : "",
+    dispatchBlock,
     "",
     "よろしくお願いします。",
   ].filter(Boolean);
 
-  return {
-    subject,
-    body: bodyLines.join("\n"),
-  };
+  return { subject, body: bodyLines.join("\n") };
 }
 
 /** 配送用の件名＋本文 */
 function buildDeliveryMail(
   container: Container,
   driver: Driver,
-  apiBase?: string
+  apiBase: string
 ): { subject: string; body: string } {
   const dayLabel = buildDayLabel(container.date);
   const sizeLabel = container.size === "40" ? "40F" : "20F";
 
-  const handoverLine = container.handoverNo
-    ? `引渡番号：${container.handoverNo}`
-    : "";
-
   const receiptBlock = fileLinksText(
     "受領書",
-    (container as any).receiptFiles,
+    container.receiptFiles,
     apiBase
   );
 
@@ -352,16 +352,12 @@ function buildDeliveryMail(
     `配送先：${container.destination}`,
     container.destadd ? `住所：${container.destadd}` : "",
     container.desttel ? `TEL：${container.desttel}` : "",
-    handoverLine,
-    receiptBlock ? `\n${receiptBlock}` : "",
+    receiptBlock,
     "",
     "よろしくお願いします。",
   ].filter(Boolean);
 
-  return {
-    subject,
-    body: bodyLines.join("\n"),
-  };
+  return { subject, body: bodyLines.join("\n") };
 }
 
 /** DnD コンポーネント */
