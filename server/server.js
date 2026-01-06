@@ -543,39 +543,36 @@ app.post("/api/containers/mark-board-done", async (req, res) => {
 app.get("/api/kintone/file", async (req, res) => {
   try {
     if (!SUBDOMAIN || !CONTAINER_API_TOKEN) {
-      return res.status(500).json({ error: "Missing env (SUBDOMAIN / CONTAINER_API_TOKEN)" });
+      return res.status(500).json({ error: "Missing env for kintone file proxy" });
     }
 
     const fileKey = String(req.query.fileKey || "").trim();
-    const name = String(req.query.name || "file").trim();
+    const name = String(req.query.name || "").trim();
 
     if (!fileKey) return res.status(400).json({ error: "fileKey is required" });
 
-    const baseUrl = kintoneBaseUrl();
-    const r = await axios.get(`${baseUrl}/file.json`, {
+    const url = `${kintoneBaseUrl()}/file.json`;
+    const kRes = await axios.get(url, {
       headers: { "X-Cybozu-API-Token": CONTAINER_API_TOKEN },
       params: { fileKey },
-      responseType: "arraybuffer",
-      validateStatus: () => true,
+      responseType: "stream",
     });
 
-    if (r.status >= 400) {
-      return res.status(r.status).send(r.data);
-    }
+    const ct = kRes.headers["content-type"] || "application/octet-stream";
+    res.setHeader("Content-Type", ct);
 
-    const contentType = r.headers["content-type"] || "application/octet-stream";
-    res.setHeader("Content-Type", contentType);
+    // なるべく名前を付ける（名前が無ければ fileKey）
+    const filename = name || `${fileKey}`;
+    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(filename)}`);
 
-    // 文字化け回避（簡易）
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename*=UTF-8''${encodeURIComponent(name)}`
-    );
-
-    return res.send(Buffer.from(r.data));
+    kRes.data.pipe(res);
   } catch (err) {
-    console.error("kintone file proxy error:", err?.message);
-    return res.status(500).json({ error: "file download failed", detail: err?.message });
+    console.error("===== kintone file proxy error =====");
+    console.error("status:", err.response?.status);
+    console.error("data  :", err.response?.data);
+    console.error("msg   :", err.message);
+    console.error("====================================");
+    res.status(500).json({ error: "Failed to proxy kintone file", detail: err.message });
   }
 });
 
