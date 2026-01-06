@@ -75,6 +75,19 @@ function assertContainerEnv(res) {
   return true;
 }
 
+function mapKintoneFiles(fileFieldValue) {
+  const arr = Array.isArray(fileFieldValue) ? fileFieldValue : [];
+  return arr.map((f) => ({
+    name: f.name,
+    fileKey: f.fileKey,
+    contentType: f.contentType,
+    size: f.size,
+    // フロントから叩けるようにAPIのURLを返す（添付はできないのでリンク用途）
+    url: `/api/kintone/file?fileKey=${encodeURIComponent(f.fileKey)}&name=${encodeURIComponent(f.name)}`,
+  }));
+}
+
+
 function shouldSkipDestination(destRaw) {
   const s = (destRaw ?? "").toString().trim();
   if (!s) return false;
@@ -424,7 +437,9 @@ app.get("/api/containers", async (req, res) => {
       const ship = (r["本船名_配送依頼"]?.value ?? "").toString();
       const booking = (r["BL_BK"]?.value ?? "").toString();
       const kindCode = (r["種類"]?.value ?? "").toString();
-
+      const handoverNo = (r["引渡番号"]?.value ?? "").toString().trim();
+      const receiptFiles = mapKintoneFiles(r["受領書"]?.value ?? []);
+      const dispatchFiles = mapKintoneFiles(r["ディスパッチ"]?.value ?? []);
       // ✅ ここが重要：step を必ず数値で返す（0なら未設定）
       const step = parseStepValue(r);
       const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
@@ -444,6 +459,9 @@ app.get("/api/containers", async (req, res) => {
         ship,
         booking,
         kindCode,
+	handoverNo,
+	receiptFiles,
+	dispatchFiles,
         step,     // ★ 常に 0〜4 が入る（undefinedにならない）
         worker4,  // ★ 空なら ""
       };
@@ -516,6 +534,52 @@ app.post("/api/containers/mark-board-done", async (req, res) => {
     });
   }
 });
+
+/** =========================
+ *  Kintone添付ファイルを落とすAPIを追加
+ *  フロントにトークンを出さないために サーバーでプロキシします。
+ *  ========================= */
+
+app.get("/api/kintone/file", async (req, res) => {
+  try {
+    if (!SUBDOMAIN || !CONTAINER_API_TOKEN) {
+      return res.status(500).json({ error: "Missing env (SUBDOMAIN / CONTAINER_API_TOKEN)" });
+    }
+
+    const fileKey = String(req.query.fileKey || "").trim();
+    const name = String(req.query.name || "file").trim();
+
+    if (!fileKey) return res.status(400).json({ error: "fileKey is required" });
+
+    const baseUrl = kintoneBaseUrl();
+    const r = await axios.get(`${baseUrl}/file.json`, {
+      headers: { "X-Cybozu-API-Token": CONTAINER_API_TOKEN },
+      params: { fileKey },
+      responseType: "arraybuffer",
+      validateStatus: () => true,
+    });
+
+    if (r.status >= 400) {
+      return res.status(r.status).send(r.data);
+    }
+
+    const contentType = r.headers["content-type"] || "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+
+    // 文字化け回避（簡易）
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(name)}`
+    );
+
+    return res.send(Buffer.from(r.data));
+  } catch (err) {
+    console.error("kintone file proxy error:", err?.message);
+    return res.status(500).json({ error: "file download failed", detail: err?.message });
+  }
+});
+
+
 
 /** =========================
  *  GET /api/containers/updates
