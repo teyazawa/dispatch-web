@@ -306,7 +306,8 @@ function buildPickupMail(
     `搬出：${container.pickupYard}`,
     `コンテナ：${container.no}`,
     `サイズ：${sizeLabel}`,
-    handoverLine,
+    `引渡番号：${container.handoverNo}`,
+
     dispatchBlock ? `\n${dispatchBlock}` : "",
     "",
     "よろしくお願いします。",
