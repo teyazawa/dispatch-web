@@ -286,7 +286,6 @@ function buildDayLabel(date: string): string {
 /** 取り用の件名＋本文 */
 function buildPickupMail(
   container: Container,
-  driver: Driver,
   apiBase: string
 ): { subject: string; body: string } {
   const sizeLabel = container.size === "40" ? "40F" : "20F";
@@ -301,19 +300,15 @@ function buildPickupMail(
     apiBase
   );
 
-  const subject = `【取り】${container.pickupYard} ${sizeLabel} ${container.no}`;
+  const subject = `【${container.pickupYard}取り】 ${sizeLabel} ${container.no}`;
 
   const bodyLines = [
-    `${driver.name} さん`,
-    "",
-    "お疲れ様です。",
-    "下記コンテナの取りをお願いします。",
     "",
     container.ship ? `本船名：${container.ship}` : "",
     container.booking ? `BL/BK：${container.booking}` : "",
     `搬出：${container.pickupYard}`,
     `コンテナ：${container.no}`,
-    `サイズ：${sizeLabel}`,
+    `サイズ：${sizeLabel}／${container.kindCode}`,
     handoverLine,
     dispatchBlock,
     "",
@@ -326,7 +321,6 @@ function buildPickupMail(
 /** 配送用の件名＋本文 */
 function buildDeliveryMail(
   container: Container,
-  driver: Driver,
   apiBase: string
 ): { subject: string; body: string } {
   const dayLabel = buildDayLabel(container.date);
@@ -338,17 +332,13 @@ function buildDeliveryMail(
     apiBase
   );
 
-  const subject = `【配送】${dayLabel} ${container.eta} ${container.destination} ${sizeLabel} ${container.no}`;
+  const subject = `【${dayLabel}分配送】 ${container.eta}着 ${container.destination} ${sizeLabel} ${container.no}`;
 
   const bodyLines = [
-    `${driver.name} さん`,
     "",
-    "お疲れ様です。",
-    "下記コンテナの配送をお願いします。",
-    "",
-    `日付：${dayLabel}`,
     `時間：${container.eta}`,
-    `コンテナ：${container.no}（${sizeLabel}／${container.kindCode}）`,
+    `コンテナ：${container.no}`,
+    `サイズ：${sizeLabel}／${container.kindCode}`,
     `配送先：${container.destination}`,
     container.destadd ? `住所：${container.destadd}` : "",
     container.desttel ? `TEL：${container.desttel}` : "",
@@ -857,8 +847,8 @@ function App() {
 
     const { subject, body } =
       mode === "pickup"
-        ? buildPickupMail(c, d, API_BASE)
-        : buildDeliveryMail(c, d, API_BASE);
+        ? buildPickupMail(c, API_BASE)
+        : buildDeliveryMail(c, API_BASE);
 
     const mailto = `mailto:${encodeURIComponent(
       d.email
