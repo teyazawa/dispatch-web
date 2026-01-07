@@ -618,16 +618,22 @@ function DraggableTruckCard({ truck }: { truck: Truck }) {
 function DraggableContainerCard({
   container,
   isCompleted,
+  sizeColors,
 }: {
   container: Container;
   isCompleted?: boolean;
+  sizeColors?: Record<string, string>;
 }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: `cont-${container.id}`,
   });
 
+  const sizeKey = `size-${container.size}`; // size-20 / size-40
+  const sizeColor = sizeColors?.[sizeKey];
+
   const style: React.CSSProperties = {
     transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
+    ...(sizeColor ? { borderLeft: `5px solid ${sizeColor}` } : {}),
   };
 
   const full = formatContainerSummary(container);
@@ -665,7 +671,6 @@ function DraggableContainerCard({
     </div>
   );
 }
-
 
 function DroppableArea({
   id,
@@ -1808,7 +1813,7 @@ if (overId.startsWith("driver-") && overId.endsWith("-group")) {
     const cid = id.replace("cont-", "");
     const found = findContainerById(cid);
     if (!found) return null;
-    return <DraggableContainerCard container={found.container} />;
+    return <DraggableContainerCard container={found.container} sizeColors={sizeColors}/>;
   }
 
   return null;
@@ -2158,6 +2163,8 @@ useEffect(() => {
 
   // 配送レーンに表示すべき日付一覧（containers から動的に）
   const dayKeys = Array.from(new Set(containers.map((c) => c.date))).sort();
+  const legend20 = sizeColors?.["size-20"];
+  const legend40 = sizeColors?.["size-40"];
 
   return (
     <>
@@ -2190,10 +2197,19 @@ useEffect(() => {
             <div className="legend-group legend-group-size">
               <div className="legend-row">
                 <span className="legend-item">
-                  <span className="legend-color legend-size-20" />20F
+                  <span
+                    className="legend-color"
+                    style={{ background: legend20 ?? "transparent" }} 
+                  />
+                  20F
                 </span>
+                
                 <span className="legend-item">
-                  <span className="legend-color legend-size-40" />40F
+                  <span
+                    className="legend-color"
+                    style={{ background: legend40 ?? "transparent" }}
+                  />
+                  40F
                 </span>
               </div>
             </div>
@@ -2558,6 +2574,7 @@ useEffect(() => {
                             <DraggableContainerCard
                               key={c.id}
                               container={c}
+                              sizeColors={sizeColors}
                             />
                           ))}
                       </DroppableArea>
@@ -2586,7 +2603,7 @@ useEffect(() => {
               className="slot-row-wrap"
             >
               {tempContainers.map((c) => (
-                <DraggableContainerCard key={c.id} container={c} />
+                <DraggableContainerCard key={c.id} container={c} sizeColors={sizeColors}/>
               ))}
             </DroppableArea>
           </div>
@@ -2612,6 +2629,7 @@ useEffect(() => {
       <DraggableContainerCard
         key={`done-${c.id}`}
         container={c}
+        sizeColors={sizeColors}
         isCompleted
       />
     ))}
