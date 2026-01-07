@@ -842,34 +842,34 @@ body {
 }
 
 /* 1軸：紫 */
-.chassis-card.axle-1 {
+/*.chassis-card.axle-1 {
   border-top: 6px solid #a855f7;
 }
 
 /* 2軸：黄 */
-.chassis-card.axle-2 {
+/*.chassis-card.axle-2 {
   border-top: 6px solid #facc15; /* 明るくて見やすい黄色 */
-}
+/*}
 
 /* 3軸：赤 */
-.chassis-card.axle-3 {
+/*.chassis-card.axle-3 {
   border-top: 6px solid #ef4444;
 }
 
 /* MG：水色 */
-.chassis-card.axle-MG {
+/*.chassis-card.axle-MG {
   border-top: 6px solid #22d3ee;
 }
 
 /* 2個積み：黒 */
-.chassis-card.axle-2stack {
+/*.chassis-card.axle-2stack {
   border-top: 6px solid #111827;
 }
 
 /* ★ 兼用：緑 */
-.chassis-card.axle-both {
+/*.chassis-card.axle-both {
   border-top: 6px solid #22c55e;
-}
+}*/
 
 .delivery-yard-row {
   display: grid;
