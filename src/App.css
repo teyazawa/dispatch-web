@@ -18,6 +18,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-width: max-content;
   max-width: 100%;
 }
 
@@ -152,6 +153,13 @@ body {
   overflow-x: visible;
   overflow-y: visible; /* 基本ここは visible でOK */
   margin-top: 72px;  /* ヘッダーの高さに合わせて調整 */
+}
+
+/* 全体を横スクロールさせる */
+.app-scroll-x {
+  width: 100vw;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* パネル共通 */

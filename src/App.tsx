@@ -3,6 +3,8 @@ import "./App.css";
 import { DndContext, useDraggable, useDroppable } from "@dnd-kit/core";
 import { supabase } from "./lib/supabase";
 import AuthBar from "./components/AuthBar";
+import { DragOverlay } from "@dnd-kit/core";
+import { createPortal } from "react-dom";
 
 
 
@@ -664,6 +666,8 @@ function DroppableArea({
 /** メイン */
 
 function App() {
+
+    const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
     const [boardId, setBoardId] = useState<string>("");
 
@@ -1750,6 +1754,35 @@ if (overId.startsWith("driver-") && overId.endsWith("-group")) {
     }
   }
 
+  function renderDragOverlay(id: string) {
+  // シャーシグループ(A or A+C)
+  if (id.startsWith("group-")) {
+    const gid = id.replace("group-", "");
+    const g = groupsRef.current.find((x) => x.id === gid);
+    if (!g) return null;
+    return <DraggableGroupCard group={g} />;
+  }
+
+  // 車両(B)
+  if (id.startsWith("truck-")) {
+    const tid = id.replace("truck-", "");
+    const t = trucks.find((x) => x.id === tid);
+    if (!t) return null;
+    return <DraggableTruckCard truck={t} />;
+  }
+
+  // コンテナ(A)
+  if (id.startsWith("cont-")) {
+    const cid = id.replace("cont-", "");
+    const found = findContainerById(cid);
+    if (!found) return null;
+    return <DraggableContainerCard container={found.container} />;
+  }
+
+  return null;
+}
+
+
   // kind が入っていないドライバーは除外
   const effectiveDrivers = drivers.filter((d) => d.kind !== "unknown");
 
@@ -2078,79 +2111,80 @@ useEffect(() => {
 
   return (
     <>
+      <div className="app-scroll-x">
       <div className="app-root">
       <header className="header">
         
 
-    {/* 左側：タイトル＋サブタイトル */}
-    <div className="header-main">
+        {/* 左側：タイトル＋サブタイトル */}
+        <div className="header-main">
 
-      <h1 className="title">
-        配車表
-      </h1>
-      <p className="subtitle">
-        左：シャーシプール／ 中央：ドライバー＋車両B＋C・A+C ／
-        右：配送分（A）＋一時保管＋配送完了
-      </p>
-    </div>
-
-    <div className="header-right">
-
-        <AuthBar />
-
-        {/* ★ ここがヘッダー右側の凡例 */}
-        <div className="header-legend">
-        {/* アイコン群を 3ブロックで横並び */}
-        <div className="legend-icons-row">
-        {/* サイズ */}
-        <div className="legend-group legend-group-size">
-          <div className="legend-row">
-            <span className="legend-item">
-              <span className="legend-color legend-size-20" />20F
-            </span>
-            <span className="legend-item">
-              <span className="legend-color legend-size-40" />40F
-            </span>
-          </div>
+          <h1 className="title">
+            配車表
+          </h1>
+          <p className="subtitle">
+            左：シャーシプール／ 中央：ドライバー＋車両B＋C・A+C ／
+            右：配送分（A）＋一時保管＋配送完了
+          </p>
         </div>
 
-        {/* 軸 / 種別 */}
-        <div className="legend-group legend-group-axle">
-          <div className="legend-row">
-            <span className="legend-item">
-              <span className="legend-color legend-axle-1" />1軸
-            </span>
-            <span className="legend-item">
-              <span className="legend-color legend-axle-2" />2軸
-            </span>
-            <span className="legend-item">
-              <span className="legend-color legend-axle-3" />3軸
-            </span>
-            <span className="legend-item">
-              <span className="legend-color legend-axle-MG" />MG
-            </span>
-            <span className="legend-item">
-              <span className="legend-color legend-axle-2stack" />2個積
-            </span>
-            <span className="legend-item">
-              <span className="legend-color legend-axle-both" />兼用
-            </span>
-          </div>
-        </div>
+        <div className="header-right">
 
-        {/* 状態 */}
-        <div className="legend-group legend-group-load">
-          <div className="legend-row">
-            <span className="legend-item">
-              <span className="legend-color legend-load-empty" />空
-            </span>
-            <span className="legend-item">
-              <span className="legend-color legend-load-loaded" />積載
-            </span>
+            <AuthBar />
+
+            {/* ★ ここがヘッダー右側の凡例 */}
+            <div className="header-legend">
+            {/* アイコン群を 3ブロックで横並び */}
+            <div className="legend-icons-row">
+            {/* サイズ */}
+            <div className="legend-group legend-group-size">
+              <div className="legend-row">
+                <span className="legend-item">
+                  <span className="legend-color legend-size-20" />20F
+                </span>
+                <span className="legend-item">
+                  <span className="legend-color legend-size-40" />40F
+                </span>
+              </div>
+            </div>
+
+            {/* 軸 / 種別 */}
+            <div className="legend-group legend-group-axle">
+              <div className="legend-row">
+                <span className="legend-item">
+                  <span className="legend-color legend-axle-1" />1軸
+                </span>
+                <span className="legend-item">
+                  <span className="legend-color legend-axle-2" />2軸
+                </span>
+                <span className="legend-item">
+                  <span className="legend-color legend-axle-3" />3軸
+                </span>
+                <span className="legend-item">
+                  <span className="legend-color legend-axle-MG" />MG
+                </span>
+                <span className="legend-item">
+                  <span className="legend-color legend-axle-2stack" />2個積
+                </span>
+                <span className="legend-item">
+                  <span className="legend-color legend-axle-both" />兼用
+                </span>
+              </div>
+            </div>
+
+            {/* 状態 */}
+            <div className="legend-group legend-group-load">
+              <div className="legend-row">
+                <span className="legend-item">
+                  <span className="legend-color legend-load-empty" />空
+                </span>
+                <span className="legend-item">
+                  <span className="legend-color legend-load-loaded" />積載
+                </span>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
      <button
      className="settings-button btn-primary"
      onClick={() => setIsSettingsOpen(true)}
@@ -2161,7 +2195,14 @@ useEffect(() => {
   </header>
     
 
-      <DndContext onDragEnd={handleDragEnd}>
+      <DndContext
+        onDragStart={(e) => setActiveDragId(String(e.active.id))}
+        onDragCancel={() => setActiveDragId(null)}
+        onDragEnd={(e) => {
+          setActiveDragId(null);
+          handleDragEnd(e);
+        }}
+      >
         <div className="main">
           {/* 左：シャーシプール＋予備車 */}
           <div
@@ -2500,6 +2541,13 @@ useEffect(() => {
     />
 
         </div>
+      
+      {createPortal(
+        <DragOverlay style={{ zIndex: 999999 }}>
+          {activeDragId ? renderDragOverlay(activeDragId) : null}
+        </DragOverlay>,
+        document.body
+      )}
 
       </DndContext>
 
@@ -2793,6 +2841,7 @@ useEffect(() => {
           </button>
         </div>
       )}
+    </div>
     </div>
   </>
   );
