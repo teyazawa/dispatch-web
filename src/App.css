@@ -2,16 +2,42 @@
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
   color-scheme: light !important;
+
+  --app-bg: #f3f4f6;
+  --header-bg: #ffffff;
+  --header-border: #e5e7eb;
+  --main-bg: transparent; /* 基本は透明でOK（app-bgが下にある） */
+
+  /* 背景画像 */
+  --bg-image: none;
+  --bg-size: cover;
+  --bg-position: center;
+  --bg-repeat: no-repeat;
+  --bg-opacity: 0.18; /* 0〜1 */
 }
 
 html,
 body {
   margin: 0;
-  background: #f3f4f6 !important;
+  background: var(--app-bg) !important;
   color: #111111 !important;
   /* 💡 横方向にはスクロールバーを出さない */
   max-width: 100%;
   overflow-x: hidden;
+}
+
+/* 背景画像（bodyの擬似要素で薄く敷く：コンテンツを邪魔しにくい） */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: var(--bg-image);
+  background-size: var(--bg-size);
+  background-position: var(--bg-position);
+  background-repeat: var(--bg-repeat);
+  opacity: var(--bg-opacity);
+  pointer-events: none;
+  z-index: 0;
 }
 
 .app-root {
@@ -20,12 +46,14 @@ body {
   min-height: 100vh;
   min-width: max-content;
   max-width: 100%;
+  position: relative;
+  z-index: 1;
 }
 
 .header {
   padding: 8px 20px;
-  border-bottom: 1px solid #e5e7eb;
-  background: linear-gradient(90deg, #eff6ff, #ecfeff);
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--header-border);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;

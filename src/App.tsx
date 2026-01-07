@@ -110,11 +110,31 @@ type BoardState = {
   sizeColors?: Record<string, string>;
 
   // Realtime同期用（追加）
+  theme?: ThemeSettings;
   version: number;
   updatedAt: string;
   updatedBy: string;
 };
 
+type ThemeSettings = {
+  appBg?: string;
+  headerBg?: string;
+  bgImageUrl?: string; // Storage の公開URL（+ cache bust）
+  bgSize?: "cover" | "contain" | "auto";
+  bgPosition?: "center" | "top" | "bottom" | "left" | "right";
+  bgRepeat?: "no-repeat" | "repeat" | "repeat-x" | "repeat-y";
+  bgOpacity?: number; // 0〜1
+};
+
+const DEFAULT_THEME: ThemeSettings = {
+  appBg: "#f3f4f6",
+  headerBg: "#ffffff",
+  bgImageUrl: "",
+  bgSize: "cover",
+  bgPosition: "center",
+  bgRepeat: "no-repeat",
+  bgOpacity: 0.18,
+};
 
 type PoolLocation = {
   type: "pool";
@@ -697,6 +717,34 @@ function DroppableArea({
   );
 }
 
+async function uploadThemeBgToStorage(
+  file: File,
+  boardId: string
+): Promise<string> {
+  const bucket = "dispatch-assets";
+
+  // 同名で上書き（URLは cache 対策で ?v= を付ける）
+  const ext = (file.name.split(".").pop() || "png").toLowerCase();
+  const path = `${boardId}/theme/bg.${ext}`;
+
+  const { error: upErr } = await supabase.storage
+    .from(bucket)
+    .upload(path, file, {
+      upsert: true,
+      contentType: file.type || "image/png",
+      cacheControl: "3600",
+    });
+
+  if (upErr) throw upErr;
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  const publicUrl = data.publicUrl;
+
+  // CDNキャッシュ回避（上書きしても即反映させるため）
+  return `${publicUrl}?v=${Date.now()}`;
+}
+
+
 /** メイン */
 
 function App() {
@@ -788,6 +836,23 @@ function App() {
 
       initBoard();
     }, [userId]);
+
+        const [theme, setTheme] = useState<ThemeSettings>(DEFAULT_THEME);
+
+      useEffect(() => {
+        const root = document.documentElement;
+
+        root.style.setProperty("--app-bg", theme.appBg || DEFAULT_THEME.appBg!);
+        root.style.setProperty("--header-bg", theme.headerBg || DEFAULT_THEME.headerBg!);
+
+        const img = theme.bgImageUrl ? `url("${theme.bgImageUrl}")` : "none";
+        root.style.setProperty("--bg-image", img);
+
+        root.style.setProperty("--bg-size", theme.bgSize || "cover");
+        root.style.setProperty("--bg-position", theme.bgPosition || "center");
+        root.style.setProperty("--bg-repeat", theme.bgRepeat || "no-repeat");
+        root.style.setProperty("--bg-opacity", String(theme.bgOpacity ?? 0.18));
+      }, [theme]);
 
     const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
     const [groups, setGroups] = useState<ChassisGroup[]>([]);
@@ -2000,6 +2065,7 @@ useEffect(() => {
     if (s.kindColors) setKindColors(s.kindColors);
     if (s.axleColors) setAxleColors(s.axleColors);
     if (s.sizeColors) setSizeColors(s.sizeColors);
+    if (s.theme) setTheme({ ...DEFAULT_THEME, ...s.theme });
 
     // ✅ version も合わせる（Realtimeの古い更新を弾くため）
     if (typeof s.version === "number") {
@@ -2055,6 +2121,7 @@ useEffect(() => {
           if (next.kindColors) setKindColors(next.kindColors);
           if (next.axleColors) setAxleColors(next.axleColors);
           if (next.sizeColors) setSizeColors(next.sizeColors);
+          if (next.theme) setTheme({ ...DEFAULT_THEME, ...next.theme });
 
           versionRef.current = incomingVersion;
         } finally {
@@ -2093,6 +2160,7 @@ useEffect(() => {
       kindColors,
       axleColors,
       sizeColors,
+      theme,
 
       version: nextVersion,
       updatedAt: new Date().toISOString(),
@@ -2125,6 +2193,7 @@ useEffect(() => {
   kindColors,
   axleColors,
   sizeColors,
+  theme,
   hydrationDone,
 ]);
 
@@ -2165,6 +2234,8 @@ useEffect(() => {
   const dayKeys = Array.from(new Set(containers.map((c) => c.date))).sort();
   const legend20 = sizeColors?.["size-20"];
   const legend40 = sizeColors?.["size-40"];
+
+  const [themeUploading, setThemeUploading] = useState(false);
 
   return (
     <>
@@ -2396,7 +2467,7 @@ useEffect(() => {
             })}
 
 
-            <h3 style={{ marginTop: 12, marginBottom: 4 }}>予備車（B）</h3>
+            <h3 style={{ marginTop: 12, marginBottom: 4 }}>予備車</h3>
             <DroppableArea
               id="zone-spare-trucks"
               placeholder="ここに予備車Bをドロップ"
@@ -2663,6 +2734,143 @@ useEffect(() => {
             onClick={(e) => e.stopPropagation()}
           >
             <h2>設定</h2>
+
+
+            <h3>表示テーマ</h3>
+
+<div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
+  {/* 全体背景色 */}
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div style={{ width: 120 }}>全体背景色</div>
+    <input
+      type="color"
+      value={theme.appBg ?? DEFAULT_THEME.appBg!}
+      onChange={(e) => setTheme((p) => ({ ...p, appBg: e.target.value }))}
+    />
+    <button
+      className="btn-small btn-delete"
+      onClick={() => setTheme((p) => ({ ...p, appBg: DEFAULT_THEME.appBg }))}
+    >
+      戻す
+    </button>
+  </div>
+
+  {/* ヘッダー背景色 */}
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div style={{ width: 120 }}>ヘッダー背景色</div>
+    <input
+      type="color"
+      value={theme.headerBg ?? DEFAULT_THEME.headerBg!}
+      onChange={(e) => setTheme((p) => ({ ...p, headerBg: e.target.value }))}
+    />
+    <button
+      className="btn-small btn-delete"
+      onClick={() => setTheme((p) => ({ ...p, headerBg: DEFAULT_THEME.headerBg }))}
+    >
+      戻す
+    </button>
+  </div>
+
+  {/* 背景画像アップロード（Storage） */}
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div style={{ width: 120 }}>背景画像</div>
+
+    <input
+      type="file"
+      accept="image/*"
+      disabled={themeUploading || !boardId}
+      onChange={async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+          setThemeUploading(true);
+          const url = await uploadThemeBgToStorage(file, boardId);
+          setTheme((p) => ({ ...p, bgImageUrl: url }));
+        } catch (err) {
+          console.error("bg upload failed:", err);
+          alert("背景画像のアップロードに失敗しました。");
+        } finally {
+          setThemeUploading(false);
+          e.currentTarget.value = ""; // 同じファイルを選び直せるように
+        }
+      }}
+    />
+
+    <button
+      className="btn-small btn-delete"
+      disabled={themeUploading}
+      onClick={() => setTheme((p) => ({ ...p, bgImageUrl: "" }))}
+    >
+      なし
+    </button>
+
+    <div style={{ fontSize: 12, color: "#6b7280" }}>
+      {themeUploading ? "アップロード中…" : theme.bgImageUrl ? "設定済み" : "未設定"}
+    </div>
+  </div>
+
+  {/* 背景画像の調整 */}
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div style={{ width: 120 }}>表示サイズ</div>
+    <select
+      value={theme.bgSize ?? "cover"}
+      onChange={(e) => setTheme((p) => ({ ...p, bgSize: e.target.value as any }))}
+    >
+      <option value="cover">cover（全体にフィット）</option>
+      <option value="contain">contain（全体が入る）</option>
+      <option value="auto">auto（原寸）</option>
+    </select>
+
+    <div style={{ width: 70 }}>透明度</div>
+    <input
+      type="range"
+      min={0}
+      max={1}
+      step={0.01}
+      value={theme.bgOpacity ?? 0.18}
+      onChange={(e) => setTheme((p) => ({ ...p, bgOpacity: Number(e.target.value) }))}
+    />
+    <div style={{ width: 48 }}>
+      {(theme.bgOpacity ?? 0.18).toFixed(2)}
+    </div>
+  </div>
+
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div style={{ width: 120 }}>繰り返し</div>
+    <select
+      value={theme.bgRepeat ?? "no-repeat"}
+      onChange={(e) => setTheme((p) => ({ ...p, bgRepeat: e.target.value as any }))}
+    >
+      <option value="no-repeat">なし</option>
+      <option value="repeat">繰り返し</option>
+      <option value="repeat-x">横だけ</option>
+      <option value="repeat-y">縦だけ</option>
+    </select>
+
+    <div style={{ width: 70 }}>位置</div>
+    <select
+      value={theme.bgPosition ?? "center"}
+      onChange={(e) => setTheme((p) => ({ ...p, bgPosition: e.target.value as any }))}
+    >
+      <option value="center">中央</option>
+      <option value="top">上</option>
+      <option value="bottom">下</option>
+      <option value="left">左</option>
+      <option value="right">右</option>
+    </select>
+  </div>
+
+  <button
+    className="btn-small btn-delete"
+    onClick={() => setTheme(DEFAULT_THEME)}
+    disabled={themeUploading}
+  >
+    テーマを初期化
+  </button>
+</div>
+
+
 
             <h3>サイズ色（左端）</h3>
 
