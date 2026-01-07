@@ -2180,10 +2180,7 @@ useEffect(() => {
             <img className="title-logo" src={tezukaLogo} alt="TEZUKA express" />
             配車表
           </h1>
-          <p className="subtitle">
-            左：シャーシプール／ 中央：ドライバー＋車両B＋C・A+C ／
-            右：配送分（A）＋一時保管＋配送完了
-          </p>
+
         </div>
 
         <div className="header-right">

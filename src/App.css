@@ -135,15 +135,15 @@ body {
 
 .title {
   margin: 0;
-  font-size: 30px;
+  font-size: 40px;
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
 .title-logo {
-  width: 34px;     /* 好みで 28〜40px あたり */
-  height: 34px;
+  width: 40px;     /* 好みで 28〜40px あたり */
+  height: 40px;
   object-fit: contain;
   flex: 0 0 auto;
   border-radius: 6px;  /* 角丸不要なら消してOK */
