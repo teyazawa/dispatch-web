@@ -923,13 +923,13 @@ body {
 }
 
 /* サイズ */
-.legend-size-20 {
+/*.legend-size-20 {
   background: #3b82f6;
 }
 
 .legend-size-40 {
   background: #f97316;
-}
+}*/
 
 /* 軸種別 */
 /*.legend-axle-1 {
@@ -1013,8 +1013,9 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  height: 6px;          /* 帯の太さ（好みで 4〜8px） */
+  height: 4px;          /* 帯の太さ（好みで 4〜8px） */
   z-index: 0;           /* 本文より下に */
+  opacity: 0.9;
   pointer-events: none; /* DnD やクリックを邪魔しない */
 }
 
@@ -1033,13 +1034,13 @@ body {
 }
 
 /* === シャーシ：サイズ別 左端色 ==================== */
-.chassis-card.size-20 {
+/*.chassis-card.size-20 {
   border-left: 5px solid #3b82f6;  /* 20F 青 */
-}
+/*}
 
 .chassis-card.size-40 {
   border-left: 5px solid #f97316;  /* 40F オレンジ */
-}
+/*}
 
 /* === シャーシ：空 / 積載 右端色 ==================== */
 .chassis-card.chassis-empty {
@@ -1051,12 +1052,12 @@ body {
 }
 
 /* === コンテナ A：サイズ別 左端色（必要なら） ======= */
-.container-card.size-20 {
+/*.container-card.size-20 {
   border-left: 5px solid #3b82f6;
 }
 .container-card.size-40 {
   border-left: 5px solid #f97316;
-}
+}*/
 .mail-context-menu {
   position: fixed;
   z-index: 9999;

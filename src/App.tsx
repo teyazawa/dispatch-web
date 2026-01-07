@@ -107,6 +107,7 @@ type BoardState = {
   yards: YardConfig[];
   axleColors?: Record<string, string>;
   kindColors?: Record<string, string>;
+  sizeColors?: Record<string, string>;
 
   // Realtime同期用（追加）
   version: number;
@@ -419,33 +420,44 @@ function buildDeliveryMail(
 /** DnD コンポーネント */
 type DraggableGroupCardProps = {
   group: ChassisGroup;
-  onContextMenuGroup?: (e: React.MouseEvent<HTMLDivElement>, group: ChassisGroup) => void;
-  kindColors?: Record<string, string>;
+  onContextMenuGroup?: (
+    e: React.MouseEvent<HTMLDivElement>,
+    group: ChassisGroup
+  ) => void;
+
   axleColors?: Record<string, string>;
+  kindColors?: Record<string, string>;
+  sizeColors?: Record<string, string>; // 追加（size-20 / size-40 など）
 };
 
 function DraggableGroupCard({
   group,
   onContextMenuGroup,
-  kindColors,
   axleColors,
+  kindColors,
+  sizeColors,
 }: DraggableGroupCardProps) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: `group-${group.id}`,
   });
 
-  const axleKey = `axle-${group.axle}`;
-  const axleColor = axleColors?.[axleKey];
+  const axleKey = `axle-${group.axle}`;          // axle-1 / axle-2 ...
+  const axleColor = axleColors?.[axleKey];       // 未設定なら undefined
+
+  const sizeKey = `size-${group.size}`;          // size-20 / size-40
+  const sizeColor = sizeColors?.[sizeKey];       // 未設定なら undefined
+
+  const kindLabel = group.extra?.kindLabel ?? "";
+  const kindColor = kindLabel ? kindColors?.[kindLabel] : undefined;
 
   const style: React.CSSProperties = {
     transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
     zIndex: transform ? 9999 : "auto",
     position: transform ? "relative" : "static",
-    ...(axleColor ? { borderTop: `6px solid ${axleColor}` } : {}),
-  };
 
-  const kindLabel = group.extra?.kindLabel ?? "";
-  const kindColor = kindLabel ? kindColors?.[kindLabel] : undefined;
+    ...(axleColor ? { borderTop: `6px solid ${axleColor}` } : {}),
+    ...(sizeColor ? { borderLeft: `5px solid ${sizeColor}` } : {}),
+  };
 
   const isAC = !!group.container;
   const statusClass = isAC ? "chassis-loaded" : "chassis-empty";
@@ -795,6 +807,7 @@ function App() {
     // ✅ シャーシ種別（kindLabel）→ 色（#RRGGBB）
     const [kindColors, setKindColors] = useState<Record<string, string>>({});
     const [axleColors, setAxleColors] = useState<Record<string, string>>({});
+    const [sizeColors, setSizeColors] = useState<Record<string, string>>({});
 
     // ✅ 保存済みstateがあるか（trucksの「基本車両の自動割当」を抑止する用）
     const hasSavedStateRef = useRef(false);
@@ -1779,7 +1792,7 @@ if (overId.startsWith("driver-") && overId.endsWith("-group")) {
     const gid = id.replace("group-", "");
     const g = groupsRef.current.find((x) => x.id === gid);
     if (!g) return null;
-    return <DraggableGroupCard group={g} kindColors={kindColors} axleColors={axleColors} />;
+    return <DraggableGroupCard group={g} kindColors={kindColors} axleColors={axleColors} sizeColors={sizeColors}/>;
   }
 
   // 車両(B)
@@ -1981,6 +1994,12 @@ useEffect(() => {
     if (s.yards) setYards(s.yards);
     if (s.kindColors) setKindColors(s.kindColors);
     if (s.axleColors) setAxleColors(s.axleColors);
+    if (s.sizeColors) setSizeColors(s.sizeColors);
+
+    // ✅ version も合わせる（Realtimeの古い更新を弾くため）
+    if (typeof s.version === "number") {
+      versionRef.current = s.version;
+    }
 
     hydratingRef.current = false;
     setHydrationDone(true);
@@ -2030,6 +2049,7 @@ useEffect(() => {
           if (next.yards) setYards(next.yards);
           if (next.kindColors) setKindColors(next.kindColors);
           if (next.axleColors) setAxleColors(next.axleColors);
+          if (next.sizeColors) setSizeColors(next.sizeColors);
 
           versionRef.current = incomingVersion;
         } finally {
@@ -2067,6 +2087,7 @@ useEffect(() => {
       yards,
       kindColors,
       axleColors,
+      sizeColors,
 
       version: nextVersion,
       updatedAt: new Date().toISOString(),
@@ -2098,6 +2119,8 @@ useEffect(() => {
   yards,
   kindColors,
   axleColors,
+  sizeColors,
+  hydrationDone,
 ]);
 
 // ✅ 救済（任意）：存在しない yardId のものを川口車庫に戻す
@@ -2309,7 +2332,7 @@ useEffect(() => {
                             g.location.yardId === yard.id
                         )
                         .map((g) => (
-                          <DraggableGroupCard key={g.id} group={g} kindColors={kindColors} axleColors={axleColors}/>
+                          <DraggableGroupCard key={g.id} group={g} kindColors={kindColors} axleColors={axleColors} sizeColors={sizeColors}/>
                         ))}
                     </DroppableArea>
                   ) : (
@@ -2346,7 +2369,7 @@ useEffect(() => {
                                 className="slot-pool"
                                 placeholder={group ? "" : " "}
                               >
-                                {group && <DraggableGroupCard group={group} />}
+                                {group && <DraggableGroupCard group={group} axleColors={axleColors} sizeColors={sizeColors} kindColors={kindColors}/>}
                               </DroppableArea>
                             );
                           })}
@@ -2424,6 +2447,7 @@ useEffect(() => {
                       group={group}
                       kindColors={kindColors}
                       axleColors={axleColors}
+                      sizeColors={sizeColors}
                       onContextMenuGroup={(e, g) => openMailMenu(e, g, d)}
                       />}
                     </DroppableArea>
@@ -2478,6 +2502,7 @@ useEffect(() => {
                       group={group}
                       kindColors={kindColors}
                       axleColors={axleColors}
+                      sizeColors={sizeColors}
                       onContextMenuGroup={(e, g) => openMailMenu(e, g, d)}
                       />}
                     </DroppableArea>
@@ -2622,6 +2647,46 @@ useEffect(() => {
             onClick={(e) => e.stopPropagation()}
           >
             <h2>設定</h2>
+
+            <h3>サイズ色（左端）</h3>
+
+{[
+  { key: "size-20", label: "20F" },
+  { key: "size-40", label: "40F" },
+].map((x) => {
+  const current = sizeColors[x.key];
+  return (
+    <div key={x.key} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+      <div style={{ width: 60 }}>{x.label}</div>
+
+      <input
+        type="color"
+        value={current ?? "#000000"}
+        onChange={(e) => {
+          const v = e.target.value;
+          setSizeColors((prev) => ({ ...prev, [x.key]: v }));
+        }}
+      />
+
+      <button
+        className="btn-small btn-delete"
+        onClick={() => {
+          setSizeColors((prev) => {
+            const copy = { ...prev };
+            delete copy[x.key];
+            return copy;
+          });
+        }}
+      >
+        なし
+      </button>
+
+      <div style={{ fontSize: 12, color: "#6b7280" }}>
+        {current ? current : "未設定（色なし）"}
+      </div>
+    </div>
+  );
+})}
 
             <h3>シャーシ上部色（軸種別）</h3>
 
