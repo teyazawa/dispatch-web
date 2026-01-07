@@ -369,7 +369,7 @@ function buildPickupMail(
     `サイズ：${bodySize}／${container.kindCode}`,
     handoverLine,
     dispatchBlock,
-    "備考",
+    "備考：",
     "",
     "よろしくお願いします。",
   ].filter(Boolean);
@@ -404,7 +404,7 @@ function buildDeliveryMail(
     container.destadd ? `住所：${container.destadd}` : "",
     container.desttel ? `TEL：${container.desttel}` : "",
     receiptBlock,
-    "備考",
+    "備考：",
     "",
     "よろしくお願いします。",
   ].filter(Boolean);
@@ -1534,39 +1534,29 @@ if (overId.startsWith("yard-")) {
   return;
 }
 
-      // ドライバー枠（排他：既存がいたらスワップ）
-      if (overId.startsWith("driver-") && overId.endsWith("-group")) {
-        const driverId = overId.replace("driver-", "").replace("-group", "");
+      // ドライバー枠（排他：既に居たら弾く）
+if (overId.startsWith("driver-") && overId.endsWith("-group")) {
+  const driverId = overId.replace("driver-", "").replace("-group", "");
 
-        const hasTruck = trucks.some(
-          (t) => t.location.type === "driver" && t.location.driverId === driverId
-        );
-        if (!hasTruck) return;
+  const hasTruck = trucks.some(
+    (t) => t.location.type === "driver" && t.location.driverId === driverId
+  );
+  if (!hasTruck) return;
 
-        // 既にそのドライバー枠にいる別の group（重なりの原因）
-        const occupied = groups.find(
-          (g) =>
-            g.location.type === "driver" &&
-            g.location.driverId === driverId &&
-            g.id !== groupId
-        );
+  // ✅ すでに別の group がいるなら「何もしない」＝元の位置に戻る
+  const occupied = groups.find(
+    (g) => g.location.type === "driver" && g.location.driverId === driverId
+  );
+  if (occupied && occupied.id !== groupId) return;
 
-        const fromLoc = currentGroup.location; // ← ドラッグ元の場所を保持（swap用）
-
-        setGroups((prev) =>
-          prev.map((g) => {
-            if (g.id === groupId) {
-              return { ...g, location: { type: "driver", driverId } };
-            }
-            if (occupied && g.id === occupied.id) {
-              // 既存の方を「ドラッグ元の場所」へ戻す（スワップ）
-              return { ...g, location: fromLoc };
-            }
-            return g;
-          })
-        );
-        return;
-      }
+  // 空いている（または自分自身）なら入れる
+  setGroups((prev) =>
+    prev.map((g) =>
+      g.id === groupId ? { ...g, location: { type: "driver", driverId } } : g
+    )
+  );
+  return;
+}
 
       // 一時保管枠へ：A+C → Cだけにしてコンテナは tempContainers へ
       if (overId === "zone-temp") {
@@ -1604,16 +1594,26 @@ if (overId.startsWith("yard-")) {
       const truckId = activeId.replace("truck-", "");
 
       if (overId.startsWith("driver-") && overId.endsWith("-truck")) {
-        const driverId = overId.replace("driver-", "").replace("-truck", "");
-        setTrucks((prev) =>
-          prev.map((t) =>
-            t.id === truckId
-              ? { ...t, location: { type: "driver", driverId } }
-              : t
-          )
-        );
-        return;
-      }
+  const driverId = overId.replace("driver-", "").replace("-truck", "");
+
+  // ✅ すでに車両が置かれていたら弾く（何もしない）
+  const occupied = trucks.some(
+    (t) =>
+      t.location.type === "driver" &&
+      t.location.driverId === driverId &&
+      t.id !== truckId
+  );
+  if (occupied) return;
+
+  setTrucks((prev) =>
+    prev.map((t) =>
+      t.id === truckId
+        ? { ...t, location: { type: "driver", driverId } }
+        : t
+    )
+  );
+  return;
+}
 
       if (overId === "zone-spare-trucks") {
         setTrucks((prev) =>
