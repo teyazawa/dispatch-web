@@ -286,6 +286,38 @@ function buildDayLabel(date: string): string {
   return `${day.replace(/^0/, "")}日`;
 }
 
+function splitLast(s: string, sep: string): [string, string] {
+  const i = s.lastIndexOf(sep);
+  if (i === -1) return [s, ""];
+  return [s.slice(0, i), s.slice(i + 1)];
+}
+
+function parseYardDropId(overId: string):
+  | { mode: "single"; yardId: string }
+  | { mode: "grid"; yardId: string; laneId: string; pos: "front" | "middle" | "back" }
+  | null {
+  if (!overId.startsWith("yard-")) return null;
+
+  const raw = overId.slice("yard-".length);
+
+  // 末尾が "-single" の場合：yardId はそれ以外全部（yardIdに"-"が含まれてもOK）
+  if (raw.endsWith("-single")) {
+    const yardId = raw.slice(0, -"-single".length);
+    if (!yardId) return null;
+    return { mode: "single", yardId };
+  }
+
+  // grid: "yard-{yardId}-{laneId}-{pos}" を右から2回 split して yardId を残す
+  const [rest1, posStr] = splitLast(raw, "-");
+  const [yardId, laneId] = splitLast(rest1, "-");
+
+  if (!yardId || !laneId) return null;
+  if (posStr !== "front" && posStr !== "middle" && posStr !== "back") return null;
+
+  return { mode: "grid", yardId, laneId, pos: posStr };
+}
+
+
 function normalizeSizeRaw(sizeRaw?: string): string {
   const s = (sizeRaw ?? "").toString().trim();
   if (!s) return "";
@@ -361,7 +393,7 @@ function buildDeliveryMail(
     apiBase, "なし"
   );
 
-  const subject = `【${dayLabel}配送分】 ${container.eta}着 ${container.destination} ${subjectSize} ${container.no}`;
+  const subject = `【${dayLabel}配送分】 ${container.eta} ${container.destination} ${subjectSize} ${container.no}`;
 
   const bodyLines = [
     "",
@@ -780,6 +812,7 @@ function App() {
     }
     return DEFAULT_DRIVER_GROUPS;
   });
+  
 
   // 画面表示用の並び順
   const OWNED_GROUP_ORDER = driverGroups.owned;
@@ -1459,12 +1492,14 @@ useEffect(() => {
       if (!currentGroup) return;
 
       // プールのマス
-      if (overId.startsWith("yard-")) {
-  const parts = overId.split("-");
-  const yardId = parts[1];
+if (overId.startsWith("yard-")) {
+  const parsed = parseYardDropId(overId);
+  if (!parsed) return;
 
-  // ★ 川口車庫・現場など「1スロットで横並び」の場合
-  if (parts[2] === "single") {
+  // ★ 川口車庫・現場など「1スロットで横並び」
+  if (parsed.mode === "single") {
+    const yardId = parsed.yardId;
+
     setGroups((prev) =>
       prev.map((g) =>
         g.id === groupId
@@ -1474,7 +1509,7 @@ useEffect(() => {
                 type: "pool",
                 yardId,
                 laneId: "single",
-                pos: "front", // ダミー値（使わない）
+                pos: "front", // ダミー（single描画ではposは使わない）
               },
             }
           : g
@@ -1483,9 +1518,8 @@ useEffect(() => {
     return;
   }
 
-  // ★ 通常ヤード（大井・品川・中防など）のレーン×前中奥
-  const laneId = parts[2];
-  const pos = parts[3] as "front" | "middle" | "back";
+  // ★ 通常ヤード（レーン×前中奥）
+  const { yardId, laneId, pos } = parsed;
 
   const occupied = getSlotGroup(yardId, laneId, pos);
   if (occupied && occupied.id !== groupId) return;
@@ -1493,10 +1527,7 @@ useEffect(() => {
   setGroups((prev) =>
     prev.map((g) =>
       g.id === groupId
-        ? {
-            ...g,
-            location: { type: "pool", yardId, laneId, pos },
-          }
+        ? { ...g, location: { type: "pool", yardId, laneId, pos } }
         : g
     )
   );
@@ -2008,6 +2039,38 @@ useEffect(() => {
   driverGroups,
   yards,
 ]);
+
+// ✅ 救済（任意）：存在しない yardId のものを川口車庫に戻す
+// ※ 1回直ったら消してOK（常時入れても動くけど、毎回チェックが走る）
+useEffect(() => {
+  if (!hydrationDone) return;
+
+  setGroups((prev) =>
+    prev.map((g) => {
+      const loc = g.location as any;
+
+      // pool 以外は無視
+      if (!loc || loc.type !== "pool") return g;
+
+      // ✅ yardId が無い型の可能性をここで潰す（TS対策）
+      if (!("yardId" in loc)) return g;
+
+      const exists = yards.some((y) => y.id === loc.yardId);
+      if (exists) return g;
+
+      return {
+        ...g,
+        location: {
+          type: "pool",
+          yardId: "kawaguchi",
+          laneId: "single",
+          pos: "front",
+        },
+      };
+    })
+  );
+}, [hydrationDone, yards]);
+
 
 
   // 配送レーンに表示すべき日付一覧（containers から動的に）
