@@ -932,7 +932,7 @@ body {
 }
 
 /* 軸種別 */
-.legend-axle-1 {
+/*.legend-axle-1 {
   background: #a855f7;
 }
 .legend-axle-2 {
@@ -967,29 +967,29 @@ body {
 }
 
 /* 軸種別／MG／2個積み別の色（上辺にカラーライン） */
-.chassis-card.axle-1 {
+/*.chassis-card.axle-1 {
   border-top: 6px solid #a855f7;  /* 1軸：紫 */
-}
+/*}
 
 .chassis-card.axle-2 {
   border-top: 6px solid #facc15;  /* 2軸：黄 */
-}
+/*}
 
 .chassis-card.axle-3 {
   border-top: 6px solid #ef4444;  /* 3軸：赤 */
-}
+/*}
 
 .chassis-card.axle-MG {
   border-top: 6px solid #22d3ee;  /* MG：水色 */
-}
+/*}
 
 .chassis-card.axle-2stack {
   border-top: 6px solid #111827;  /* 2個積み：黒 */
-}
+/*}
 
 .chassis-card.axle-both {
   border-top: 6px solid #22c55e;  /* 兼用：緑 */
-}
+/*}
 
 /* === シャーシのサイズ帯＋積載帯（chassis-band 専用） === */
 
@@ -1008,7 +1008,15 @@ body {
   z-index: 1;
 }
 
-
+.chassis-kind-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;          /* 帯の太さ（好みで 4〜8px） */
+  z-index: 0;           /* 本文より下に */
+  pointer-events: none; /* DnD やクリックを邪魔しない */
+}
 
 /* 帯より上にテキストを出す */
 .chassis-card.chassis-band .card-body {

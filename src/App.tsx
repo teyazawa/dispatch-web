@@ -105,6 +105,8 @@ type BoardState = {
   completedContainers: Container[];
   driverGroups: DriverGroupConfig;
   yards: YardConfig[];
+  axleColors?: Record<string, string>;
+  kindColors?: Record<string, string>;
 
   // Realtime同期用（追加）
   version: number;
@@ -417,22 +419,33 @@ function buildDeliveryMail(
 /** DnD コンポーネント */
 type DraggableGroupCardProps = {
   group: ChassisGroup;
-  onContextMenuGroup?: (
-    e: React.MouseEvent<HTMLDivElement>,
-    group: ChassisGroup
-  ) => void;
+  onContextMenuGroup?: (e: React.MouseEvent<HTMLDivElement>, group: ChassisGroup) => void;
+  kindColors?: Record<string, string>;
+  axleColors?: Record<string, string>;
 };
 
-function DraggableGroupCard({ group, onContextMenuGroup }: DraggableGroupCardProps) {
+function DraggableGroupCard({
+  group,
+  onContextMenuGroup,
+  kindColors,
+  axleColors,
+}: DraggableGroupCardProps) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: `group-${group.id}`,
   });
+
+  const axleKey = `axle-${group.axle}`;
+  const axleColor = axleColors?.[axleKey];
 
   const style: React.CSSProperties = {
     transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
     zIndex: transform ? 9999 : "auto",
     position: transform ? "relative" : "static",
+    ...(axleColor ? { borderTop: `6px solid ${axleColor}` } : {}),
   };
+
+  const kindLabel = group.extra?.kindLabel ?? "";
+  const kindColor = kindLabel ? kindColors?.[kindLabel] : undefined;
 
   const isAC = !!group.container;
   const statusClass = isAC ? "chassis-loaded" : "chassis-empty";
@@ -441,7 +454,6 @@ function DraggableGroupCard({ group, onContextMenuGroup }: DraggableGroupCardPro
   // === kintone 由来のシャーシ情報 ===
   const carNo = group.extra?.carNo ?? "";
   const sizeLabel = group.extra?.sizeLabel ?? `${group.size}F`;
-  const kindLabel = group.extra?.kindLabel ?? "";
   const note = group.extra?.note?.trim();
 
   // ===============================
@@ -514,6 +526,11 @@ function DraggableGroupCard({ group, onContextMenuGroup }: DraggableGroupCardPro
       title={tooltip}
       onContextMenu={handleContextMenu}
     >
+      {/* ✅ 追加：上部の色帯（色が設定されている時だけ表示） */}
+      {kindColor ? (
+        <div className="chassis-kind-strip" style={{ backgroundColor: kindColor }} />
+      ) : null}
+
       <div className="card-body">
         {isAC && group.container ? (
   <>
@@ -755,8 +772,6 @@ function App() {
       initBoard();
     }, [userId]);
 
-    
-
     const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
     const [groups, setGroups] = useState<ChassisGroup[]>([]);
     // 一時保管枠
@@ -776,6 +791,10 @@ function App() {
 
     // ✅ DB復元が完了したか（fetchChassisの初期配置を走らせる/止める判定に使う）
     const [hydrationDone, setHydrationDone] = useState(false);
+
+    // ✅ シャーシ種別（kindLabel）→ 色（#RRGGBB）
+    const [kindColors, setKindColors] = useState<Record<string, string>>({});
+    const [axleColors, setAxleColors] = useState<Record<string, string>>({});
 
     // ✅ 保存済みstateがあるか（trucksの「基本車両の自動割当」を抑止する用）
     const hasSavedStateRef = useRef(false);
@@ -1760,7 +1779,7 @@ if (overId.startsWith("driver-") && overId.endsWith("-group")) {
     const gid = id.replace("group-", "");
     const g = groupsRef.current.find((x) => x.id === gid);
     if (!g) return null;
-    return <DraggableGroupCard group={g} />;
+    return <DraggableGroupCard group={g} kindColors={kindColors} axleColors={axleColors} />;
   }
 
   // 車両(B)
@@ -1960,6 +1979,8 @@ useEffect(() => {
     if (s.completedContainers) setCompletedContainers(s.completedContainers);
     if (s.driverGroups) setDriverGroups(s.driverGroups);
     if (s.yards) setYards(s.yards);
+    if (s.kindColors) setKindColors(s.kindColors);
+    if (s.axleColors) setAxleColors(s.axleColors);
 
     hydratingRef.current = false;
     setHydrationDone(true);
@@ -2007,6 +2028,8 @@ useEffect(() => {
           if (next.completedContainers) setCompletedContainers(next.completedContainers);
           if (next.driverGroups) setDriverGroups(next.driverGroups);
           if (next.yards) setYards(next.yards);
+          if (next.kindColors) setKindColors(next.kindColors);
+          if (next.axleColors) setAxleColors(next.axleColors);
 
           versionRef.current = incomingVersion;
         } finally {
@@ -2042,6 +2065,8 @@ useEffect(() => {
       completedContainers,
       driverGroups,
       yards,
+      kindColors,
+      axleColors,
 
       version: nextVersion,
       updatedAt: new Date().toISOString(),
@@ -2071,6 +2096,8 @@ useEffect(() => {
   completedContainers,
   driverGroups,
   yards,
+  kindColors,
+  axleColors,
 ]);
 
 // ✅ 救済（任意）：存在しない yardId のものを川口車庫に戻す
@@ -2152,22 +2179,51 @@ useEffect(() => {
             <div className="legend-group legend-group-axle">
               <div className="legend-row">
                 <span className="legend-item">
-                  <span className="legend-color legend-axle-1" />1軸
+                  <span
+                    className="legend-color"
+                    style={{ backgroundColor: axleColors["axle-1"] ?? "transparent" }}
+                  />
+                  1軸
                 </span>
+
                 <span className="legend-item">
-                  <span className="legend-color legend-axle-2" />2軸
+                  <span
+                    className="legend-color"
+                    style={{ backgroundColor: axleColors["axle-2"] ?? "transparent" }}
+                  />
+                  2軸
                 </span>
+
                 <span className="legend-item">
-                  <span className="legend-color legend-axle-3" />3軸
+                  <span
+                    className="legend-color"
+                    style={{ backgroundColor: axleColors["axle-3"] ?? "transparent" }}
+                  />
+                  3軸
                 </span>
+
                 <span className="legend-item">
-                  <span className="legend-color legend-axle-MG" />MG
+                  <span
+                    className="legend-color"
+                    style={{ backgroundColor: axleColors["axle-MG"] ?? "transparent" }}
+                  />
+                  MG
                 </span>
+
                 <span className="legend-item">
-                  <span className="legend-color legend-axle-2stack" />2個積
+                  <span
+                    className="legend-color"
+                    style={{ backgroundColor: axleColors["axle-2stack"] ?? "transparent" }}
+                  />
+                  2個積
                 </span>
+
                 <span className="legend-item">
-                  <span className="legend-color legend-axle-both" />兼用
+                  <span
+                    className="legend-color"
+                    style={{ backgroundColor: axleColors["axle-both"] ?? "transparent" }}
+                  />
+                  兼用
                 </span>
               </div>
             </div>
@@ -2253,7 +2309,7 @@ useEffect(() => {
                             g.location.yardId === yard.id
                         )
                         .map((g) => (
-                          <DraggableGroupCard key={g.id} group={g} />
+                          <DraggableGroupCard key={g.id} group={g} kindColors={kindColors} axleColors={axleColors}/>
                         ))}
                     </DroppableArea>
                   ) : (
@@ -2366,6 +2422,8 @@ useEffect(() => {
                     >
                       {group && <DraggableGroupCard 
                       group={group}
+                      kindColors={kindColors}
+                      axleColors={axleColors}
                       onContextMenuGroup={(e, g) => openMailMenu(e, g, d)}
                       />}
                     </DroppableArea>
@@ -2418,6 +2476,8 @@ useEffect(() => {
                     >
                       {group && <DraggableGroupCard 
                       group={group}
+                      kindColors={kindColors}
+                      axleColors={axleColors}
                       onContextMenuGroup={(e, g) => openMailMenu(e, g, d)}
                       />}
                     </DroppableArea>
@@ -2562,6 +2622,51 @@ useEffect(() => {
             onClick={(e) => e.stopPropagation()}
           >
             <h2>設定</h2>
+
+            <h3>シャーシ上部色（軸種別）</h3>
+
+{[
+  { key: "axle-1", label: "1軸" },
+  { key: "axle-2", label: "2軸" },
+  { key: "axle-3", label: "3軸" },
+  { key: "axle-MG", label: "MG" },
+  { key: "axle-2stack", label: "2個積" },
+  { key: "axle-both", label: "兼用" },
+].map((x) => {
+  const current = axleColors[x.key];
+  return (
+    <div key={x.key} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+      <div style={{ width: 60 }}>{x.label}</div>
+
+      {/* 未設定でもinputは値が必要なのでダミー色 */}
+      <input
+        type="color"
+        value={current ?? "#000000"}
+        onChange={(e) => {
+          const v = e.target.value;
+          setAxleColors((prev) => ({ ...prev, [x.key]: v }));
+        }}
+      />
+
+      <button
+        className="btn-small btn-delete"
+        onClick={() => {
+          setAxleColors((prev) => {
+            const copy = { ...prev };
+            delete copy[x.key];      // ✅ 色なしに戻す
+            return copy;
+          });
+        }}
+      >
+        なし
+      </button>
+
+      <div style={{ fontSize: 12, color: "#6b7280" }}>
+        {current ? current : "未設定（色なし）"}
+      </div>
+    </div>
+  );
+})}
 
             {/* シャーシプール設定セクション */}
             <section className="modal-section">
