@@ -5,7 +5,7 @@ import { supabase } from "./lib/supabase";
 import AuthBar from "./components/AuthBar";
 import { DragOverlay } from "@dnd-kit/core";
 import { createPortal } from "react-dom";
-
+import tezukaLogo from "./assets/tezuka-logo.png";
 
 
 /** サイズ種別 */
@@ -2177,6 +2177,7 @@ useEffect(() => {
         <div className="header-main">
 
           <h1 className="title">
+            <img className="title-logo" src={tezukaLogo} alt="TEZUKA express" />
             配車表
           </h1>
           <p className="subtitle">
