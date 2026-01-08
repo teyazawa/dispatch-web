@@ -15,9 +15,16 @@
   --bg-repeat: no-repeat;
   --bg-opacity: 0.18; /* 0〜1 */
 
-  --card-width-mobile: 120px;
-  --card-width-desktop: 160px;
-  --panel-min-width: 280px;
+  /* シャーシ・コンテナ用 */
+  --card-width: 160px;
+  
+  /* トラック用 */
+  --truck-width: 65px;
+  
+  /* 枠用 */
+  --slot-pool-width: 165px;
+  --slot-driver-truck-width: 75px;
+  --slot-delivery-width: 180px;
 }
 
 html,
@@ -344,9 +351,9 @@ body::before {
 }
 /* ドライバーの車両枠：40px × 60px 固定 */
 .card-container.slot-driver-truck {
-  width: 75px;
-  min-width: 75px;
-  max-width: 75px;
+  width: var(--slot-driver-truck-width);
+  min-width: var(--slot-driver-truck-width);
+  max-width: var(--slot-driver-truck-width);
   height: 40px;
   min-height: 40px;
   max-height: 40px;
@@ -566,9 +573,9 @@ body::before {
 .chassis-card {
   position: relative;
   background: #fef2f2;
-  width: var(--card-width-desktop);
-  min-width: var(--card-width-desktop);
-  max-width: var(--card-width-desktop);
+  width: var(--card-width);
+  min-width: var(--card-width);
+  max-width: var(--card-width);
 
   display: flex;
   align-items: center;
@@ -626,9 +633,9 @@ body::before {
 /* コンテナカード（A） */
 .container-card {
   background: #eff6ff;
-  width: var(--card-width-desktop);
-  min-width: var(--card-width-desktop);
-  max-width: var(--card-width-desktop);
+  width: var(--card-width);
+  min-width: var(--card-width);
+  max-width: var(--card-width);
   height: 24px;
   min-height: 24px;
   max-height: 24px;
@@ -641,9 +648,9 @@ body::before {
   height: 44px;
   min-height: 40px;
   max-height: 44px;
-  width: 160px;    /* 好きな幅 */
-  min-width: 160px;
-  max-width: 160px;
+  width: var(--slot-pool-width);
+  min-width: var(--slot-pool-width);
+  max-width: var(--slot-pool-width);
 
   padding: 2px 3px;          /* ← ここはお好み（おすすめ値） */
   overflow: visible;          /* カードがはみ出さないようにする */
@@ -688,9 +695,9 @@ body::before {
 /* 車両カード */
 .truck-card {
   background: #ecfdf5;
-  width: 65px;
-  min-width: 65px;
-  max-width: 65px;
+  width: var(--truck-width);
+  min-width: var(--truck-width);
+  max-width: var(--truck-width);
   height: 36px;
   min-height: 36px;
   max-height: 36px;
@@ -744,9 +751,9 @@ body::before {
 }
 /* ▼ 日付列の中のドロップ枠は列幅いっぱいに広げる */
 .delivery-panel .slot-auto.card-container {
-  width: 180px;       /* ← 固定 */
-  min-width: 180px;
-  max-width: 180px;
+  width: var(--slot-delivery-width);
+  min-width: var(--slot-delivery-width);
+  max-width: var(--slot-delivery-width);
   box-sizing: border-box;
 }
 .days-scroll {
@@ -770,19 +777,6 @@ body::before {
   font-weight: 700; /* 太字にしたければ追加 */
 }
 
-/* レスポンシブ（画面が狭いときは縦 stacked） */
-
-@media (max-width: 1100px) {
-  .main {
-    grid-template-columns: 1fr;
-  }
-
-  .driver-panel,
-  .delivery-panel,
-  .left-panel {
-    width: 100%;
-  }
-}
 /* === シャーシプール（レーン表示） ================================== */
 
 .yard-section {
@@ -1415,174 +1409,120 @@ body::before {
 }
 
 /* ========================================
-   タブレット対応（768px以下）
+   詳細モーダル
 ======================================== */
-@media (max-width: 768px) {
-  /* ヘッダーを縦並びに */
-  .header {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 12px;
-    position: relative; /* fixed を解除してスクロールさせる */
-  }
 
-  .header-right {
-    width: 100%;
-    flex-wrap: wrap;
-    justify-content: space-between;
-  }
+.detail-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+}
 
-  /* 凡例を小さく */
-  .header-legend {
-    font-size: 10px;
-  }
+.detail-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  animation: modalSlideIn 0.2s ease-out;
+}
 
-  .legend-icons-row {
-    gap: 12px;
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(20px);
   }
-
-  /* メインエリアのマージン調整 */
-  .main {
-    margin-top: 0;
-    padding: 8px;
-    gap: 8px;
-  }
-
-  /* パネルの最大高さを調整 */
-  .left-panel,
-  .driver-panel,
-  .delivery-panel {
-    max-height: none; /* 固定高さを解除 */
-    min-height: 400px;
-  }
-
-  /* リサイザーを非表示（タッチで操作しづらい） */
-  .resizer {
-    display: none;
-  }
-
-  /* カードを少し小さく */
-  .chassis-card,
-  .container-card {
-    width: var(--card-width-mobile);
-    min-width: var(--card-width-mobile);
-    max-width: var(--card-width-mobile);
-  }
-
-  /* タイトルのロゴサイズ調整 */
-  .title-logo {
-    width: 40px;
-    height: 40px;
-  }
-
-  .title {
-    font-size: 28px;
-  }
-
-  /* ドライバー行のグリッド調整 */
-  .driver-row {
-    grid-template-columns: 80px 1fr;
-    column-gap: 6px;
-  }
-
-  /* 配送列の幅調整 */
-  .day-column {
-    flex: 0 0 160px;
-    min-width: 160px;
-    max-width: 160px;
-  }
-
-  .delivery-panel .slot-auto.card-container {
-    width: 150px;
-    min-width: 150px;
-    max-width: 150px;
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
   }
 }
 
-/* ========================================
-   モバイル対応（480px以下）
-======================================== */
-@media (max-width: 480px) {
-  /* ヘッダー */
-  .header {
-    padding: 8px;
-  }
+.detail-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: #f3f4f6;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 20px;
+  color: #6b7280;
+  transition: all 0.2s;
+  z-index: 1;
+}
 
-  .title {
-    font-size: 22px;
-  }
+.detail-modal-close:hover {
+  background: #e5e7eb;
+  color: #111827;
+  transform: rotate(90deg);
+}
 
-  .title-logo {
-    width: 32px;
-    height: 32px;
-  }
+.detail-modal-close:active {
+  background: #d1d5db;
+}
 
-  /* 凡例を更に小さく */
-  .header-legend {
-    font-size: 9px;
-  }
+.detail-modal h3 {
+  margin: 0 0 20px 0;
+  font-size: 22px;
+  color: #111827;
+  padding-right: 40px; /* 閉じるボタンと重ならないように */
+}
 
-  .legend-color {
-    width: 12px;
-    height: 8px;
-  }
+.detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 
-  /* メインエリア */
-  .main {
-    padding: 4px;
-    gap: 4px;
-  }
+.detail-section {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 16px;
+}
 
-  /* パネル幅を画面いっぱいに */
-  .left-panel,
-  .driver-panel,
-  .delivery-panel {
-    width: 100% !important;
-    max-width: 100%;
-  }
+.detail-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #374151;
+  font-weight: 600;
+}
 
-  /* カードサイズをさらに縮小 */
-  :root {
-    --card-width-mobile: 110px;
-  }
+.detail-content p {
+  margin: 8px 0;
+  font-size: 14px;
+  line-height: 1.6;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
 
-  /* フォントサイズ調整 */
-  .card-title {
-    font-size: 11px;
-  }
+.detail-content strong {
+  font-weight: 600;
+  color: #4b5563;
+  min-width: 120px;
+  flex-shrink: 0;
+}
 
-  .card-sub {
-    font-size: 10px;
-  }
-
-  /* ドライバー名 */
-  .driver-name {
-    font-size: 12px;
-  }
-
-  /* ヤードテーブル */
-  .yard-lane-name {
-    font-size: 16px;
-  }
-
-  /* 配送列 */
-  .day-column {
-    flex: 0 0 140px;
-    min-width: 140px;
-    max-width: 140px;
-  }
-
-  .delivery-panel .slot-auto.card-container {
-    width: 130px;
-    min-width: 130px;
-    max-width: 130px;
-  }
-
-  /* ボタンサイズ調整 */
-  .settings-button {
-    padding: 8px 12px;
-    font-size: 13px;
-  }
+.detail-content hr {
+  margin: 8px 0;
+  border: none;
+  border-top: 2px solid #e5e7eb;
 }
 
 /* ========================================
@@ -1591,6 +1531,21 @@ body::before {
 
 /* タップ領域を広げる */
 @media (hover: none) and (pointer: coarse) {
+
+    .detail-modal {
+    max-height: 80vh;
+  }
+
+  .detail-modal-close {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+  }
+
+  .detail-content p {
+    font-size: 15px;
+  }
+
   .obj-card {
     min-height: 44px; /* タップしやすいサイズ */
     padding: 6px 10px;
@@ -1613,5 +1568,10 @@ body::before {
   .btn-small {
     min-height: 36px;
     padding: 6px 12px;
+  }
+  /* 設定ボタン */
+  .settings-button {
+    min-height: 44px;
+    padding: 8px 16px;
   }
 }

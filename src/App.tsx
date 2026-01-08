@@ -1,6 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./App.css";
-import { DndContext, useDraggable, useDroppable, PointerSensor, TouchSensor, useSensor, useSensors, } from "@dnd-kit/core";
+import { 
+  DndContext, 
+  useDraggable, 
+  useDroppable, 
+  PointerSensor, 
+  TouchSensor, 
+  useSensor, 
+  useSensors, 
+} from "@dnd-kit/core";
 import { supabase } from "./lib/supabase";
 import AuthBar from "./components/AuthBar";
 import { DragOverlay } from "@dnd-kit/core";
@@ -448,6 +456,7 @@ type DraggableGroupCardProps = {
   axleColors?: Record<string, string>;
   kindColors?: Record<string, string>;
   sizeColors?: Record<string, string>; // 追加（size-20 / size-40 など）
+  onTap?: (group: ChassisGroup) => void;
 };
 
 function DraggableGroupCard({
@@ -456,10 +465,73 @@ function DraggableGroupCard({
   axleColors,
   kindColors,
   sizeColors,
+  onTap,
 }: DraggableGroupCardProps) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: `group-${group.id}`,
   });
+
+  // ✅ ここから追加：長押し検出用
+  const longPressTimerRef = useRef<number | null>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    // A+Cでない、またはメニュー関数がない場合は何もしない
+    if (!group.container || !onContextMenuGroup) return;
+
+    const touch = e.touches[0];
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+
+    // 500ms後にメニューを開く
+    longPressTimerRef.current = window.setTimeout(() => {
+      if (touchStartPosRef.current) {
+        const syntheticEvent = {
+          preventDefault: () => {},
+          clientX: touchStartPosRef.current.x,
+          clientY: touchStartPosRef.current.y,
+        } as React.MouseEvent<HTMLDivElement>;
+        
+        onContextMenuGroup(syntheticEvent, group);
+        
+        // 触覚フィードバック（対応デバイスのみ）
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+      }
+    }, 500);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    // 指が8px以上動いたらタイマーをキャンセル
+    if (longPressTimerRef.current && touchStartPosRef.current) {
+      const touch = e.touches[0];
+      const moved = 
+        Math.abs(touch.clientX - touchStartPosRef.current.x) > 8 ||
+        Math.abs(touch.clientY - touchStartPosRef.current.y) > 8;
+
+      if (moved) {
+        window.clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    touchStartPosRef.current = null;
+  };
+
+  // クリーンアップ
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        window.clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
 
   const axleKey = `axle-${group.axle}`;          // axle-1 / axle-2 ...
   const axleColor = axleColors?.[axleKey];       // 未設定なら undefined
@@ -557,6 +629,11 @@ function DraggableGroupCard({
       {...attributes}
       title={tooltip}
       onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}      // ✅ 追加
+      onTouchMove={handleTouchMove}        // ✅ 追加
+      onTouchEnd={handleTouchEnd}          // ✅ 追加
+      onTouchCancel={handleTouchEnd} 
+      onClick={() => onTap?.(group)}
     >
       {/* ✅ 追加：上部の色帯（色が設定されている時だけ表示） */}
       {kindColor ? (
@@ -639,10 +716,12 @@ function DraggableContainerCard({
   container,
   isCompleted,
   sizeColors,
+  onTap,
 }: {
   container: Container;
   isCompleted?: boolean;
   sizeColors?: Record<string, string>;
+  onTap?: (container: Container) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: `cont-${container.id}`,
@@ -684,6 +763,7 @@ function DraggableContainerCard({
       {...listeners}
       {...attributes}
       title={full}
+      onClick={() => onTap?.(container)}
     >
       <div className="card-body">
         <div className="card-title">{short}</div>
@@ -749,20 +829,37 @@ async function uploadThemeBgToStorage(
 
 function App() {
 
-    // ✅ タッチとマウス両方に対応
+  // ✅ タッチとマウス両方に対応
   const sensors = useSensors(
+    // マウス：5px動かしたら即ドラッグ
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8, // 8px動かしたらドラッグ開始（誤タップ防止）
+        distance: 5,
       },
     }),
+    // タッチ：動かしたら即ドラッグ、長押しでメニュー
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 250,      // 250ms長押しでドラッグ開始
-        tolerance: 5,    // 5px以内の動きは許容
+        delay: 500,      // 500ms長押しでメニュー
+        tolerance: 8,    // 8px以上動いたらドラッグ開始
       },
     })
   );
+
+    // ✅ ここに追加：詳細モーダル用の state
+    const [detailModal, setDetailModal] = useState<{
+      visible: boolean;
+      group?: ChassisGroup;
+      container?: Container;
+    }>({ visible: false });
+
+    // ✅ ここに追加：カードタップ時の処理
+    const handleCardTap = (group: ChassisGroup) => {
+      // タッチデバイスの場合のみモーダル表示
+      if ('ontouchstart' in window) {
+        setDetailModal({ visible: true, group });
+      }
+    };
 
     const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
@@ -1912,7 +2009,7 @@ if (overId.startsWith("driver-") && overId.endsWith("-group")) {
     const gid = id.replace("group-", "");
     const g = groupsRef.current.find((x) => x.id === gid);
     if (!g) return null;
-    return <DraggableGroupCard group={g} kindColors={kindColors} axleColors={axleColors} sizeColors={sizeColors}/>;
+    return <DraggableGroupCard group={g} kindColors={kindColors} axleColors={axleColors} sizeColors={sizeColors} onTap={handleCardTap}/>;
   }
 
   // 車両(B)
@@ -2468,7 +2565,7 @@ useEffect(() => {
                             g.location.yardId === yard.id
                         )
                         .map((g) => (
-                          <DraggableGroupCard key={g.id} group={g} kindColors={kindColors} axleColors={axleColors} sizeColors={sizeColors}/>
+                          <DraggableGroupCard key={g.id} group={g} kindColors={kindColors} axleColors={axleColors} sizeColors={sizeColors} onTap={handleCardTap}/>
                         ))}
                     </DroppableArea>
                   ) : (
@@ -2505,7 +2602,7 @@ useEffect(() => {
                                 className="slot-pool"
                                 placeholder={group ? "" : " "}
                               >
-                                {group && <DraggableGroupCard group={group} axleColors={axleColors} sizeColors={sizeColors} kindColors={kindColors}/>}
+                                {group && <DraggableGroupCard group={group} axleColors={axleColors} sizeColors={sizeColors} kindColors={kindColors} onTap={handleCardTap}/>}
                               </DroppableArea>
                             );
                           })}
@@ -2584,6 +2681,7 @@ useEffect(() => {
                       kindColors={kindColors}
                       axleColors={axleColors}
                       sizeColors={sizeColors}
+                      onTap={handleCardTap}
                       onContextMenuGroup={(e, g) => openMailMenu(e, g, d)}
                       />}
                     </DroppableArea>
@@ -2639,6 +2737,7 @@ useEffect(() => {
                       kindColors={kindColors}
                       axleColors={axleColors}
                       sizeColors={sizeColors}
+                      onTap={handleCardTap}
                       onContextMenuGroup={(e, g) => openMailMenu(e, g, d)}
                       />}
                     </DroppableArea>
@@ -3295,9 +3394,121 @@ useEffect(() => {
           </button>
         </div>
       )}
+      {detailModal.visible && (
+      <div 
+        className="detail-modal-backdrop"
+        onClick={() => setDetailModal({ visible: false })}
+      >
+        <div 
+          className="detail-modal"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button 
+            className="detail-modal-close"
+            onClick={() => setDetailModal({ visible: false })}
+          >
+            ✕
+          </button>
+          
+          <h3>詳細情報</h3>
+          
+          {detailModal.group ? (
+            // シャーシカード（C or A+C）の詳細
+            detailModal.group.container ? (
+              // A+Cの詳細
+              <div className="detail-content">
+                <div className="detail-section">
+                  <h4>📦 コンテナ情報</h4>
+                  <p><strong>日付:</strong> {detailModal.group.container.date}</p>
+                  <p><strong>時間:</strong> {detailModal.group.container.eta}</p>
+                  <p><strong>配送先:</strong> {detailModal.group.container.destination}</p>
+                  <p><strong>搬出ヤード:</strong> {detailModal.group.container.pickupYard}</p>
+                  <p><strong>搬入ヤード:</strong> {detailModal.group.container.dropoffYard}</p>
+                  <p><strong>コンテナ番号:</strong> {detailModal.group.container.no}</p>
+                  <p><strong>サイズ:</strong> {detailModal.group.container.size}F</p>
+                  <p><strong>種別:</strong> {detailModal.group.container.kindCode}</p>
+                  {detailModal.group.container.ship && (
+                    <p><strong>本船名:</strong> {detailModal.group.container.ship}</p>
+                  )}
+                  {detailModal.group.container.booking && (
+                    <p><strong>BL/BK:</strong> {detailModal.group.container.booking}</p>
+                  )}
+                  {detailModal.group.container.destadd && (
+                    <p><strong>配送先住所:</strong> {detailModal.group.container.destadd}</p>
+                  )}
+                  {detailModal.group.container.desttel && (
+                    <p><strong>配送先TEL:</strong> {detailModal.group.container.desttel}</p>
+                  )}
+                  {detailModal.group.container.handoverNo && (
+                    <p><strong>引渡番号:</strong> {detailModal.group.container.handoverNo}</p>
+                  )}
+                </div>
+                
+                <hr />
+                
+                <div className="detail-section">
+                  <h4>🛞 シャーシ情報</h4>
+                  <p><strong>シャーシ番号:</strong> {detailModal.group.chassisLabel}</p>
+                  <p><strong>車番:</strong> {detailModal.group.extra?.carNo || '-'}</p>
+                  <p><strong>サイズ:</strong> {detailModal.group.extra?.sizeLabel || '-'}</p>
+                  <p><strong>軸種別:</strong> {detailModal.group.extra?.kindLabel || '-'}</p>
+                  {detailModal.group.extra?.note && (
+                    <p><strong>備考:</strong> {detailModal.group.extra.note}</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              // Cだけの詳細
+              <div className="detail-content">
+                <div className="detail-section">
+                  <h4>🛞 シャーシ情報</h4>
+                  <p><strong>シャーシ番号:</strong> {detailModal.group.chassisLabel}</p>
+                  <p><strong>車番:</strong> {detailModal.group.extra?.carNo || '-'}</p>
+                  <p><strong>サイズ:</strong> {detailModal.group.extra?.sizeLabel || '-'}</p>
+                  <p><strong>軸種別:</strong> {detailModal.group.extra?.kindLabel || '-'}</p>
+                  {detailModal.group.extra?.note && (
+                    <p><strong>備考:</strong> {detailModal.group.extra.note}</p>
+                  )}
+                </div>
+              </div>
+            )
+          ) : detailModal.container ? (
+            // コンテナ単体（A）の詳細
+            <div className="detail-content">
+              <div className="detail-section">
+                <h4>📦 コンテナ情報</h4>
+                <p><strong>日付:</strong> {detailModal.container.date}</p>
+                <p><strong>時間:</strong> {detailModal.container.eta}</p>
+                <p><strong>配送先:</strong> {detailModal.container.destination}</p>
+                <p><strong>搬出ヤード:</strong> {detailModal.container.pickupYard}</p>
+                <p><strong>搬入ヤード:</strong> {detailModal.container.dropoffYard}</p>
+                <p><strong>コンテナ番号:</strong> {detailModal.container.no}</p>
+                <p><strong>サイズ:</strong> {detailModal.container.size}F</p>
+                <p><strong>種別:</strong> {detailModal.container.kindCode}</p>
+                {detailModal.container.ship && (
+                  <p><strong>本船名:</strong> {detailModal.container.ship}</p>
+                )}
+                {detailModal.container.booking && (
+                  <p><strong>BL/BK:</strong> {detailModal.container.booking}</p>
+                )}
+                {detailModal.container.destadd && (
+                  <p><strong>配送先住所:</strong> {detailModal.container.destadd}</p>
+                )}
+                {detailModal.container.desttel && (
+                  <p><strong>配送先TEL:</strong> {detailModal.container.desttel}</p>
+                )}
+                {detailModal.container.handoverNo && (
+                  <p><strong>引渡番号:</strong> {detailModal.container.handoverNo}</p>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    )}
     </div>
-    </div>
-  </>
+      </div>
+    </>
   );
 }
 
