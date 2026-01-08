@@ -14,6 +14,10 @@
   --bg-position: center;
   --bg-repeat: no-repeat;
   --bg-opacity: 0.18; /* 0〜1 */
+
+  --card-width-mobile: 120px;
+  --card-width-desktop: 150px;
+  --panel-min-width: 280px;
 }
 
 html,
@@ -562,9 +566,9 @@ body::before {
 .chassis-card {
   position: relative;
   background: #fef2f2;
-  width: 150px;
-  min-width: 150px;
-  max-width: 150px;
+  width: var(--card-width-desktop);
+  min-width: var(--card-width-desktop);
+  max-width: var(--card-width-desktop);
 
   display: flex;
   align-items: center;
@@ -622,9 +626,9 @@ body::before {
 /* コンテナカード（A） */
 .container-card {
   background: #eff6ff;
-  width: 150px;
-  min-width: 150px;
-  max-width: 150px;
+  width: var(--card-width-desktop);
+  min-width: var(--card-width-desktop);
+  max-width: var(--card-width-desktop);
   height: 24px;
   min-height: 24px;
   max-height: 24px;
@@ -1401,4 +1405,213 @@ body::before {
   align-items: center;
   gap: 12px;
   flex-wrap: nowrap;       /* 折り返し禁止で高さ増を防ぐ */
+}
+
+/* タッチデバイスでのスクロール改善 */
+.app-scroll-x,
+.delivery-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* ========================================
+   タブレット対応（768px以下）
+======================================== */
+@media (max-width: 768px) {
+  /* ヘッダーを縦並びに */
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px;
+    position: relative; /* fixed を解除してスクロールさせる */
+  }
+
+  .header-right {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  /* 凡例を小さく */
+  .header-legend {
+    font-size: 10px;
+  }
+
+  .legend-icons-row {
+    gap: 12px;
+  }
+
+  /* メインエリアのマージン調整 */
+  .main {
+    margin-top: 0;
+    padding: 8px;
+    gap: 8px;
+  }
+
+  /* パネルの最大高さを調整 */
+  .left-panel,
+  .driver-panel,
+  .delivery-panel {
+    max-height: none; /* 固定高さを解除 */
+    min-height: 400px;
+  }
+
+  /* リサイザーを非表示（タッチで操作しづらい） */
+  .resizer {
+    display: none;
+  }
+
+  /* カードを少し小さく */
+  .chassis-card,
+  .container-card {
+    width: var(--card-width-mobile);
+    min-width: var(--card-width-mobile);
+    max-width: var(--card-width-mobile);
+  }
+
+  /* タイトルのロゴサイズ調整 */
+  .title-logo {
+    width: 40px;
+    height: 40px;
+  }
+
+  .title {
+    font-size: 28px;
+  }
+
+  /* ドライバー行のグリッド調整 */
+  .driver-row {
+    grid-template-columns: 80px 1fr;
+    column-gap: 6px;
+  }
+
+  /* 配送列の幅調整 */
+  .day-column {
+    flex: 0 0 160px;
+    min-width: 160px;
+    max-width: 160px;
+  }
+
+  .delivery-panel .slot-auto.card-container {
+    width: 150px;
+    min-width: 150px;
+    max-width: 150px;
+  }
+}
+
+/* ========================================
+   モバイル対応（480px以下）
+======================================== */
+@media (max-width: 480px) {
+  /* ヘッダー */
+  .header {
+    padding: 8px;
+  }
+
+  .title {
+    font-size: 22px;
+  }
+
+  .title-logo {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* 凡例を更に小さく */
+  .header-legend {
+    font-size: 9px;
+  }
+
+  .legend-color {
+    width: 12px;
+    height: 8px;
+  }
+
+  /* メインエリア */
+  .main {
+    padding: 4px;
+    gap: 4px;
+  }
+
+  /* パネル幅を画面いっぱいに */
+  .left-panel,
+  .driver-panel,
+  .delivery-panel {
+    width: 100% !important;
+    max-width: 100%;
+  }
+
+  /* カードサイズをさらに縮小 */
+  :root {
+    --card-width-mobile: 110px;
+  }
+
+  /* フォントサイズ調整 */
+  .card-title {
+    font-size: 11px;
+  }
+
+  .card-sub {
+    font-size: 10px;
+  }
+
+  /* ドライバー名 */
+  .driver-name {
+    font-size: 12px;
+  }
+
+  /* ヤードテーブル */
+  .yard-lane-name {
+    font-size: 16px;
+  }
+
+  /* 配送列 */
+  .day-column {
+    flex: 0 0 140px;
+    min-width: 140px;
+    max-width: 140px;
+  }
+
+  .delivery-panel .slot-auto.card-container {
+    width: 130px;
+    min-width: 130px;
+    max-width: 130px;
+  }
+
+  /* ボタンサイズ調整 */
+  .settings-button {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+}
+
+/* ========================================
+   タッチデバイス用の改善
+======================================== */
+
+/* タップ領域を広げる */
+@media (hover: none) and (pointer: coarse) {
+  .obj-card {
+    min-height: 44px; /* タップしやすいサイズ */
+    padding: 6px 10px;
+  }
+
+  .truck-card {
+    min-height: 44px;
+  }
+
+  .card-container {
+    min-height: 48px; /* ドロップエリアも広く */
+  }
+
+  /* ボタンのタップ領域を確保 */
+  button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .btn-small {
+    min-height: 36px;
+    padding: 6px 12px;
+  }
 }

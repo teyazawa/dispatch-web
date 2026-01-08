@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./App.css";
-import { DndContext, useDraggable, useDroppable } from "@dnd-kit/core";
+import { DndContext, useDraggable, useDroppable, PointerSensor, TouchSensor, useSensor, useSensors, } from "@dnd-kit/core";
 import { supabase } from "./lib/supabase";
 import AuthBar from "./components/AuthBar";
 import { DragOverlay } from "@dnd-kit/core";
@@ -748,6 +748,21 @@ async function uploadThemeBgToStorage(
 /** メイン */
 
 function App() {
+
+    // ✅ タッチとマウス両方に対応
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // 8px動かしたらドラッグ開始（誤タップ防止）
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,      // 250ms長押しでドラッグ開始
+        tolerance: 5,    // 5px以内の動きは許容
+      },
+    })
+  );
 
     const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
@@ -2395,6 +2410,7 @@ useEffect(() => {
     
 
       <DndContext
+        sensors={sensors}
         onDragStart={(e) => setActiveDragId(String(e.active.id))}
         onDragCancel={() => setActiveDragId(null)}
         onDragEnd={(e) => {
