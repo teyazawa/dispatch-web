@@ -35,6 +35,9 @@ body {
   /* 💡 横方向にはスクロールバーを出さない */
   max-width: 100%;
   overflow-x: hidden;
+  /* ✅ Android Chrome 対応 */
+  overscroll-behavior: none; /* 引っ張ってリフレッシュを無効化 */
+  -webkit-tap-highlight-color: transparent; /* タップ時のハイライトを消す */
 }
 
 /* 背景画像（bodyの擬似要素で薄く敷く：コンテンツを邪魔しにくい） */
@@ -66,7 +69,7 @@ body::before {
   background: var(--header-bg);
   border-bottom: 1px solid var(--header-border);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 8px 20px;
@@ -75,11 +78,14 @@ body::before {
   left: 0;
   right: 0;
   z-index: 50;
+  flex-wrap: nowrap; /* ✅ 追加：折り返しを禁止 */
 }
 /* 左側：タイトル＋サブタイトル用の箱 */
 .header-main {
   flex: 1;
   min-width: 0;
+  display: flex; /* ✅ 追加 */
+  align-items: center; /* ✅ 追加 */
 }
 /* 左側（タイトル＋サブタイトル） */
 .header-left {
@@ -114,6 +120,7 @@ body::before {
   font-size: 11px;
   padding: 4px;
   background: transparent;   /* 背景と枠はヘッダーに合わせて消す */
+  flex-shrink: 0; /* ✅ 追加 */
   border: none;
 }
 /* 1行目：ラベル */
@@ -178,6 +185,7 @@ body::before {
   display: flex;
   align-items: center;
   gap: 10px;
+  white-space: nowrap; /* ✅ 追加：改行を防ぐ */
 }
 
 .title-logo {
@@ -308,7 +316,15 @@ body::before {
   max-height: 40px;
   border: 1px dashed #e2e8f0;
   transition: border-color 0.15s ease, background-color 0.15s ease;
+  touch-action: pan-y; /* 縦スクロールは許可、横はドラッグ用に予約 */
 }
+
+/* ドラッグ中は他の要素の選択を無効化 */
+body.dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* ドライバーC/A+C用：少し高め */
 .card-container.slot-tall {
   height: 56px;
@@ -405,12 +421,51 @@ body::before {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
   cursor: grab;
   transition: box-shadow 0.15s ease, transform 0.05s ease, border-color 0.15s ease;
+  touch-action: none; /* ブラウザのデフォルト動作を無効化 */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .obj-card:active {
   cursor: grabbing;
   transform: scale(0.99);
   box-shadow: 0 3px 8px rgba(15, 23, 42, 0.12);
+  cursor: grabbing;
+  transform: scale(1.05); /* ✅ 少し大きくして「掴んだ感」 */
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+  z-index: 1000;
+}
+
+/* ドラッグオーバーレイ（ドラッグ中の要素） */
+[data-dnd-dragging] {
+  opacity: 0.9;
+  transform: scale(1.08) rotate(2deg); /* ✅ 傾けて動的な感じに */
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* 長押し中の見た目 */
+.obj-card.long-pressing {
+  transform: scale(1.1);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5), 0 8px 24px rgba(0, 0, 0, 0.3);
+  animation: longPressPulse 0.3s ease-out;
+}
+
+@keyframes longPressPulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1.1);
+  }
+}
+
+/* ドラッグ中 */
+.obj-card.is-dragging {
+  opacity: 0.8;
+  transform: scale(1.08) rotate(3deg);
 }
 
 /* アイコン＆テキスト構造 */
@@ -1398,6 +1453,7 @@ body::before {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0; /* ✅ 追加：縮まないように */
   flex-wrap: nowrap;       /* 折り返し禁止で高さ増を防ぐ */
 }
 
@@ -1523,6 +1579,62 @@ body::before {
   margin: 8px 0;
   border: none;
   border-top: 2px solid #e5e7eb;
+}
+
+/* ✅ ビューポートが狭い時の調整を追加 */
+@media (max-width: 1400px) {
+  .header {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .title {
+    font-size: 32px; /* 少し小さく */
+  }
+
+  .title-logo {
+    width: 45px;
+    height: 45px;
+  }
+
+  .header-legend {
+    font-size: 10px;
+  }
+
+  .legend-icons-row {
+    gap: 8px;
+  }
+}
+
+/* ✅ さらに狭い場合（モバイルズーム状態） */
+@media (max-width: 1000px) {
+  .header {
+    padding: 6px 8px;
+    gap: 6px;
+  }
+
+  .title {
+    font-size: 24px;
+  }
+
+  .title-logo {
+    width: 36px;
+    height: 36px;
+  }
+
+  .header-legend {
+    font-size: 9px;
+  }
+
+  .legend-color {
+    width: 10px;
+    height: 8px;
+  }
+
+  .settings-button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
 }
 
 /* ========================================

@@ -466,14 +466,16 @@ function DraggableGroupCard({
   kindColors,
   sizeColors,
   onTap,
-}: DraggableGroupCardProps) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({
+}: DraggableGroupCardProps & { onTap?: (group: ChassisGroup) => void }) {
+  // ✅ isDragging を追加で取得
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `group-${group.id}`,
   });
 
   // ✅ ここから追加：長押し検出用
   const longPressTimerRef = useRef<number | null>(null);
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const [isLongPressing, setIsLongPressing] = useState(false); // ✅ 追加
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     // A+Cでない、またはメニュー関数がない場合は何もしない
@@ -485,6 +487,8 @@ function DraggableGroupCard({
     // 500ms後にメニューを開く
     longPressTimerRef.current = window.setTimeout(() => {
       if (touchStartPosRef.current) {
+        setIsLongPressing(true); // ✅ 長押し状態をON
+
         const syntheticEvent = {
           preventDefault: () => {},
           clientX: touchStartPosRef.current.x,
@@ -495,10 +499,10 @@ function DraggableGroupCard({
         
         // 触覚フィードバック（対応デバイスのみ）
         if (navigator.vibrate) {
-          navigator.vibrate(50);
+          navigator.vibrate([50, 30, 50]); // ✅ パターンを追加
         }
       }
-    }, 500);
+    }, 400);
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
@@ -506,12 +510,13 @@ function DraggableGroupCard({
     if (longPressTimerRef.current && touchStartPosRef.current) {
       const touch = e.touches[0];
       const moved = 
-        Math.abs(touch.clientX - touchStartPosRef.current.x) > 8 ||
-        Math.abs(touch.clientY - touchStartPosRef.current.y) > 8;
+        Math.abs(touch.clientX - touchStartPosRef.current.x) > 10 ||
+        Math.abs(touch.clientY - touchStartPosRef.current.y) > 10;
 
       if (moved) {
         window.clearTimeout(longPressTimerRef.current);
         longPressTimerRef.current = null;
+        setIsLongPressing(false); // ✅ リセット
       }
     }
   };
@@ -521,6 +526,7 @@ function DraggableGroupCard({
       window.clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+    setIsLongPressing(false); // ✅ リセット
     touchStartPosRef.current = null;
   };
 
@@ -618,13 +624,18 @@ function DraggableGroupCard({
     onContextMenuGroup(e, group);
   };
 
+  // ✅ 長押し中のスタイルを追加
+  const cardClassName = `obj-card chassis-card ${
+    isAC ? "group-loaded" : "group-empty"
+  } size-${group.size} ${statusClass} ${axleClass} ${
+    isLongPressing ? "long-pressing" : "" // ✅ 追加
+  } ${isDragging ? "is-dragging" : ""}`;  // ✅ 追加
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`obj-card chassis-card ${
-        isAC ? "group-loaded" : "group-empty"
-      } size-${group.size} ${statusClass} ${axleClass}`}
+      className={cardClassName} // ✅ 変更
       {...listeners}
       {...attributes}
       title={tooltip}
@@ -829,19 +840,17 @@ async function uploadThemeBgToStorage(
 
 function App() {
 
-  // ✅ タッチとマウス両方に対応
+  // センサー設定を変更
   const sensors = useSensors(
-    // マウス：5px動かしたら即ドラッグ
     useSensor(PointerSensor, {
       activationConstraint: {
         distance: 5,
       },
     }),
-    // タッチ：動かしたら即ドラッグ、長押しでメニュー
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 500,      // 500ms長押しでメニュー
-        tolerance: 8,    // 8px以上動いたらドラッグ開始
+        // ✅ Android 対応：delay を削除して distance のみに
+        distance: 10, // 10px 動かしたらドラッグ開始
       },
     })
   );
@@ -2508,10 +2517,18 @@ useEffect(() => {
 
       <DndContext
         sensors={sensors}
-        onDragStart={(e) => setActiveDragId(String(e.active.id))}
-        onDragCancel={() => setActiveDragId(null)}
+        onDragStart={(e) => {
+          setActiveDragId(String(e.active.id));
+          document.body.classList.add('dragging'); // ✅ 追加
+        }}
+        
+        onDragCancel={() => {
+          setActiveDragId(null);
+          document.body.classList.remove('dragging'); // ✅ 追加
+        }}
         onDragEnd={(e) => {
           setActiveDragId(null);
+          document.body.classList.remove('dragging'); // ✅ 追加
           handleDragEnd(e);
         }}
       >
