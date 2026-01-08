@@ -879,9 +879,44 @@ function App() {
     const [axleColors, setAxleColors] = useState<Record<string, string>>({});
     const [sizeColors, setSizeColors] = useState<Record<string, string>>({});
 
+    // モーダルを開いた時点のスナップショット
+    const [settingsSnapshot, setSettingsSnapshot] = useState<any | null>(null);
+
+    const openSettings = () => {
+      // ここに「設定で触るもの」を全部まとめて退避
+      setSettingsSnapshot({
+        axleColors,
+        sizeColors,
+        kindColors,
+        theme,     // 背景色/ヘッダー色/bgImageUrl など
+        yards,
+        driverGroups,
+      });
+      setIsSettingsOpen(true);
+    };
+
+    const closeSettingsWithoutSave = () => {
+      if (settingsSnapshot) {
+        setAxleColors(settingsSnapshot.axleColors ?? {});
+        setSizeColors(settingsSnapshot.sizeColors ?? {});
+        setKindColors(settingsSnapshot.kindColors ?? {});
+        setTheme(settingsSnapshot.theme ?? {});
+        setYards(settingsSnapshot.yards ?? []);
+        setDriverGroups(settingsSnapshot.driverGroups ?? DEFAULT_DRIVER_GROUPS);
+      }
+      setIsSettingsOpen(false);
+      setSettingsSnapshot(null);
+    };
+
+    const closeSettingsWithSave = () => {
+      // いまの挙動：単に閉じる（既に state は反映済みなのでこれでOK）
+      setIsSettingsOpen(false);
+      setSettingsSnapshot(null);
+    };
+
+
     // ✅ 保存済みstateがあるか（trucksの「基本車両の自動割当」を抑止する用）
     const hasSavedStateRef = useRef(false);
-
     const hasStoredGroupsRef = useRef(false);
 
     // state が変わったら ref へ反映
@@ -2351,7 +2386,7 @@ useEffect(() => {
         </div>
      <button
      className="settings-button btn-primary"
-     onClick={() => setIsSettingsOpen(true)}
+     onClick={openSettings}
     >
       設定
     </button>
@@ -2780,6 +2815,7 @@ useEffect(() => {
       accept="image/*"
       disabled={themeUploading || !boardId}
       onChange={async (e) => {
+        const inputEl = e.currentTarget; 
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -2792,7 +2828,7 @@ useEffect(() => {
           alert("背景画像のアップロードに失敗しました。");
         } finally {
           setThemeUploading(false);
-          e.currentTarget.value = ""; // 同じファイルを選び直せるように
+          inputEl.value = "";
         }
       }}
     />
@@ -3211,9 +3247,17 @@ useEffect(() => {
             </section>
 
             <div className="modal-footer">
-              <button 
+              <button
+                className="btn-delete"
+                disabled={themeUploading}  // アップロード中に戻すのは危険なので抑止推奨
+                onClick={closeSettingsWithoutSave}
+              >
+                保存しないで閉じる
+              </button>
+
+              <button
                 className="btn-primary"
-                onClick={() => setIsSettingsOpen(false)}
+                onClick={closeSettingsWithSave}
               >
                 保存
               </button>
