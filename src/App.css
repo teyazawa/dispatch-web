@@ -17,12 +17,12 @@
 
   /* シャーシ・コンテナ用 */
   --card-width: 160px;
-  
+
   /* トラック用 */
   --truck-width: 65px;
-  
+
   /* 枠用 */
-  --slot-pool-width: 165px;
+  --slot-pool-width: 170px;
   --slot-driver-truck-width: 75px;
   --slot-delivery-width: 180px;
 }
@@ -119,7 +119,7 @@ body::before {
   gap: 4px;
   font-size: 11px;
   padding: 4px;
-  background: transparent;   /* 背景と枠はヘッダーに合わせて消す */
+  background: transparent; /* 背景と枠はヘッダーに合わせて消す */
   flex-shrink: 0; /* ✅ 追加 */
   border: none;
 }
@@ -127,13 +127,13 @@ body::before {
 .legend-header-row {
   display: flex;
   justify-content: flex-end;
-  gap: 24px;                /* ラベル間の間隔はお好みで */
+  gap: 24px; /* ラベル間の間隔はお好みで */
   font-weight: 600;
   color: #374151;
 }
 
 .legend-header-cell {
-  min-width: 60px;          /* 3列がそろうように少し幅を確保 */
+  min-width: 60px; /* 3列がそろうように少し幅を確保 */
   text-align: left;
 }
 
@@ -160,7 +160,7 @@ body::before {
 /* ヘッダー右側の凡例のアイコン行をキレイに揃える */
 .header-legend .legend-icons-row {
   display: flex;
-  align-items: center;   /* 各グループの縦位置を揃える */
+  align-items: center; /* 各グループの縦位置を揃える */
   gap: 24px;
 }
 
@@ -174,7 +174,7 @@ body::before {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  line-height: 1;        /* 行間を詰めて高さを揃える */
+  line-height: 1; /* 行間を詰めて高さを揃える */
   padding: 0;
   margin: 0;
 }
@@ -189,11 +189,11 @@ body::before {
 }
 
 .title-logo {
-  width: 55px;     /* 好みで 28〜40px あたり */
+  width: 55px; /* 好みで 28〜40px あたり */
   height: 55px;
   object-fit: contain;
   flex: 0 0 auto;
-  border-radius: 6px;  /* 角丸不要なら消してOK */
+  border-radius: 6px; /* 角丸不要なら消してOK */
 }
 
 .subtitle {
@@ -210,7 +210,7 @@ body::before {
   max-width: 100%;
   overflow-x: visible;
   overflow-y: visible; /* 基本ここは visible でOK */
-  margin-top: 72px;  /* ヘッダーの高さに合わせて調整 */
+  margin-top: 72px; /* ヘッダーの高さに合わせて調整 */
 }
 
 /* 全体を横スクロールさせる */
@@ -335,17 +335,16 @@ body.dragging {
 .card-container.slot-pool-single {
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap;     /* ★ 横いっぱいになったら縦に折り返す */
+  flex-wrap: wrap; /* ★ 横いっぱいになったら縦に折り返す */
   gap: 6px;
 
   height: auto;
   min-height: 38px;
-  max-height: none;    /* 伸び放題OK */
+  max-height: none; /* 伸び放題OK */
   padding: 4px 6px;
 
   align-items: center;
 }
-
 
 /* 横並び＋折り返し用（予備車・日付自動振分・一時保管・完了） */
 .card-container.slot-row-wrap {
@@ -391,7 +390,7 @@ body.dragging {
 .chassis-card.group-loaded {
   min-height: 26px;
   max-height: 40px;
-  height: auto;      /* ★ カード内容に応じて伸びる */
+  height: auto; /* ★ カード内容に応じて伸びる */
 }
 
 /* ドライバーの C / A+C 枠：高さは内容に合わせるが、最低40pxに */
@@ -409,7 +408,7 @@ body.dragging {
 /* カード共通（イラスト風） */
 .obj-card {
   position: relative;
-  overflow: hidden;              /* ★ ここを必ず hidden に */
+  overflow: hidden; /* ★ ここを必ず hidden に */
   display: flex;
   align-items: center;
   padding: 4px 8px;
@@ -420,7 +419,8 @@ body.dragging {
   border: 1px solid #e5e7eb;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
   cursor: grab;
-  transition: box-shadow 0.15s ease, transform 0.05s ease, border-color 0.15s ease;
+  transition: box-shadow 0.15s ease, transform 0.05s ease,
+    border-color 0.15s ease;
   touch-action: none; /* ブラウザのデフォルト動作を無効化 */
   -webkit-user-select: none;
   user-select: none;
@@ -509,7 +509,7 @@ body.dragging {
 }
 /* A+C の2行目だけ黒っぽく（デフォは少しグレーなので上書き） */
 .card-sub-text.ac-loaded {
-  color: #111827;  /* ほぼ黒 */
+  color: #111827; /* ほぼ黒 */
 }
 /* 搬入ヤードとシャーシ番号の間に置くグレーのスラッシュ */
 .ac-slash {
@@ -574,7 +574,6 @@ body.dragging {
   color: #1d4ed8;
 }
 
-
 /* A+C のときのタイトル用（必要なら微調整用） */
 .card-title-container {
   font-size: 13px;
@@ -594,7 +593,7 @@ body.dragging {
 
 /* 左側：シャーシ番号（太め） */
 .chassis-only-label {
-  font-size: 20px;      /* お好みで 18px とかでもOK */
+  font-size: 20px; /* お好みで 18px とかでもOK */
   font-weight: 700;
   color: #111827;
 }
@@ -634,12 +633,12 @@ body.dragging {
 
   display: flex;
   align-items: center;
-  overflow: hidden;         /* ★ ここで帯をカード内に閉じ込める */
+  overflow: hidden; /* ★ ここで帯をカード内に閉じ込める */
   z-index: 1;
 }
 /* A+C の2行目のシャーシ番号だけ赤く強調 */
 .chassis-no-highlight {
-  color: #ef4444;   /* 赤 */
+  color: #ef4444; /* 赤 */
   font-weight: 700; /* 太字 */
 }
 
@@ -665,10 +664,10 @@ body.dragging {
 }
 
 .chassis-band-left.size-20 {
-  background: #3b82f6;   /* 20F 青 */
+  background: #3b82f6; /* 20F 青 */
 }
 .chassis-band-left.size-40 {
-  background: #f97316;   /* 40F オレンジ */
+  background: #f97316; /* 40F オレンジ */
 }
 
 /* 右：積載帯 */
@@ -678,11 +677,11 @@ body.dragging {
   opacity: 0.25;
 }
 .chassis-band-right.load-empty {
-  background: #d1d5db;   /* 空：グレー */
+  background: #d1d5db; /* 空：グレー */
 }
 
 .chassis-band-right.load-loaded {
-  background: #ef25ca;   /* 積載：緑 */
+  background: #ef25ca; /* 積載：緑 */
 }
 
 /* コンテナカード（A） */
@@ -707,8 +706,8 @@ body.dragging {
   min-width: var(--slot-pool-width);
   max-width: var(--slot-pool-width);
 
-  padding: 2px 3px;          /* ← ここはお好み（おすすめ値） */
-  overflow: visible;          /* カードがはみ出さないようにする */
+  padding: 2px 3px; /* ← ここはお好み（おすすめ値） */
+  overflow: visible; /* カードがはみ出さないようにする */
   display: flex;
   align-items: center;
 }
@@ -726,21 +725,21 @@ body.dragging {
 .driver-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;        /* ドライバー同士の縦の間隔 */
+  gap: 4px; /* ドライバー同士の縦の間隔 */
 }
 
 .driver-row {
   display: grid;
   grid-template-columns: 90px 1fr; /* 160px → 140px くらいに */
   column-gap: 0px;
-  align-items: flex-end;            /* ★ 下端を揃える（重要） */
-  padding: 2px 0;                   /* 縦方向の余白を最小限に */
-  border-bottom: none;              /* もし線が残っていたら消す */
+  align-items: flex-end; /* ★ 下端を揃える（重要） */
+  padding: 2px 0; /* 縦方向の余白を最小限に */
+  border-bottom: none; /* もし線が残っていたら消す */
 }
 .driver-name {
   font-weight: 600;
   font-size: 12px;
-  margin-bottom: 2px;              /* ここも狭めに */
+  margin-bottom: 2px; /* ここも狭めに */
 }
 
 .slot-title {
@@ -799,10 +798,10 @@ body.dragging {
 
 /* 日付ごとの列：最大260pxまで、基本はパネルの50% */
 .day-column {
-  flex: 0 0 200px;   /* ← ここだけ変えれば1日の横幅を調整できる */
-  min-width: 200px;      /* あまり狭くならないように下限を決める */
-  max-width: 200px;      /* ★ これが「ビヨーンと横長」を防ぐポイント */
-  scroll-snap-align: start;  /* ← スクロールしたときに列の頭で止まる（任意） */
+  flex: 0 0 200px; /* ← ここだけ変えれば1日の横幅を調整できる */
+  min-width: 200px; /* あまり狭くならないように下限を決める */
+  max-width: 200px; /* ★ これが「ビヨーンと横長」を防ぐポイント */
+  scroll-snap-align: start; /* ← スクロールしたときに列の頭で止まる（任意） */
 }
 /* ▼ 日付列の中のドロップ枠は列幅いっぱいに広げる */
 .delivery-panel .slot-auto.card-container {
@@ -815,20 +814,20 @@ body.dragging {
   display: inline-flex;
   gap: 30px;
   padding-bottom: 4px;
-  scroll-snap-type: x mandatory;  /* ← あると1日単位でパチッと止まって気持ちいい（任意） */
+  scroll-snap-type: x mandatory; /* ← あると1日単位でパチッと止まって気持ちいい（任意） */
 }
 /* 配送分の “日付エリア全体” をスクロールできる箱 */
 .delivery-scroll {
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;   /* ★ ここだけ横スクロール */
+  overflow-x: auto; /* ★ ここだけ横スクロール */
   overflow-y: auto;
 }
 
 /*配送分の日付のフォントサイズ*/
 .day-column h3 {
   margin: 0 0 4px 0;
-  font-size: 16px;  /* ← 好きなサイズ */
+  font-size: 16px; /* ← 好きなサイズ */
   font-weight: 700; /* 太字にしたければ追加 */
 }
 
@@ -914,9 +913,8 @@ body.dragging {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;  /* 好きなサイズに変更してOK */
+  font-size: 11.5px; /* 好きなサイズに変更してOK */
 }
-
 
 /* 完了全削除ボタン */
 .clear-completed-btn {
@@ -1053,8 +1051,8 @@ body.dragging {
 }
 /* ★ dnd-kit でドラッグ中の要素を最前面にする */
 [data-dnd-kit-dragging="true"] {
-  position: relative;              /* 念のため明示 */
-  z-index: 99999 !important;        /* 他のルールより優先させる */
+  position: relative; /* 念のため明示 */
+  z-index: 99999 !important; /* 他のルールより優先させる */
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
 }
 
@@ -1096,7 +1094,7 @@ body.dragging {
   max-height: 24px;
   display: flex;
   align-items: center;
-  overflow: hidden;   /* 帯をカードの中に閉じ込める */
+  overflow: hidden; /* 帯をカードの中に閉じ込める */
   z-index: 1;
 }
 
@@ -1105,8 +1103,8 @@ body.dragging {
   top: 0;
   left: 0;
   right: 0;
-  height: 4px;          /* 帯の太さ（好みで 4〜8px） */
-  z-index: 0;           /* 本文より下に */
+  height: 4px; /* 帯の太さ（好みで 4〜8px） */
+  z-index: 0; /* 本文より下に */
   opacity: 0.9;
   pointer-events: none; /* DnD やクリックを邪魔しない */
 }
@@ -1188,7 +1186,7 @@ body.dragging {
 .modal {
   width: 900px;
   max-height: 80vh;
-  font-size: 13px;   /* 設定画面の標準文字サイズ */
+  font-size: 13px; /* 設定画面の標準文字サイズ */
   overflow-y: auto;
   background: #fff;
   padding: 16px 20px;
@@ -1366,8 +1364,8 @@ body.dragging {
 
 /* ===== ヘッダー右上の「設定」ボタン ===== */
 .settings-button {
-  padding: 16px 20px;   /* ボタンの高さ＆横幅感 */
-  font-size: 16px;     /* ボタンの文字サイズ */
+  padding: 16px 20px; /* ボタンの高さ＆横幅感 */
+  font-size: 16px; /* ボタンの文字サイズ */
 }
 
 /* ===== 設定モーダル内のボタンたち ===== */
@@ -1376,9 +1374,9 @@ body.dragging {
 .modal .btn-add,
 .modal .btn-delete,
 .modal-footer button {
-  padding: 6px 10px;   /* ボタンの大きさ */
-  font-size: 14px;     /* 文字サイズ */
-  border-radius: 4px;  /* 角丸（お好みで） */
+  padding: 6px 10px; /* ボタンの大きさ */
+  font-size: 14px; /* 文字サイズ */
+  border-radius: 4px; /* 角丸（お好みで） */
 }
 
 /* ===== 設定モーダル内の入力欄 ===== */
@@ -1387,9 +1385,9 @@ body.dragging {
 .driver-group-key-input,
 .driver-group-name-input,
 .modal-pos-input {
-  font-size: 14px;     /* 入力文字のサイズ */
-  height: 28px;        /* 高さ */
-  padding: 4px 6px;    /* 内側の余白 */
+  font-size: 14px; /* 入力文字のサイズ */
+  height: 28px; /* 高さ */
+  padding: 4px 6px; /* 内側の余白 */
 }
 
 /* AuthBar をヘッダー内でコンパクトに */
@@ -1416,7 +1414,7 @@ body.dragging {
   border-radius: 6px;
   width: 140px;
 }
-.btn-primary{
+.btn-primary {
   height: 28px;
   padding: 0 12px;
   border: 1px solid #2f6feb;
@@ -1427,8 +1425,8 @@ body.dragging {
   cursor: pointer;
 }
 
-.btn-primary:hover{
-    filter: brightness(0.95);
+.btn-primary:hover {
+  filter: brightness(0.95);
 }
 .authbar-btn {
   height: 28px;
@@ -1446,7 +1444,7 @@ body.dragging {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 12px;       /* 高さを抑える */
+  padding: 8px 12px; /* 高さを抑える */
 }
 
 .header-right {
@@ -1454,7 +1452,7 @@ body.dragging {
   align-items: center;
   gap: 12px;
   flex-shrink: 0; /* ✅ 追加：縮まないように */
-  flex-wrap: nowrap;       /* 折り返し禁止で高さ増を防ぐ */
+  flex-wrap: nowrap; /* 折り返し禁止で高さ増を防ぐ */
 }
 
 /* タッチデバイスでのスクロール改善 */
@@ -1643,8 +1641,7 @@ body.dragging {
 
 /* タップ領域を広げる */
 @media (hover: none) and (pointer: coarse) {
-
-    .detail-modal {
+  .detail-modal {
     max-height: 80vh;
   }
 

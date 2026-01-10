@@ -1679,7 +1679,7 @@ function App() {
     };
   }, []);
 
-  const [leftWidth, setLeftWidth] = useState<number>(680); // シャーシプール
+  const [leftWidth, setLeftWidth] = useState<number>(700); // シャーシプール
   const [middleWidth, setMiddleWidth] = useState<number>(610); // ドライバー
   const [deliveryWidth, setDeliveryWidth] = useState<number>(480); // 配送分
 
