@@ -14,6 +14,8 @@ import AuthBar from "./components/AuthBar";
 import { DragOverlay } from "@dnd-kit/core";
 import { createPortal } from "react-dom";
 import tezukaLogo from "./assets/tezuka-logo.png";
+import VoicePanel from "./components/VoicePanel";
+import type { VoiceLog } from "./components/VoicePanel";
 
 /** サイズ種別 */
 type Size = "20" | "40";
@@ -1087,6 +1089,8 @@ function App() {
   // ✅ DB復元が完了したか（fetchChassisの初期配置を走らせる/止める判定に使う）
   const [hydrationDone, setHydrationDone] = useState(false);
 
+  const [voiceLogs, setVoiceLogs] = useState<VoiceLog[]>([]);
+
   // ✅ シャーシ種別（kindLabel）→ 色（#RRGGBB）
   const [kindColors, setKindColors] = useState<Record<string, string>>({});
   const [axleColors, setAxleColors] = useState<Record<string, string>>({});
@@ -1860,6 +1864,17 @@ function App() {
     return null;
   }
 
+  // 音声ログを追加する関数
+  const addVoiceLog = (message: string) => {
+    const newLog: VoiceLog = {
+      id: Date.now().toString(),
+      text: message,
+      timestamp: new Date(),
+      isSelected: true,
+    };
+    setVoiceLogs((prev) => [...prev, newLog]);
+  };
+
   function handleDragEnd(event: any) {
     const { active, over } = event;
     if (!over) return;
@@ -1878,9 +1893,27 @@ function App() {
         const parsed = parseYardDropId(overId);
         if (!parsed) return;
 
+        // ✅ 音声化処理を追加（ドライバーから移動する場合）
+        if (currentGroup.location.type === "driver") {
+          const driverLoc = currentGroup.location; // ← ここで取得
+          const driver = drivers.find((d) => d.id === driverLoc.driverId);
+
+          if (parsed.mode === "single") {
+            const yard = yards.find((y) => y.id === parsed.yardId);
+            const message = `${driver?.name}さん、${yard?.name}へ台切ってください`;
+            addVoiceLog(message);
+          } else {
+            // parsed.mode === "grid"
+            const yard = yards.find((y) => y.id === parsed.yardId);
+            const lane = yard?.lanes.find((l) => l.id === parsed.laneId);
+            const message = `${driver?.name}さん、${yard?.name}${lane?.label}へ台切ってください`;
+            addVoiceLog(message);
+          }
+        }
+
         // ★ 川口車庫・現場など「1スロットで横並び」
         if (parsed.mode === "single") {
-          const yardId = parsed.yardId;
+          const yardId = parsed.yardId; // ← ここは既存コード通り
 
           setGroups((prev) =>
             prev.map((g) =>
@@ -1891,7 +1924,7 @@ function App() {
                       type: "pool",
                       yardId,
                       laneId: "single",
-                      pos: "front", // ダミー（single描画ではposは使わない）
+                      pos: "front",
                     },
                   }
                 : g
@@ -1901,7 +1934,7 @@ function App() {
         }
 
         // ★ 通常ヤード（レーン×前中奥）
-        const { yardId, laneId, pos } = parsed;
+        const { yardId, laneId, pos } = parsed; // ← ここは既存コード通り
 
         const occupied = getSlotGroup(yardId, laneId, pos);
         if (occupied && occupied.id !== groupId) return;
@@ -1926,14 +1959,29 @@ function App() {
         );
         if (!hasTruck) return;
 
-        // ✅ すでに別の group がいるなら「何もしない」＝元の位置に戻る
         const occupied = groups.find(
           (g) =>
             g.location.type === "driver" && g.location.driverId === driverId
         );
         if (occupied && occupied.id !== groupId) return;
 
-        // 空いている（または自分自身）なら入れる
+        // ✅ 音声化処理を追加
+        const driver = drivers.find((d) => d.id === driverId);
+
+        // プールからの移動の場合
+        if (currentGroup.location.type === "pool") {
+          const poolLoc = currentGroup.location; // ← ここで取得
+          const yard = yards.find((y) => y.id === poolLoc.yardId);
+          const lane = yard?.lanes.find((l) => l.id === poolLoc.laneId);
+
+          const yardName = yard?.name || "";
+          const laneName = lane?.label || "";
+          const chassisInfo = `${currentGroup.chassisLabel}(${currentGroup.size}ft)`;
+
+          const message = `${driver?.name}さん、${yardName}${laneName}から${chassisInfo}を繋いでください`;
+          addVoiceLog(message);
+        }
+
         setGroups((prev) =>
           prev.map((g) =>
             g.id === groupId
@@ -1943,7 +1991,6 @@ function App() {
         );
         return;
       }
-
       // 一時保管枠へ：A+C → Cだけにしてコンテナは tempContainers へ
       if (overId === "zone-temp") {
         if (!currentGroup.container) return;
@@ -2115,6 +2162,11 @@ function App() {
         if (!group) return;
         if (group.container) return;
         if (group.size !== container.size) return;
+
+        // ✅ 音声化処理を追加
+        const driver = drivers.find((d) => d.id === driverId);
+        const message = `${driver?.name}さん、${container.pickupYard}からコンテナ番号${container.no}を取ります`;
+        addVoiceLog(message);
 
         // 元の場所から削除
         if (source === "containers") {
@@ -3130,6 +3182,10 @@ function App() {
                       />
                     ))}
                   </DroppableArea>
+                </div>
+
+                <div style={{ marginTop: "20px" }}>
+                  <VoicePanel logs={voiceLogs} onLogsChange={setVoiceLogs} />
                 </div>
               </div>
               {/* ★ 右パネル用の仕切り線（必ず main の中の最後の子に） */}
