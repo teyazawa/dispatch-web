@@ -31,7 +31,9 @@ type Driver = {
   groupName?: string;
 };
 
-type TruckLocation = { type: "spare" } | { type: "driver"; driverId: string };
+type TruckLocation =
+  | { type: "spare"; zoneId: string } // ← zoneId を追加
+  | { type: "driver"; driverId: string };
 
 type Truck = {
   id: string;
@@ -110,11 +112,11 @@ type BoardState = {
   completedContainers: Container[];
   driverGroups: DriverGroupConfig;
   yards: YardConfig[];
+  spareZones: SpareZone[]; // ← 追加
   axleColors?: Record<string, string>;
   kindColors?: Record<string, string>;
   sizeColors?: Record<string, string>;
 
-  // Realtime同期用（追加）
   theme?: ThemeSettings;
   version: number;
   updatedAt: string;
@@ -214,7 +216,7 @@ type MailMenuState = {
 };
 
 /** シャーシプール定義 */
-type SlotMode = "single" | "two" | "three";
+type SlotMode = "single" | "one" | "two" | "three";
 
 type YardLane = { id: string; label: string };
 
@@ -232,6 +234,11 @@ type YardConfig = {
     middle: string;
     back: string;
   };
+};
+
+type SpareZone = {
+  id: string;
+  name: string;
 };
 
 // デフォルトのラベル
@@ -300,6 +307,8 @@ const defaultYards: YardConfig[] = [
     ],
   },
 ];
+
+const defaultSpareZones: SpareZone[] = [{ id: "spare-trucks", name: "予備車" }];
 
 /** コンテナ表示用のまとめ文字列 */
 
@@ -1216,6 +1225,25 @@ function App() {
     localStorage.setItem("dispatch-yards", JSON.stringify(yards));
   }, [yards]);
 
+  const [spareZones, setSpareZones] = useState<SpareZone[]>(() => {
+    const saved = localStorage.getItem("dispatch-spare-zones");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      } catch {
+        // 壊れてたら defaultSpareZones にフォールバック
+      }
+    }
+    return defaultSpareZones;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("dispatch-spare-zones", JSON.stringify(spareZones));
+  }, [spareZones]);
+
   const [mailMenu, setMailMenu] = useState<MailMenuState>({
     visible: false,
     x: 0,
@@ -1332,9 +1360,9 @@ function App() {
         // 1) APIの車両をまず素直に作る（初期はspare）
         const apiTrucks: Truck[] = (data.trucks ?? []).map((t: any) => ({
           id: String(t.id),
-          label: t.number, // 車両_番号
-          carNo: t.carNo, // 車両_車番
-          location: { type: "spare" as const },
+          label: t.number,
+          carNo: t.carNo,
+          location: { type: "spare" as const, zoneId: "spare-trucks" }, // ← zoneId を追加
         }));
 
         // 2) 保存済みstateが無いときだけ「基本車両」自動割当を適用
@@ -1819,8 +1847,6 @@ function App() {
     );
   }
 
-  const spareTrucks = trucks.filter((t) => t.location.type === "spare");
-
   // コンテナIDからどこにいるかを探す（配送枠 / 一時保管 / 完了）
   function findContainerById(
     id: string
@@ -1975,10 +2001,12 @@ function App() {
         return;
       }
 
-      if (overId === "zone-spare-trucks") {
+      // 予備車エリアへのドロップ（複数対応）
+      if (overId.startsWith("zone-spare-")) {
+        const zoneId = overId.replace("zone-", "");
         setTrucks((prev) =>
           prev.map((t) =>
-            t.id === truckId ? { ...t, location: { type: "spare" } } : t
+            t.id === truckId ? { ...t, location: { type: "spare", zoneId } } : t
           )
         );
         return;
@@ -2222,6 +2250,33 @@ function App() {
     });
   };
 
+  // ===== 予備車エリア操作ヘルパー =====  ← ここから追加
+  const addSpareZone = () => {
+    setSpareZones((prev) => [
+      ...prev,
+      {
+        id: `spare-${Date.now()}`,
+        name: "新しい予備エリア",
+      },
+    ]);
+  };
+
+  const removeSpareZone = (index: number) => {
+    setSpareZones((prev) => {
+      // 最低1つは残す
+      if (prev.length <= 1) return prev;
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const updateSpareZone = (index: number, name: string) => {
+    setSpareZones((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], name };
+      return copy;
+    });
+  };
+
   // ===== ドライバーグループ設定の更新ヘルパー =====
   const updateOwnedGroup = (index: number, patch: Partial<DriverGroup>) => {
     setDriverGroups((prev) => {
@@ -2329,6 +2384,7 @@ function App() {
       if (s.completedContainers) setCompletedContainers(s.completedContainers);
       if (s.driverGroups) setDriverGroups(s.driverGroups);
       if (s.yards) setYards(s.yards);
+      if (s.spareZones) setSpareZones(s.spareZones); // ← 追加
       if (s.kindColors) setKindColors(s.kindColors);
       if (s.axleColors) setAxleColors(s.axleColors);
       if (s.sizeColors) setSizeColors(s.sizeColors);
@@ -2387,6 +2443,7 @@ function App() {
               setCompletedContainers(next.completedContainers);
             if (next.driverGroups) setDriverGroups(next.driverGroups);
             if (next.yards) setYards(next.yards);
+            if (next.spareZones) setSpareZones(next.spareZones); // ← 追加
             if (next.kindColors) setKindColors(next.kindColors);
             if (next.axleColors) setAxleColors(next.axleColors);
             if (next.sizeColors) setSizeColors(next.sizeColors);
@@ -2426,6 +2483,7 @@ function App() {
         completedContainers,
         driverGroups,
         yards,
+        spareZones, // ← 追加
         kindColors,
         axleColors,
         sizeColors,
@@ -2459,6 +2517,7 @@ function App() {
     completedContainers,
     driverGroups,
     yards,
+    spareZones,
     kindColors,
     axleColors,
     sizeColors,
@@ -2668,6 +2727,8 @@ function App() {
                   const yardPositions =
                     slotMode === "single"
                       ? [] // 1マスフリーなので列は使わない
+                      : slotMode === "one" // ← 追加
+                      ? [{ id: "front" as const, label: labels.front || "" }]
                       : slotMode === "two"
                       ? [
                           { id: "front" as const, label: labels.front || "前" },
@@ -2764,16 +2825,29 @@ function App() {
                   );
                 })}
 
-                <h3 style={{ marginTop: 12, marginBottom: 4 }}>予備車</h3>
-                <DroppableArea
-                  id="zone-spare-trucks"
-                  placeholder="ここに予備車Bをドロップ"
-                  className="slot-row-wrap"
-                >
-                  {spareTrucks.map((t) => (
-                    <DraggableTruckCard key={t.id} truck={t} />
-                  ))}
-                </DroppableArea>
+                {/* 予備車エリア（複数対応） */}
+                {spareZones.map((zone) => {
+                  const zoneTrucks = trucks.filter(
+                    (t) =>
+                      t.location.type === "spare" &&
+                      t.location.zoneId === zone.id
+                  );
+
+                  return (
+                    <div key={zone.id} style={{ marginTop: 12 }}>
+                      <h3 style={{ marginBottom: 4 }}>{zone.name}</h3>
+                      <DroppableArea
+                        id={`zone-${zone.id}`}
+                        placeholder="ここに車両Bをドロップ"
+                        className="slot-row-wrap"
+                      >
+                        {zoneTrucks.map((t) => (
+                          <DraggableTruckCard key={t.id} truck={t} />
+                        ))}
+                      </DroppableArea>
+                    </div>
+                  );
+                })}
               </div>
               <div className="resizer" onMouseDown={startResize("left")} />
 
@@ -3368,8 +3442,10 @@ function App() {
                               <option value="single">
                                 1マス（フリー／川口車庫仕様）
                               </option>
-                              <option value="two">2マス（前／奥）</option>
-                              <option value="three">3マス（前／中／奥）</option>
+                              <option value="one">1本（1マス固定）</option>{" "}
+                              {/* ← 追加 */}
+                              <option value="two">2本（前／奥）</option>
+                              <option value="three">3本（前／中／奥）</option>
                             </select>
                           </label>
                         </div>
@@ -3595,6 +3671,39 @@ function App() {
                     </button>
                   </div>
                 </section>
+
+                <h3>予備車エリア設定</h3>
+                <div className="spare-zones-list" style={{ marginBottom: 16 }}>
+                  {spareZones.map((zone, index) => (
+                    <div
+                      key={zone.id}
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                        marginBottom: 6,
+                      }}
+                    >
+                      <input
+                        className="modal-yard-name-input"
+                        value={zone.name}
+                        placeholder="エリア名（例: 予備車、修理中）"
+                        onChange={(e) => updateSpareZone(index, e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        className="btn-small btn-delete"
+                        onClick={() => removeSpareZone(index)}
+                        disabled={spareZones.length <= 1}
+                      >
+                        削除
+                      </button>
+                    </div>
+                  ))}
+                  <button className="btn-small btn-add" onClick={addSpareZone}>
+                    エリア追加
+                  </button>
+                </div>
 
                 <div className="modal-footer">
                   <button

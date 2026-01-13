@@ -344,14 +344,16 @@ body.dragging {
   max-height: none; /* 伸び放題OK */
   padding: 4px 6px;
 
-  align-items: center;
+  align-items: flex-end; /* ← 追加：縦方向は下揃え */
+  justify-content: flex-start; /* ← 追加：横方向は左揃え */
 }
 
 /* 横並び＋折り返し用（予備車・日付自動振分・一時保管・完了） */
 .card-container.slot-row-wrap {
   flex-direction: row;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: flex-end; /* ← flex-start から flex-end に変更 */
+  justify-content: flex-start; /* ← 追加：左揃え */
   height: auto;
   min-height: 40px;
   max-height: none;
@@ -364,6 +366,7 @@ body.dragging {
   min-height: 40px;
   max-height: none;
   overflow-y: visible;
+  justify-content: flex-start; /* ← 追加：左揃え（縦方向にアイテムが並ぶため） */
 }
 /* ドライバーの車両枠：40px × 60px 固定 */
 .card-container.slot-driver-truck {
