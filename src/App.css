@@ -587,12 +587,17 @@ body.dragging {
 
 /* A+C のときのタイトル用（必要なら微調整用） */
 .card-title-container {
-  font-size: 13px;
+  font-size: 14px;
+}
+
+/* A+C の2行目（コンテナ番号） */
+.card-sub .card-sub-text {
+  font-size: 13px; /* ← 必要なら追加 */
 }
 
 /* A+C のときのシャーシサブテキスト */
 .card-sub-chassis .card-sub-text {
-  font-size: 12px;
+  font-size: 13px;
 }
 /* Cだけのときの行全体 */
 .chassis-only-row {
@@ -701,12 +706,15 @@ body.dragging {
   width: var(--card-width);
   min-width: var(--card-width);
   max-width: var(--card-width);
-  height: 24px;
-  min-height: 24px;
-  max-height: 24px;
+  height: 40px; /* ← 24px から 40px に */
+  min-height: 40px; /* ← 24px から 40px に */
+  max-height: 40px; /* ← 24px から 40px に */
   overflow: hidden;
   display: flex;
   align-items: center;
+  flex-direction: column; /* ← 追加：縦方向に並べる */
+  justify-content: center; /* ← 追加：中央寄せ */
+  padding: 4px 8px; /* ← 追加：内側の余白 */
 }
 
 /* コンテナ工程別の色 */
@@ -969,7 +977,12 @@ body.dragging {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px; /* 好きなサイズに変更してOK */
+  font-size: 12px; /* 好きなサイズに変更してOK */
+}
+
+/* コンテナの2行目用（追加） */
+.container-card .card-sub-text {
+  font-size: 11px; /* ← 好みで調整 */
 }
 
 /* 完了全削除ボタン */
