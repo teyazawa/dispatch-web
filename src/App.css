@@ -22,7 +22,7 @@
   --truck-width: 65px;
 
   /* 枠用 */
-  --slot-pool-width: 170px;
+  --slot-pool-width: 180px;
   --slot-driver-truck-width: 75px;
   --slot-delivery-width: 180px;
 }
@@ -317,6 +317,7 @@ body::before {
   border: 1px dashed #e2e8f0;
   transition: border-color 0.15s ease, background-color 0.15s ease;
   touch-action: pan-y; /* 縦スクロールは許可、横はドラッグ用に予約 */
+  justify-content: flex-end; /* ← 追加：下揃え */
 }
 
 /* ドラッグ中は他の要素の選択を無効化 */
@@ -374,7 +375,7 @@ body.dragging {
   max-height: 40px;
   padding: 2px;
   display: flex;
-  align-items: center;
+  align-items: flex-end; /* ← center から flex-end に変更 */
   justify-content: center;
   overflow: visible;
 }
@@ -705,11 +706,34 @@ body.dragging {
   align-items: center;
 }
 
+/* コンテナ工程別の色 */
+.container-card.container-step-1 {
+  background: #fef3c7 !important; /* step1: 薄い黄色 */
+  border-color: #fbbf24;
+}
+
+.container-card.container-step-2 {
+  background: #dbeafe !important; /* step2: 薄い青 */
+  border-color: #60a5fa;
+}
+
+.container-card.container-step-3 {
+  background: #d1fae5 !important; /* step3: 薄い緑 */
+  border-color: #34d399;
+}
+
+.container-card.container-step-4,
+.container-card.container-completed {
+  background: #e5e7eb !important; /* step4/完了: グレー */
+  border-color: #9ca3af;
+  color: #374151 !important;
+}
+
 /* シャーシプールの枠を 56px に拡大（3行対応） */
 .card-container.slot-pool {
-  height: 56px; /* ← 44px から 56px に */
-  min-height: 56px; /* ← 40px から 56px に */
-  max-height: 56px; /* ← 44px から 56px に */
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
   width: var(--slot-pool-width);
   min-width: var(--slot-pool-width);
   max-width: var(--slot-pool-width);
@@ -717,7 +741,7 @@ body.dragging {
   padding: 2px 3px;
   overflow: visible;
   display: flex;
-  align-items: center;
+  align-items: flex-end; /* ← center から flex-end に変更 */
 }
 
 /* ドライバー行レイアウト */
@@ -1049,14 +1073,6 @@ body.dragging {
   background: #22c55e;
 }
 
-
-/* 空 / 積載 */
-.legend-load-empty {
-  background: #d1d5db;
-}
-.legend-load-loaded {
-  background: #ef25ca;
-}
 /* ★ dnd-kit でドラッグ中の要素を最前面にする */
 [data-dnd-kit-dragging="true"] {
   position: relative; /* 念のため明示 */
@@ -1139,15 +1155,6 @@ body.dragging {
 .chassis-card.size-40 {
   border-left: 5px solid #f97316;  /* 40F オレンジ */
 /*}
-
-/* === シャーシ：空 / 積載 右端色 ==================== */
-.chassis-card.chassis-empty {
-  border-right: 3px solid #d1d5db; /* 空：グレー */
-}
-
-.chassis-card.chassis-loaded {
-  border-right: 3px solid #ef25ca; /* 積載：緑 */
-}
 
 /* === コンテナ A：サイズ別 左端色（必要なら） ======= */
 /*.container-card.size-20 {

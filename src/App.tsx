@@ -804,6 +804,20 @@ function DraggableContainerCard({
   const line2Dest = destShort;
   const line2ContNo = container.no;
 
+  // ステップに応じたクラス名を決定
+  let stepClass = "";
+  if (isCompleted) {
+    stepClass = "container-completed";
+  } else if (container.step === 1) {
+    stepClass = "container-step-1";
+  } else if (container.step === 2) {
+    stepClass = "container-step-2";
+  } else if (container.step === 3) {
+    stepClass = "container-step-3";
+  } else if (container.step === 4) {
+    stepClass = "container-step-4";
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -2590,19 +2604,6 @@ function App() {
                           }}
                         />
                         兼用
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 状態 */}
-                  <div className="legend-group legend-group-load">
-                    <div className="legend-row">
-                      <span className="legend-item">
-                        <span className="legend-color legend-load-empty" />空
-                      </span>
-                      <span className="legend-item">
-                        <span className="legend-color legend-load-loaded" />
-                        積載
                       </span>
                     </div>
                   </div>
