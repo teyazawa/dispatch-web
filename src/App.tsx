@@ -822,9 +822,7 @@ function DraggableContainerCard({
     <div
       ref={setNodeRef}
       style={style}
-      className={`obj-card container-card size-${container.size}${
-        isCompleted ? " container-completed" : ""
-      }`}
+      className={`obj-card container-card size-${container.size} ${stepClass}`} // ← ここに ${stepClass} が入っていることを確認
       {...listeners}
       {...attributes}
       title={full}
