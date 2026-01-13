@@ -2212,6 +2212,50 @@ function App() {
     });
   };
 
+  const moveYardUp = (yardIndex: number) => {
+    if (yardIndex === 0) return;
+    setYards((prev) => {
+      const copy = [...prev];
+      [copy[yardIndex - 1], copy[yardIndex]] = [
+        copy[yardIndex],
+        copy[yardIndex - 1],
+      ];
+      return copy;
+    });
+  };
+
+  const moveYardDown = (yardIndex: number) => {
+    setYards((prev) => {
+      if (yardIndex >= prev.length - 1) return prev;
+      const copy = [...prev];
+      [copy[yardIndex], copy[yardIndex + 1]] = [
+        copy[yardIndex + 1],
+        copy[yardIndex],
+      ];
+      return copy;
+    });
+  };
+
+  const insertYardAfter = (yardIndex: number) => {
+    setYards((prev) => {
+      const newYard: YardConfig = {
+        id: `yard-${Date.now()}`,
+        name: "新しいヤード",
+        slotMode: "single",
+        positionLabels: {
+          front: "",
+          middle: "",
+          back: "",
+        },
+        lanes: [{ id: "lane1", label: "レーン1" }],
+      };
+
+      const copy = [...prev];
+      copy.splice(yardIndex + 1, 0, newYard);
+      return copy;
+    });
+  };
+
   const addLane = (yardIndex: number) => {
     setYards((prev) => {
       const copy = [...prev];
@@ -3569,14 +3613,42 @@ function App() {
                           </button>
                         </div>
 
-                        {/* ヤード削除ボタン */}
-                        <div className="modal-yard-actions">
+                        {/* ヤード操作ボタン（削除・上下移動） */}
+                        <div
+                          className="modal-yard-actions"
+                          style={{ display: "flex", gap: 8, marginTop: 8 }}
+                        >
                           <button
                             className="btn-small btn-delete"
                             onClick={() => removeYard(yIndex)}
                             disabled={yards.length <= 1}
                           >
                             置き場削除
+                          </button>
+
+                          <button
+                            className="btn-small"
+                            onClick={() => moveYardUp(yIndex)}
+                            disabled={yIndex === 0}
+                            style={{ background: "#6b7280", color: "white" }}
+                          >
+                            ↑ 上へ
+                          </button>
+
+                          <button
+                            className="btn-small"
+                            onClick={() => moveYardDown(yIndex)}
+                            disabled={yIndex === yards.length - 1}
+                            style={{ background: "#6b7280", color: "white" }}
+                          >
+                            ↓ 下へ
+                          </button>
+
+                          <button
+                            className="btn-small btn-add"
+                            onClick={() => insertYardAfter(yIndex)}
+                          >
+                            ↓ 下に追加
                           </button>
                         </div>
                       </div>
@@ -3585,7 +3657,7 @@ function App() {
 
                   {/* 一番下に「ヤード追加」 */}
                   <button className="btn-small btn-add" onClick={addYard}>
-                    置き場追加
+                    置き場を末尾に追加
                   </button>
 
                   {/* ここからドライバーグループ設定 */}

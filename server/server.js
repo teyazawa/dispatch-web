@@ -92,7 +92,13 @@ function shouldSkipDestination(destRaw) {
   const s = (destRaw ?? "").toString().trim();
   if (!s) return false;
   const u = s.toUpperCase();
-  return u.includes("FEEDER") || u.includes("POSITION");
+  return (
+    u.includes("FEEDER") ||
+    u.includes("POSITION") ||
+    u.includes("X線検査") ||
+    u.includes("Ⅹ線検査") ||  // 全角ローマ数字対応
+    u.includes("税関検査")
+  );
 }
 
 function stripCompanyTokens(destRaw) {
