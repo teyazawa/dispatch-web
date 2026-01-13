@@ -607,16 +607,33 @@ function DraggableGroupCard({
   }
 
   // ===============================
-  //  カード上の表示（A+C の 1行目）
+  //  カード上の表示（A+C）
   // ===============================
-  let acLine1 = "";
+  let acLine1 = ""; // 1行目：日付 時間 配送先
+  let acLine2 = ""; // 2行目：コンテナ番号
+  let acLine3 = ""; // 3行目：ヤード / シャーシ番号
+
   if (isAC && group.container) {
     const c = group.container;
     const [, d] = c.date.split("/");
     const dayLabel = d ? `${d}日` : c.date;
 
-    // ★ 1行目：28日 9:00 千葉RDC
+    // 1行目：28日 9:00 千葉RDC
     acLine1 = `${dayLabel} ${c.eta} ${c.destination}`;
+
+    // 2行目：コンテナ番号（青文字で表示するため別変数に）
+    acLine2 = c.no;
+
+    // 3行目：搬入ヤードがあるかで分岐
+    const hasDropoffYard = c.dropoffYard && c.dropoffYard.trim() !== "";
+
+    if (hasDropoffYard) {
+      // 作業工程①送信後：搬入ヤード / シャーシ番号
+      acLine3 = `${c.dropoffYard}`;
+    } else {
+      // 通常時：搬出ヤード / シャーシ番号
+      acLine3 = `${c.pickupYard}`;
+    }
   }
 
   const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -661,16 +678,20 @@ function DraggableGroupCard({
       <div className="card-body">
         {isAC && group.container ? (
           <>
-            {/* 1段目：28日 9:00 千葉RDC */}
+            {/* 1行目：28日 9:00 千葉RDC */}
             <div className="card-title card-title-container">{acLine1}</div>
 
-            {/* 2段目：青海A-1 青海EIR / 154 */}
+            {/* 2行目：コンテナ番号（青文字） */}
+            <div className="card-sub">
+              <span className="card-sub-text container-no-highlight">
+                {acLine2}
+              </span>
+            </div>
+
+            {/* 3行目：ヤード / シャーシ番号 */}
             <div className="card-sub card-sub-chassis">
               <span className="card-sub-text ac-loaded">
-                {/* 搬出ヤード + 搬入ヤード + グレーのスラッシュ + 赤いシャーシ番号 */}
-                <span className="ac-yard">{group.container.pickupYard}</span>{" "}
-                <span className="ac-yard">{group.container.dropoffYard}</span>{" "}
-                <span className="ac-slash">/</span>{" "}
+                {acLine3} <span className="ac-slash">/</span>{" "}
                 <span className="chassis-no-highlight">
                   {group.chassisLabel}
                 </span>
@@ -747,7 +768,7 @@ function DraggableContainerCard({
     id: `cont-${container.id}`,
   });
 
-  const sizeKey = `size-${container.size}`; // size-20 / size-40
+  const sizeKey = `size-${container.size}`;
   const sizeColor = sizeColors?.[sizeKey];
 
   const style: React.CSSProperties = {
@@ -759,21 +780,29 @@ function DraggableContainerCard({
 
   const full = formatContainerSummary(container);
 
+  // 日付ラベル作成
   const dateParts = container.date.split("/");
   const day = dateParts[1] || container.date;
   const dayLabel = `${day}日`;
 
+  // 搬出ヤードの短縮表示
   const pickupShort =
-    container.pickupYard.length > 6
-      ? container.pickupYard.slice(0, 6) + "…"
+    container.pickupYard.length > 8
+      ? container.pickupYard.slice(0, 8) + "…"
       : container.pickupYard;
 
+  // 配送先の短縮表示
   const destShort =
-    container.destination.length > 6
-      ? container.destination.slice(0, 6) + "…"
+    container.destination.length > 8
+      ? container.destination.slice(0, 8) + "…"
       : container.destination;
 
-  const short = `${dayLabel} ${container.eta} ${pickupShort} ${destShort}`;
+  // 1行目：日付 時間 搬出ヤード
+  const line1 = `${dayLabel} ${container.eta} ${pickupShort}`;
+
+  // 2行目：配送先 コンテナ番号
+  const line2Dest = destShort;
+  const line2ContNo = container.no;
 
   return (
     <div
@@ -788,7 +817,21 @@ function DraggableContainerCard({
       onClick={() => onTap?.(container)}
     >
       <div className="card-body">
-        <div className="card-title">{short}</div>
+        {/* 1行目 */}
+        <div className="card-title">{line1}</div>
+
+        {/* 2行目：配送先とコンテナ番号 */}
+        <div
+          className="card-sub"
+          style={{ display: "flex", gap: "4px", marginTop: "2px" }}
+        >
+          <span className="card-sub-text" style={{ flex: 1 }}>
+            {line2Dest}
+          </span>
+          <span className="card-sub-text container-no-highlight">
+            {line2ContNo}
+          </span>
+        </div>
       </div>
     </div>
   );

@@ -386,21 +386,22 @@ body.dragging {
   max-height: 26px;
 }
 
-/* A+C：最低40pxは確保しつつ、内容に応じて下側に伸びる */
+/* A+C：3行になるため高さを拡大 */
 .chassis-card.group-loaded {
-  min-height: 26px;
-  max-height: 40px;
-  height: auto; /* ★ カード内容に応じて伸びる */
+  min-height: 48px; /* ← 26px から 48px に */
+  max-height: 56px; /* ← 40px から 56px に */
+  height: auto;
 }
 
-/* ドライバーの C / A+C 枠：高さは内容に合わせるが、最低40pxに */
+/* ドライバーの C / A+C 枠：3行対応で高さを拡大 */
 .card-container.slot-driver-group {
-  min-height: 40px;
+  min-height: 56px; /* ← 40px から 56px に */
   height: auto;
   max-height: none;
   padding: 2px 4px;
-  align-items: flex-end; /* 中のカードの下端を枠の下に揃える */
+  align-items: flex-end;
 }
+
 .card-container:hover {
   border-color: #93c5fd;
 }
@@ -521,8 +522,14 @@ body.dragging {
   color: #ef4444;
   font-weight: 700;
 }
-/* バッジ */
 
+/* コンテナ番号を青色で強調 */
+.container-no-highlight {
+  color: #2563eb; /* 青色 */
+  font-weight: 600;
+}
+
+/* バッジ */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -697,17 +704,18 @@ body.dragging {
   display: flex;
   align-items: center;
 }
-/* シャーシプールの枠を 38px に固定 */
+
+/* シャーシプールの枠を 56px に拡大（3行対応） */
 .card-container.slot-pool {
-  height: 44px;
-  min-height: 40px;
-  max-height: 44px;
+  height: 56px; /* ← 44px から 56px に */
+  min-height: 56px; /* ← 40px から 56px に */
+  max-height: 56px; /* ← 44px から 56px に */
   width: var(--slot-pool-width);
   min-width: var(--slot-pool-width);
   max-width: var(--slot-pool-width);
 
-  padding: 2px 3px; /* ← ここはお好み（おすすめ値） */
-  overflow: visible; /* カードがはみ出さないようにする */
+  padding: 2px 3px;
+  overflow: visible;
   display: flex;
   align-items: center;
 }
