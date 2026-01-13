@@ -706,15 +706,15 @@ body.dragging {
   width: var(--card-width);
   min-width: var(--card-width);
   max-width: var(--card-width);
-  height: 40px; /* ← 24px から 40px に */
-  min-height: 40px; /* ← 24px から 40px に */
-  max-height: 40px; /* ← 24px から 40px に */
+  height: 32px; /* ← 24px から 40px に */
+  min-height: 32px; /* ← 24px から 40px に */
+  max-height: 32px; /* ← 24px から 40px に */
   overflow: hidden;
   display: flex;
   align-items: center;
   flex-direction: column; /* ← 追加：縦方向に並べる */
   justify-content: center; /* ← 追加：中央寄せ */
-  padding: 4px 8px; /* ← 追加：内側の余白 */
+  padding: 2px 4px; /* ← 追加：内側の余白 */
 }
 
 /* コンテナ工程別の色 */
