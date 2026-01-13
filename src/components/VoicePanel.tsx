@@ -135,7 +135,7 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
       <div
         className="voice-logs"
         style={{
-          maxHeight: "300px",
+          maxHeight: "150px",
           overflowY: "auto",
           border: "1px solid #ddd",
           borderRadius: "4px",
@@ -213,7 +213,7 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
           placeholder="ここで直接編集できます..."
           style={{
             width: "100%",
-            height: "80px",
+            height: "50px",
             padding: "8px",
             fontFamily: "monospace",
             fontSize: "13px",

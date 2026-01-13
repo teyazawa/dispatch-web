@@ -3206,10 +3206,12 @@ function App() {
                 <div
                   style={{
                     flexShrink: 0,
+                    height: "300px", // ✅ 高さを指定（お好みで300px〜500pxに調整可能
                     borderTop: "2px solid #ccc",
                     backgroundColor: "#f9fafb",
                     padding: "12px",
                     boxShadow: "0 -2px 8px rgba(0,0,0,0.1)",
+                    overflowY: "auto", // ✅ スクロール可能に
                   }}
                 >
                   <VoicePanel logs={voiceLogs} onLogsChange={setVoiceLogs} />
