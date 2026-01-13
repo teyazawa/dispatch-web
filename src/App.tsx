@@ -645,12 +645,26 @@ function DraggableGroupCard({
     onContextMenuGroup(e, group);
   };
 
-  // ✅ 長押し中のスタイルを追加
+  // ステップに応じたクラス名を決定（A+Cの時のみ）
+  let stepClass = "";
+  if (isAC && group.container) {
+    const step = group.container.step;
+    if (step === 1) {
+      stepClass = "chassis-step-1";
+    } else if (step === 2) {
+      stepClass = "chassis-step-2";
+    } else if (step === 3) {
+      stepClass = "chassis-step-3";
+    } else if (step === 4) {
+      stepClass = "chassis-step-4";
+    }
+  }
+
   const cardClassName = `obj-card chassis-card ${
     isAC ? "group-loaded" : "group-empty"
-  } size-${group.size} ${statusClass} ${axleClass} ${
-    isLongPressing ? "long-pressing" : "" // ✅ 追加
-  } ${isDragging ? "is-dragging" : ""}`; // ✅ 追加
+  } size-${group.size} ${statusClass} ${axleClass} ${stepClass} ${
+    isLongPressing ? "long-pressing" : ""
+  } ${isDragging ? "is-dragging" : ""}`;
 
   return (
     <div

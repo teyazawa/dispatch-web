@@ -729,6 +729,27 @@ body.dragging {
   color: #374151 !important;
 }
 
+.chassis-card.chassis-step-1 {
+  background: #fef3c7 !important; /* step1: 薄い黄色 */
+  border-color: #fbbf24;
+}
+
+.chassis-card.chassis-step-2 {
+  background: #dbeafe !important; /* step2: 薄い青 */
+  border-color: #60a5fa;
+}
+
+.chassis-card.chassis-step-3 {
+  background: #d1fae5 !important; /* step3: 薄い緑 */
+  border-color: #34d399;
+}
+
+.chassis-card.chassis-step-4 {
+  background: #e5e7eb !important; /* step4: グレー */
+  border-color: #9ca3af;
+  color: #374151 !important;
+}
+
 /* シャーシプールの枠を 56px に拡大（3行対応） */
 .card-container.slot-pool {
   height: 56px;
