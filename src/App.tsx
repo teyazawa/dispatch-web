@@ -3086,105 +3086,132 @@ function App() {
               {/* 右：配送分＋一時保管＋配送完了 */}
               <div
                 className="delivery-panel"
-                style={{ width: deliveryWidth, flex: "0 0 auto" }}
+                style={{
+                  width: deliveryWidth,
+                  flex: "0 0 auto",
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100vh", // ✅ 追加：画面いっぱいの高さ
+                  overflow: "hidden", // ✅ 追加：外側のスクロールを防ぐ
+                }}
               >
-                <h2>配送分</h2>
+                {/* ✅ スクロール可能エリア */}
+                <div
+                  style={{
+                    flex: 1,
+                    overflowY: "auto",
+                    paddingRight: "8px",
+                  }}
+                >
+                  <h2>配送分</h2>
 
-                {/* ▼ 追加：この箱の中だけ横スクロール */}
-                <div className="delivery-scroll">
-                  <div className="days-scroll">
-                    {dayKeys.map((dayKey) => (
-                      <section key={dayKey} className="day-column">
-                        <h3>{dayKey}</h3>
+                  {/* ▼ 追加：この箱の中だけ横スクロール */}
+                  <div className="delivery-scroll">
+                    <div className="days-scroll">
+                      {dayKeys.map((dayKey) => (
+                        <section key={dayKey} className="day-column">
+                          <h3>{dayKey}</h3>
 
-                        {yardGroups.map((yardName) => (
-                          <div
-                            key={`${dayKey}-${yardName}`}
-                            className="delivery-yard-row"
-                          >
-                            <div className="delivery-yard-name">{yardName}</div>
-                            <DroppableArea
-                              id={`delivery-${dayKey}-${yardName}`}
-                              className="slot-auto"
-                              placeholder="ここにコンテナAをドロップ"
+                          {yardGroups.map((yardName) => (
+                            <div
+                              key={`${dayKey}-${yardName}`}
+                              className="delivery-yard-row"
                             >
-                              {containers
-                                .filter(
-                                  (c) =>
-                                    c.date === dayKey &&
-                                    c.pickupYardGroup === yardName
-                                )
-                                .map((c) => (
-                                  <DraggableContainerCard
-                                    key={c.id}
-                                    container={c}
-                                    sizeColors={sizeColors}
-                                  />
-                                ))}
-                            </DroppableArea>
-                          </div>
-                        ))}
-                      </section>
-                    ))}
+                              <div className="delivery-yard-name">
+                                {yardName}
+                              </div>
+                              <DroppableArea
+                                id={`delivery-${dayKey}-${yardName}`}
+                                className="slot-auto"
+                                placeholder="ここにコンテナAをドロップ"
+                              >
+                                {containers
+                                  .filter(
+                                    (c) =>
+                                      c.date === dayKey &&
+                                      c.pickupYardGroup === yardName
+                                  )
+                                  .map((c) => (
+                                    <DraggableContainerCard
+                                      key={c.id}
+                                      container={c}
+                                      sizeColors={sizeColors}
+                                    />
+                                  ))}
+                              </DroppableArea>
+                            </div>
+                          ))}
+                        </section>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ▼ 日付自動振分枠 */}
+                  <div className="delivery-auto">
+                    <h3>日付自動振分</h3>
+                    <DroppableArea
+                      id="zone-delivery-own-date"
+                      placeholder="コンテナが持っている配送日で配送分に戻す"
+                      className="slot-row-wrap"
+                    />
+                  </div>
+
+                  <div className="delivery-temp">
+                    <h3>一時保管</h3>
+                    <DroppableArea
+                      id="zone-temp"
+                      placeholder="A+C をここにドロップするとコンテナだけ一時保管"
+                      className="slot-row-wrap"
+                    >
+                      {tempContainers.map((c) => (
+                        <DraggableContainerCard
+                          key={c.id}
+                          container={c}
+                          sizeColors={sizeColors}
+                        />
+                      ))}
+                    </DroppableArea>
+                  </div>
+
+                  <div className="delivery-completed">
+                    <h3>
+                      配送完了{" "}
+                      {completedContainers.length > 0 && (
+                        <button
+                          className="clear-completed-btn"
+                          onClick={() => setCompletedContainers([])}
+                        >
+                          全削除
+                        </button>
+                      )}
+                    </h3>
+                    <DroppableArea
+                      id="zone-delivered"
+                      placeholder="A+C や A をここにドロップで完了（あとから戻すことも可）"
+                      className="slot-row-wrap"
+                    >
+                      {completedContainers.map((c) => (
+                        <DraggableContainerCard
+                          key={`done-${c.id}`}
+                          container={c}
+                          sizeColors={sizeColors}
+                          isCompleted
+                        />
+                      ))}
+                    </DroppableArea>
                   </div>
                 </div>
 
-                {/* ▼ 日付自動振分枠（コンテナが持っている日付で列を作る／戻す） */}
-                <div className="delivery-auto">
-                  <h3>日付自動振分</h3>
-                  <DroppableArea
-                    id="zone-delivery-own-date"
-                    placeholder="コンテナが持っている配送日で配送分に戻す"
-                    className="slot-row-wrap"
-                  />
-                </div>
-
-                <div className="delivery-temp">
-                  <h3>一時保管</h3>
-                  <DroppableArea
-                    id="zone-temp"
-                    placeholder="A+C をここにドロップするとコンテナだけ一時保管"
-                    className="slot-row-wrap"
-                  >
-                    {tempContainers.map((c) => (
-                      <DraggableContainerCard
-                        key={c.id}
-                        container={c}
-                        sizeColors={sizeColors}
-                      />
-                    ))}
-                  </DroppableArea>
-                </div>
-
-                <div className="delivery-completed">
-                  <h3>
-                    配送完了{" "}
-                    {completedContainers.length > 0 && (
-                      <button
-                        className="clear-completed-btn"
-                        onClick={() => setCompletedContainers([])}
-                      >
-                        全削除
-                      </button>
-                    )}
-                  </h3>
-                  <DroppableArea
-                    id="zone-delivered"
-                    placeholder="A+C や A をここにドロップで完了（あとから戻すことも可）"
-                    className="slot-row-wrap"
-                  >
-                    {completedContainers.map((c) => (
-                      <DraggableContainerCard
-                        key={`done-${c.id}`}
-                        container={c}
-                        sizeColors={sizeColors}
-                        isCompleted
-                      />
-                    ))}
-                  </DroppableArea>
-                </div>
-
-                <div style={{ marginTop: "20px" }}>
+                {/* ✅ 固定された音声送信パネル */}
+                <div
+                  style={{
+                    flexShrink: 0,
+                    borderTop: "2px solid #ccc",
+                    backgroundColor: "#f9fafb",
+                    padding: "12px",
+                    boxShadow: "0 -2px 8px rgba(0,0,0,0.1)",
+                  }}
+                >
                   <VoicePanel logs={voiceLogs} onLogsChange={setVoiceLogs} />
                 </div>
               </div>
