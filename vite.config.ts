@@ -9,7 +9,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
-        voicePanel: path.resolve(__dirname, 'public/voice-panel.html'),
+        voicePanel: path.resolve(__dirname, 'voice-panel.html'),
       },
     },
   },
