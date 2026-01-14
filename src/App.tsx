@@ -3122,8 +3122,8 @@ function App() {
                   flex: "0 0 auto",
                   display: "flex",
                   flexDirection: "column",
-                  height: "100vh", // ✅ 追加：画面いっぱいの高さ
-                  overflow: "hidden", // ✅ 追加：外側のスクロールを防ぐ
+                  height: "100vh",
+                  overflow: "hidden",
                 }}
               >
                 {/* ✅ スクロール可能エリア */}
@@ -3232,13 +3232,15 @@ function App() {
                     </DroppableArea>
                   </div>
                 </div>
+                {/* ↑ スクロールエリアここまで */}
 
-                {/* 配送分エリアの下部に追加 */}
+                {/* ✅ ボタンをスクロールエリアの外に配置（固定） */}
                 <div
                   style={{
                     padding: "12px",
                     borderTop: "1px solid #ddd",
                     background: "#fff",
+                    flexShrink: 0, // ← 追加：縮まないようにする
                   }}
                 >
                   <button
@@ -3262,23 +3264,9 @@ function App() {
                     🔊 音声送信パネルを開く
                   </button>
                 </div>
+              </div>
+              {/* ← delivery-panelの終わり */}
 
-                {/* ✅ 固定された音声送信パネル（表示/非表示切り替え可能） */}
-                {showVoicePanel && (
-                  <div
-                    style={{
-                      flexShrink: 0,
-                      height: "400px",
-                      borderTop: "2px solid #ccc",
-                      backgroundColor: "#f9fafb",
-                      padding: "12px",
-                      boxShadow: "0 -2px 8px rgba(0,0,0,0.1)",
-                      overflowY: "auto",
-                    }}
-                  ></div>
-                )}
-              </div>{" "}
-              {/* ← delivery-panelの終わり ✅ この行を追加 */}
               {/* ★ 右パネル用の仕切り線（必ず main の中の最後の子に） */}
               <div className="resizer" onMouseDown={startResize("right")} />
             </div>
