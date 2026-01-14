@@ -10,15 +10,49 @@ export interface VoiceLog {
 
 interface VoicePanelProps {
   logs: VoiceLog[];
-  onLogsChange: (logs: VoiceLog[]) => void;
+  onAddLog: (text: string) => void;
+  onUpdateLog: (id: string, text: string) => void;
+  onDeleteLog: (id: string) => void;
+  onToggleSelect: (id: string) => void;
+  onClearLogs: () => void;
   voiceSettings: {
     rate: number;
     pitch: number;
     selectedVoice: string;
   };
+  isStandalone?: boolean;
 }
 
-function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
+export default function VoicePanel({
+  logs,
+  onAddLog,
+  onUpdateLog,
+  onDeleteLog,
+  onToggleSelect,
+  onClearLogs,
+  voiceSettings,
+  isStandalone = false,
+}: VoicePanelProps) {
+  // 独立ウィンドウの場合、親からのメッセージを受信
+  useEffect(() => {
+    if (!isStandalone) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+
+      const { type, payload } = event.data;
+
+      switch (type) {
+        case "ADD_LOG":
+          onAddLog(payload.text);
+          break;
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [isStandalone, onAddLog]);
+
   const [editingText, setEditingText] = useState("");
 
   // ✅ 利用可能な音声エンジン
@@ -33,7 +67,6 @@ function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
 
     loadVoices();
 
-    // Chromeなどでは非同期で読み込まれる
     if (speechSynthesis.onvoiceschanged !== undefined) {
       speechSynthesis.onvoiceschanged = loadVoices;
     }
@@ -81,7 +114,6 @@ function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
       const first3 = numbers.slice(0, 3);
       const last4 = numbers.slice(3, 7);
 
-      // カタカナに変換して「、」で区切る
       const first3Kana = first3
         .split("")
         .map((d: string) => numToKanji[d])
@@ -126,26 +158,21 @@ function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
 
     for (const log of selectedLogs) {
       const driver = extractDriver(log.text);
-      const sentence = log.text.replace(/^.+?さん、/, ""); // "○○さん、" を削除
+      const sentence = log.text.replace(/^.+?さん、/, "");
 
       if (driver === currentDriver && currentDriver !== null) {
-        // 同じドライバー → 「その後に」で繋ぐ
         currentSentences.push(sentence);
       } else {
-        // 違うドライバーまたは最初
         if (currentDriver && currentSentences.length > 0) {
-          // 前のドライバーの文章を結合
           result.push(
             `${currentDriver}さん、${currentSentences.join("、その後に")}`
           );
         }
-        // 新しいドライバー開始
         currentDriver = driver;
         currentSentences = [sentence];
       }
     }
 
-    // 最後のドライバーの文章を追加
     if (currentDriver && currentSentences.length > 0) {
       result.push(
         `${currentDriver}さん、${currentSentences.join("、その後に")}`
@@ -163,9 +190,7 @@ function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
       return;
     }
 
-    // ✅ コンテナ番号を読みやすく変換
     text = formatContainerNumber(text);
-    // 読み間違いを修正
     text = fixPronunciation(text);
 
     const utterance = new SpeechSynthesisUtterance(text);
@@ -174,7 +199,6 @@ function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
     utterance.pitch = voiceSettings.pitch;
     utterance.volume = 1.0;
 
-    // 選択された音声エンジンを使用
     if (voiceSettings.selectedVoice) {
       const voice = voices.find((v) => v.name === voiceSettings.selectedVoice);
       if (voice) {
@@ -188,42 +212,30 @@ function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
 
   // ログの選択/非選択
   const toggleLog = (id: string) => {
-    onLogsChange(
-      logs.map((log) =>
-        log.id === id ? { ...log, isSelected: !log.isSelected } : log
-      )
-    );
+    onToggleSelect(id);
   };
 
   // ログのテキスト編集
   const updateLogText = (id: string, newText: string) => {
-    onLogsChange(
-      logs.map((log) => (log.id === id ? { ...log, text: newText } : log))
-    );
+    onUpdateLog(id, newText);
   };
 
   // ログの削除
   const deleteLog = (id: string) => {
-    onLogsChange(logs.filter((log) => log.id !== id));
+    onDeleteLog(id);
   };
 
   // 全削除
   const clearAll = () => {
     if (window.confirm("すべてのログをリセットしますか？")) {
-      onLogsChange([]);
+      onClearLogs();
       setEditingText("");
     }
   };
 
   // テンプレート挿入
   const insertTemplate = (template: string) => {
-    const newLog: VoiceLog = {
-      id: Date.now().toString(),
-      text: template,
-      timestamp: new Date(),
-      isSelected: true,
-    };
-    onLogsChange([...logs, newLog]);
+    onAddLog(template);
   };
 
   // ✅ テキストエリアにコピー（スマート連結版）
@@ -445,5 +457,3 @@ function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
     </div>
   );
 }
-
-export default VoicePanel;

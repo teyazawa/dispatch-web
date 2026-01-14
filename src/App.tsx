@@ -14,8 +14,10 @@ import AuthBar from "./components/AuthBar";
 import { DragOverlay } from "@dnd-kit/core";
 import { createPortal } from "react-dom";
 import tezukaLogo from "./assets/tezuka-logo.png";
-import VoicePanel from "./components/VoicePanel";
-import type { VoiceLog } from "./components/VoicePanel";
+import {
+  openVoiceWindow,
+  addVoiceLog as sendVoiceLogToWindow,
+} from "./utils/voiceWindow";
 
 /** サイズ種別 */
 type Size = "20" | "40";
@@ -1089,8 +1091,6 @@ function App() {
   // ✅ DB復元が完了したか（fetchChassisの初期配置を走らせる/止める判定に使う）
   const [hydrationDone, setHydrationDone] = useState(false);
 
-  const [voiceLogs, setVoiceLogs] = useState<VoiceLog[]>([]);
-
   // ✅ シャーシ種別（kindLabel）→ 色（#RRGGBB）
   const [kindColors, setKindColors] = useState<Record<string, string>>({});
   const [axleColors, setAxleColors] = useState<Record<string, string>>({});
@@ -1903,14 +1903,10 @@ function App() {
   }
 
   // 音声ログを追加する関数
+  // addVoiceLog関数の中身を修正
   const addVoiceLog = (message: string) => {
-    const newLog: VoiceLog = {
-      id: Date.now().toString(),
-      text: message,
-      timestamp: new Date(),
-      isSelected: true,
-    };
-    setVoiceLogs((prev) => [...prev, newLog]);
+    // 独立ウィンドウにメッセージ送信（名前を変更した関数を使用）
+    sendVoiceLogToWindow(message);
   };
 
   function handleDragEnd(event: any) {
@@ -3237,6 +3233,36 @@ function App() {
                   </div>
                 </div>
 
+                {/* 配送分エリアの下部に追加 */}
+                <div
+                  style={{
+                    padding: "12px",
+                    borderTop: "1px solid #ddd",
+                    background: "#fff",
+                  }}
+                >
+                  <button
+                    onClick={() => openVoiceWindow()}
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      fontSize: "16px",
+                      fontWeight: "bold",
+                      background: "#4CAF50",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    🔊 音声送信パネルを開く
+                  </button>
+                </div>
+
                 {/* ✅ 固定された音声送信パネル（表示/非表示切り替え可能） */}
                 {showVoicePanel && (
                   <div
@@ -3249,13 +3275,7 @@ function App() {
                       boxShadow: "0 -2px 8px rgba(0,0,0,0.1)",
                       overflowY: "auto",
                     }}
-                  >
-                    <VoicePanel
-                      logs={voiceLogs}
-                      onLogsChange={setVoiceLogs}
-                      voiceSettings={voiceSettings} // ✅ 追加
-                    />
-                  </div>
+                  ></div>
                 )}
               </div>{" "}
               {/* ← delivery-panelの終わり ✅ この行を追加 */}
