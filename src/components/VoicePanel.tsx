@@ -59,20 +59,58 @@ function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
     return match ? match[1] : null;
   };
 
-  // ✅ コンテナ番号を読みやすく分割する関数
+  // ✅ 数字→カタカナ変換
+  const numToKanji: { [key: string]: string } = {
+    "0": "ゼロ",
+    "1": "イチ",
+    "2": "ニ",
+    "3": "サン",
+    "4": "ヨン",
+    "5": "ゴ",
+    "6": "ロク",
+    "7": "ナナ",
+    "8": "ハチ",
+    "9": "キュウ",
+  };
+
+  // ✅ コンテナ番号フォーマット（カタカナ版）
   const formatContainerNumber = (text: string): string => {
-    // コンテナ番号のパターン: 英字4桁 + 数字7桁
-    // 例: ABCD1234567 → ABCD、123、4567
     const containerPattern = /([A-Z]{4})(\d{7})/g;
 
     return text.replace(containerPattern, (_match, letters, numbers) => {
-      // 数字7桁を3桁と4桁に分割
       const first3 = numbers.slice(0, 3);
       const last4 = numbers.slice(3, 7);
 
-      // 間を持たせるために「、」で区切る
-      return `${letters}、${first3}、${last4}`;
+      // カタカナに変換して「、」で区切る
+      const first3Kana = first3
+        .split("")
+        .map((d: string) => numToKanji[d])
+        .join("、");
+      const last4Kana = last4
+        .split("")
+        .map((d: string) => numToKanji[d])
+        .join("、");
+
+      return `${letters}、${first3Kana}、${last4Kana}`;
     });
+  };
+
+  // ✅ 読み間違い修正
+  const fixPronunciation = (text: string): string => {
+    const replacements: { [key: string]: string } = {
+      中防: "ちゅうぼう",
+      大井: "おおい",
+      青海: "あおみ",
+      品川: "しながわ",
+      本牧: "ほんもく",
+      南本牧: "なんもく",
+    };
+
+    let result = text;
+    for (const [wrong, correct] of Object.entries(replacements)) {
+      result = result.replace(new RegExp(wrong, "g"), correct);
+    }
+    return result;
   };
 
   // ✅ 選択中のログを賢く連結する関数
@@ -126,6 +164,8 @@ function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
 
     // ✅ コンテナ番号を読みやすく変換
     text = formatContainerNumber(text);
+    // 読み間違いを修正
+    text = fixPronunciation(text);
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "ja-JP";
