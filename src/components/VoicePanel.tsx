@@ -11,34 +11,24 @@ export interface VoiceLog {
 interface VoicePanelProps {
   logs: VoiceLog[];
   onLogsChange: (logs: VoiceLog[]) => void;
+  voiceSettings: {
+    rate: number;
+    pitch: number;
+    selectedVoice: string;
+  };
 }
 
-function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
+function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
   const [editingText, setEditingText] = useState("");
-
-  // ✅ 音声設定
-  const [voiceSettings, setVoiceSettings] = useState({
-    rate: 0.95,
-    pitch: 0.95,
-  });
 
   // ✅ 利用可能な音声エンジン
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [selectedVoice, setSelectedVoice] = useState<string>("");
 
   // 音声エンジンを取得
   useEffect(() => {
     const loadVoices = () => {
       const availableVoices = speechSynthesis.getVoices();
-      const japaneseVoices = availableVoices.filter((v) =>
-        v.lang.startsWith("ja")
-      );
-      setVoices(japaneseVoices);
-
-      // デフォルトの日本語音声を選択
-      if (japaneseVoices.length > 0 && !selectedVoice) {
-        setSelectedVoice(japaneseVoices[0].name);
-      }
+      setVoices(availableVoices);
     };
 
     loadVoices();
@@ -47,7 +37,7 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
     if (speechSynthesis.onvoiceschanged !== undefined) {
       speechSynthesis.onvoiceschanged = loadVoices;
     }
-  }, [selectedVoice]);
+  }, []);
 
   // テンプレート定義
   const templates = [
@@ -67,6 +57,22 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
   const extractDriver = (text: string): string | null => {
     const match = text.match(/^(.+?)さん、/);
     return match ? match[1] : null;
+  };
+
+  // ✅ コンテナ番号を読みやすく分割する関数
+  const formatContainerNumber = (text: string): string => {
+    // コンテナ番号のパターン: 英字4桁 + 数字7桁
+    // 例: ABCD1234567 → ABCD、123、4567
+    const containerPattern = /([A-Z]{4})(\d{7})/g;
+
+    return text.replace(containerPattern, (_match, letters, numbers) => {
+      // 数字7桁を3桁と4桁に分割
+      const first3 = numbers.slice(0, 3);
+      const last4 = numbers.slice(3, 7);
+
+      // 間を持たせるために「、」で区切る
+      return `${letters}、${first3}、${last4}`;
+    });
   };
 
   // ✅ 選択中のログを賢く連結する関数
@@ -110,13 +116,16 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
     return result.join("\n\n");
   };
 
-  // ✅ 音声変換・再生（改良版）
+  // ✅ 音声変換・再生
   const handleSpeak = () => {
-    const text = editingText || getSmartConnectedText();
+    let text = editingText || getSmartConnectedText();
     if (!text.trim()) {
       alert("テキストが空です");
       return;
     }
+
+    // ✅ コンテナ番号を読みやすく変換
+    text = formatContainerNumber(text);
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "ja-JP";
@@ -125,8 +134,8 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
     utterance.volume = 1.0;
 
     // 選択された音声エンジンを使用
-    if (selectedVoice) {
-      const voice = voices.find((v) => v.name === selectedVoice);
+    if (voiceSettings.selectedVoice) {
+      const voice = voices.find((v) => v.name === voiceSettings.selectedVoice);
       if (voice) {
         utterance.voice = voice;
       }
@@ -184,112 +193,6 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
   return (
     <div className="voice-panel">
       <h3>🔊 音声送信パネル</h3>
-
-      {/* ✅ 音声設定UI */}
-      <div
-        style={{
-          marginBottom: "12px",
-          padding: "8px",
-          backgroundColor: "#f0f0f0",
-          borderRadius: "4px",
-        }}
-      >
-        <div
-          style={{ fontSize: "12px", fontWeight: "bold", marginBottom: "8px" }}
-        >
-          音声設定
-        </div>
-
-        {/* 音声エンジン選択 */}
-        {voices.length > 0 && (
-          <div style={{ marginBottom: "8px" }}>
-            <label
-              style={{
-                fontSize: "11px",
-                display: "block",
-                marginBottom: "4px",
-              }}
-            >
-              音声エンジン:
-            </label>
-            <select
-              value={selectedVoice}
-              onChange={(e) => setSelectedVoice(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "4px",
-                fontSize: "12px",
-                borderRadius: "3px",
-                border: "1px solid #ccc",
-              }}
-            >
-              {voices.map((voice) => (
-                <option key={voice.name} value={voice.name}>
-                  {voice.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* 速度・ピッチ調整 */}
-        <div style={{ display: "flex", gap: "12px" }}>
-          <label style={{ flex: 1 }}>
-            <div style={{ fontSize: "11px", marginBottom: "2px" }}>
-              速度: {voiceSettings.rate.toFixed(2)}
-            </div>
-            <input
-              type="range"
-              min="0.5"
-              max="1.5"
-              step="0.05"
-              value={voiceSettings.rate}
-              onChange={(e) =>
-                setVoiceSettings((prev) => ({
-                  ...prev,
-                  rate: Number(e.target.value),
-                }))
-              }
-              style={{ width: "100%" }}
-            />
-          </label>
-          <label style={{ flex: 1 }}>
-            <div style={{ fontSize: "11px", marginBottom: "2px" }}>
-              声の高さ: {voiceSettings.pitch.toFixed(2)}
-            </div>
-            <input
-              type="range"
-              min="0.5"
-              max="1.5"
-              step="0.05"
-              value={voiceSettings.pitch}
-              onChange={(e) =>
-                setVoiceSettings((prev) => ({
-                  ...prev,
-                  pitch: Number(e.target.value),
-                }))
-              }
-              style={{ width: "100%" }}
-            />
-          </label>
-        </div>
-
-        {/* リセットボタン */}
-        <button
-          onClick={() => setVoiceSettings({ rate: 0.95, pitch: 0.95 })}
-          style={{
-            marginTop: "6px",
-            padding: "4px 8px",
-            fontSize: "11px",
-            backgroundColor: "#e5e7eb",
-            border: "none",
-            borderRadius: "3px",
-            cursor: "pointer",
-          }}
-        >
-          設定をリセット
-        </button>
-      </div>
 
       {/* テンプレートボタン */}
       <div
@@ -408,7 +311,7 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
               opacity: logs.filter((l) => l.isSelected).length === 0 ? 0.5 : 1,
             }}
           >
-            選択中をコピー（スマート連結）
+            選択中をコピー
           </button>
           <button
             onClick={() => setEditingText("")}
@@ -416,6 +319,11 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
             style={{
               fontSize: "12px",
               padding: "6px 12px",
+              backgroundColor: "#f44336",
+              color: "white",
+              border: "none",
+              borderRadius: "3px",
+              cursor: "pointer",
             }}
           >
             クリア

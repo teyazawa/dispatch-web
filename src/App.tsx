@@ -1105,6 +1105,27 @@ function App() {
     localStorage.setItem("dispatch-show-voice-panel", String(showVoicePanel));
   }, [showVoicePanel]);
 
+  // 音声設定のstate（他のuseStateの近く）
+  const [voiceSettings, setVoiceSettings] = useState(() => {
+    const saved = localStorage.getItem("dispatch-voice-settings");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return { rate: 0.95, pitch: 0.95, selectedVoice: "" };
+      }
+    }
+    return { rate: 0.95, pitch: 0.95, selectedVoice: "" };
+  });
+
+  // 音声設定をlocalStorageに保存
+  useEffect(() => {
+    localStorage.setItem(
+      "dispatch-voice-settings",
+      JSON.stringify(voiceSettings)
+    );
+  }, [voiceSettings]);
+
   // モーダルを開いた時点のスナップショット
   const [settingsSnapshot, setSettingsSnapshot] = useState<any | null>(null);
 
@@ -1117,6 +1138,7 @@ function App() {
       theme, // 背景色/ヘッダー色/bgImageUrl など
       yards,
       driverGroups,
+      voiceSettings,
     });
     setIsSettingsOpen(true);
   };
@@ -1129,6 +1151,13 @@ function App() {
       setTheme(settingsSnapshot.theme ?? {});
       setYards(settingsSnapshot.yards ?? []);
       setDriverGroups(settingsSnapshot.driverGroups ?? DEFAULT_DRIVER_GROUPS);
+      setVoiceSettings(
+        settingsSnapshot.voiceSettings ?? {
+          rate: 0.95,
+          pitch: 0.95,
+          selectedVoice: "",
+        }
+      );
     }
     setIsSettingsOpen(false);
     setSettingsSnapshot(null);
@@ -3221,7 +3250,11 @@ function App() {
                       overflowY: "auto",
                     }}
                   >
-                    <VoicePanel logs={voiceLogs} onLogsChange={setVoiceLogs} />
+                    <VoicePanel
+                      logs={voiceLogs}
+                      onLogsChange={setVoiceLogs}
+                      voiceSettings={voiceSettings} // ✅ 追加
+                    />
                   </div>
                 )}
               </div>{" "}
@@ -3556,6 +3589,188 @@ function App() {
                   >
                     配送分エリアの下部に音声送信パネルを表示します
                   </div>
+                </div>
+
+                {/* ✅ ここから音声設定を追加 */}
+                <h3>音声設定</h3>
+                <div
+                  style={{
+                    marginBottom: 16,
+                    padding: "12px",
+                    backgroundColor: "#f9fafb",
+                    borderRadius: "4px",
+                    border: "1px solid #e5e7eb",
+                  }}
+                >
+                  {/* 音声エンジン選択 */}
+                  <div style={{ marginBottom: "12px" }}>
+                    <label
+                      style={{
+                        fontSize: "13px",
+                        display: "block",
+                        marginBottom: "6px",
+                        fontWeight: 500,
+                      }}
+                    >
+                      音声エンジン
+                    </label>
+                    <select
+                      value={voiceSettings.selectedVoice}
+                      onChange={(e) =>
+                        setVoiceSettings(
+                          (prev: {
+                            rate: number;
+                            pitch: number;
+                            selectedVoice: string;
+                          }) => ({
+                            ...prev,
+                            selectedVoice: e.target.value,
+                          })
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "6px 8px",
+                        fontSize: "13px",
+                        borderRadius: "4px",
+                        border: "1px solid #d1d5db",
+                      }}
+                    >
+                      <option value="">デフォルト</option>
+                      {(() => {
+                        // 利用可能な日本語音声を取得
+                        const voices = speechSynthesis.getVoices();
+                        const japaneseVoices = voices.filter((v) =>
+                          v.lang.startsWith("ja")
+                        );
+                        return japaneseVoices.map((voice) => (
+                          <option key={voice.name} value={voice.name}>
+                            {voice.name}
+                          </option>
+                        ));
+                      })()}
+                    </select>
+                    <div
+                      style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}
+                    >
+                      読み上げに使用する音声を選択します
+                    </div>
+                  </div>
+
+                  {/* 速度調整 */}
+                  <div style={{ marginBottom: "12px" }}>
+                    <label
+                      style={{
+                        fontSize: "13px",
+                        display: "block",
+                        marginBottom: "6px",
+                        fontWeight: 500,
+                      }}
+                    >
+                      読み上げ速度: {voiceSettings.rate.toFixed(2)}
+                    </label>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="1.5"
+                      step="0.05"
+                      value={voiceSettings.rate}
+                      onChange={(e) =>
+                        setVoiceSettings(
+                          (prev: {
+                            rate: number;
+                            pitch: number;
+                            selectedVoice: string;
+                          }) => ({
+                            ...prev,
+                            rate: Number(e.target.value),
+                          })
+                        )
+                      }
+                      style={{ width: "100%" }}
+                    />
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: 11,
+                        color: "#6b7280",
+                        marginTop: 4,
+                      }}
+                    >
+                      <span>ゆっくり (0.5)</span>
+                      <span>標準 (1.0)</span>
+                      <span>速い (1.5)</span>
+                    </div>
+                  </div>
+
+                  {/* ピッチ調整 */}
+                  <div style={{ marginBottom: "12px" }}>
+                    <label
+                      style={{
+                        fontSize: "13px",
+                        display: "block",
+                        marginBottom: "6px",
+                        fontWeight: 500,
+                      }}
+                    >
+                      声の高さ: {voiceSettings.pitch.toFixed(2)}
+                    </label>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="1.5"
+                      step="0.05"
+                      value={voiceSettings.pitch}
+                      onChange={(e) =>
+                        setVoiceSettings(
+                          (prev: {
+                            rate: number;
+                            pitch: number;
+                            selectedVoice: string;
+                          }) => ({
+                            ...prev,
+                            pitch: Number(e.target.value),
+                          })
+                        )
+                      }
+                      style={{ width: "100%" }}
+                    />
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: 11,
+                        color: "#6b7280",
+                        marginTop: 4,
+                      }}
+                    >
+                      <span>低い (0.5)</span>
+                      <span>標準 (1.0)</span>
+                      <span>高い (1.5)</span>
+                    </div>
+                  </div>
+
+                  {/* リセットボタン */}
+                  <button
+                    onClick={() =>
+                      setVoiceSettings({
+                        rate: 0.95,
+                        pitch: 0.95,
+                        selectedVoice: "",
+                      })
+                    }
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: "12px",
+                      backgroundColor: "#e5e7eb",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    音声設定をリセット
+                  </button>
                 </div>
 
                 {/* シャーシプール設定セクション */}
