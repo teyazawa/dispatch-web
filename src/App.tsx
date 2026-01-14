@@ -317,7 +317,12 @@ const defaultSpareZones: SpareZone[] = [{ id: "spare-trucks", name: "予備車" 
 /** コンテナ表示用のまとめ文字列 */
 
 function formatContainerSummary(c: Container): string {
-  return `${c.date} ${c.eta} ${c.pickupYard} ${c.no} ${c.size}F ${c.kindCode} ${c.destination} ${c.dropoffYard}`;
+  // 日付の前ゼロを削除
+  const formattedDate = c.date
+    .split("/")
+    .map((n) => parseInt(n, 10))
+    .join("/");
+  return `${formattedDate} ${c.eta} ${c.pickupYard} ${c.no} ${c.size}F ${c.kindCode} ${c.destination} ${c.dropoffYard}`;
 }
 
 /** "11/28" → "28日" */
@@ -325,7 +330,7 @@ function buildDayLabel(date: string): string {
   if (!date) return "";
   const parts = date.split("/");
   const day = parts[1] || parts[0];
-  return `${day.replace(/^0/, "")}日`;
+  return `${parseInt(day, 10)}日`; // ← parseInt で前ゼロを削除
 }
 
 function splitLast(s: string, sep: string): [string, string] {
@@ -591,9 +596,9 @@ function DraggableGroupCard({
   if (isAC && group.container) {
     const c = group.container;
 
-    // 11/28 → 28日
+    // 11/28 → 28日、01/08 → 8日
     const [, d] = c.date.split("/");
-    const dayLabel = d ? `${d}日` : c.date;
+    const dayLabel = d ? `${parseInt(d, 10)}日` : c.date;
 
     // ▼ 1行目：28日 9:00 千葉RDC 青海A-1 ABCD1234567 青海EIR
     const line1 = `${dayLabel} ${c.eta} ${c.destination} ${c.pickupYard} ${c.no} ${c.dropoffYard}`;
@@ -629,7 +634,7 @@ function DraggableGroupCard({
   if (isAC && group.container) {
     const c = group.container;
     const [, d] = c.date.split("/");
-    const dayLabel = d ? `${d}日` : c.date;
+    const dayLabel = d ? `${parseInt(d, 10)}日` : c.date;
 
     // 1行目：28日 9:00 千葉RDC
     acLine1 = `${dayLabel} ${c.eta} ${c.destination}`;
@@ -808,9 +813,10 @@ function DraggableContainerCard({
   const full = formatContainerSummary(container);
 
   // 日付ラベル作成
+  // 日付ラベル作成（前ゼロ削除）
   const dateParts = container.date.split("/");
   const day = dateParts[1] || container.date;
-  const dayLabel = `${day}日`;
+  const dayLabel = `${parseInt(day, 10)}日`;
 
   // 搬出ヤードの短縮表示
   const pickupShort =
@@ -859,15 +865,24 @@ function DraggableContainerCard({
         {/* 1行目 */}
         <div className="card-title">{line1}</div>
 
-        {/* 2行目：配送先とコンテナ番号 */}
+        {/* 2行目：配送先は左、コンテナ番号は右 */}
         <div
           className="card-sub"
-          style={{ display: "flex", gap: "4px", marginTop: "2px" }}
+          style={{
+            display: "flex",
+            justifyContent: "space-between", // ← 左右に配置
+            alignItems: "center",
+            marginTop: "2px",
+            width: "100%",
+          }}
         >
-          <span className="card-sub-text" style={{ flex: 1 }}>
+          <span className="card-sub-text" style={{ textAlign: "left" }}>
             {line2Dest}
           </span>
-          <span className="card-sub-text container-no-highlight">
+          <span
+            className="card-sub-text container-no-highlight"
+            style={{ textAlign: "right" }}
+          >
             {line2ContNo}
           </span>
         </div>
@@ -1820,7 +1835,7 @@ function App() {
 
   const [leftWidth, setLeftWidth] = useState<number>(700); // シャーシプール
   const [middleWidth, setMiddleWidth] = useState<number>(610); // ドライバー
-  const [deliveryWidth, setDeliveryWidth] = useState<number>(480); // 配送分
+  const [deliveryWidth, setDeliveryWidth] = useState<number>(500); // 配送分
 
   // ヤードグループ（大井・青海・品川・本牧）
   const yardGroups = ["大井", "青海", "中防", "品川", "本牧", "その他"];
@@ -3139,41 +3154,49 @@ function App() {
                   {/* ▼ 追加：この箱の中だけ横スクロール */}
                   <div className="delivery-scroll">
                     <div className="days-scroll">
-                      {dayKeys.map((dayKey) => (
-                        <section key={dayKey} className="day-column">
-                          <h3>{dayKey}</h3>
+                      {dayKeys.map((dayKey) => {
+                        // 日付の前ゼロを削除して表示
+                        const formattedDate = dayKey
+                          .split("/")
+                          .map((n) => parseInt(n, 10))
+                          .join("/");
 
-                          {yardGroups.map((yardName) => (
-                            <div
-                              key={`${dayKey}-${yardName}`}
-                              className="delivery-yard-row"
-                            >
-                              <div className="delivery-yard-name">
-                                {yardName}
-                              </div>
-                              <DroppableArea
-                                id={`delivery-${dayKey}-${yardName}`}
-                                className="slot-auto"
-                                placeholder="ここにコンテナAをドロップ"
+                        return (
+                          <section key={dayKey} className="day-column">
+                            <h3>{formattedDate}</h3>
+
+                            {yardGroups.map((yardName) => (
+                              <div
+                                key={`${dayKey}-${yardName}`}
+                                className="delivery-yard-row"
                               >
-                                {containers
-                                  .filter(
-                                    (c) =>
-                                      c.date === dayKey &&
-                                      c.pickupYardGroup === yardName
-                                  )
-                                  .map((c) => (
-                                    <DraggableContainerCard
-                                      key={c.id}
-                                      container={c}
-                                      sizeColors={sizeColors}
-                                    />
-                                  ))}
-                              </DroppableArea>
-                            </div>
-                          ))}
-                        </section>
-                      ))}
+                                <div className="delivery-yard-name">
+                                  {yardName}
+                                </div>
+                                <DroppableArea
+                                  id={`delivery-${dayKey}-${yardName}`}
+                                  className="slot-auto"
+                                  placeholder="ここにコンテナAをドロップ"
+                                >
+                                  {containers
+                                    .filter(
+                                      (c) =>
+                                        c.date === dayKey &&
+                                        c.pickupYardGroup === yardName
+                                    )
+                                    .map((c) => (
+                                      <DraggableContainerCard
+                                        key={c.id}
+                                        container={c}
+                                        sizeColors={sizeColors}
+                                      />
+                                    ))}
+                                </DroppableArea>
+                              </div>
+                            ))}
+                          </section>
+                        ); // ← 追加
+                      })}
                     </div>
                   </div>
 

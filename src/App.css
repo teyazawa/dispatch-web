@@ -763,9 +763,9 @@ body.dragging {
 
 /* シャーシプールの枠を 56px に拡大（3行対応） */
 .card-container.slot-pool {
-  height: 56px;
-  min-height: 56px;
-  max-height: 56px;
+  height: 60px;
+  min-height: 60px;
+  max-height: 60px;
   width: var(--slot-pool-width);
   min-width: var(--slot-pool-width);
   max-width: var(--slot-pool-width);
