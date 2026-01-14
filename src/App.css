@@ -712,7 +712,7 @@ body.dragging {
   max-height: 32px; /* ← 24px から 40px に */
   overflow: hidden;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   flex-direction: column; /* ← 追加：縦方向に並べる */
   justify-content: center; /* ← 追加：中央寄せ */
   padding: 2px 4px; /* ← 追加：内側の余白 */

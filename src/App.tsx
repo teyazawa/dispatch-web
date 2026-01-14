@@ -861,9 +861,14 @@ function DraggableContainerCard({
       title={full}
       onClick={() => onTap?.(container)}
     >
-      <div className="card-body">
+      <div className="card-body" style={{ width: "100%" }}>
         {/* 1行目 */}
-        <div className="card-title">{line1}</div>
+        <div
+          className="card-title"
+          style={{ width: "100%", textAlign: "left" }}
+        >
+          {line1}
+        </div>
 
         {/* 2行目：配送先は左、コンテナ番号は右 */}
         <div
@@ -884,13 +889,18 @@ function DraggableContainerCard({
               overflow: "hidden" /* ← 追加 */,
               textOverflow: "ellipsis" /* ← 追加 */,
               whiteSpace: "nowrap" /* ← 追加 */,
+              flex: 1,
             }}
           >
             {line2Dest}
           </span>
           <span
             className="card-sub-text container-no-highlight"
-            style={{ textAlign: "right" }}
+            style={{
+              textAlign: "right",
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+            }}
           >
             {line2ContNo}
           </span>
