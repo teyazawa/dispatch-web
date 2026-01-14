@@ -1096,6 +1096,15 @@ function App() {
   const [axleColors, setAxleColors] = useState<Record<string, string>>({});
   const [sizeColors, setSizeColors] = useState<Record<string, string>>({});
 
+  const [showVoicePanel, setShowVoicePanel] = useState<boolean>(() => {
+    const saved = localStorage.getItem("dispatch-show-voice-panel");
+    return saved !== null ? saved === "true" : true; // デフォルトは表示
+  });
+
+  useEffect(() => {
+    localStorage.setItem("dispatch-show-voice-panel", String(showVoicePanel));
+  }, [showVoicePanel]);
+
   // モーダルを開いた時点のスナップショット
   const [settingsSnapshot, setSettingsSnapshot] = useState<any | null>(null);
 
@@ -2946,7 +2955,6 @@ function App() {
                 })}
               </div>
               <div className="resizer" onMouseDown={startResize("left")} />
-
               {/* 中央：ドライバー */}
               <div
                 className="driver-panel"
@@ -3080,9 +3088,7 @@ function App() {
                   </section>
                 </div>
               </div>
-
               <div className="resizer" onMouseDown={startResize("middle")} />
-
               {/* 右：配送分＋一時保管＋配送完了 */}
               <div
                 className="delivery-panel"
@@ -3202,21 +3208,24 @@ function App() {
                   </div>
                 </div>
 
-                {/* ✅ 固定された音声送信パネル */}
-                <div
-                  style={{
-                    flexShrink: 0,
-                    height: "300px", // ✅ 高さを指定（お好みで300px〜500pxに調整可能
-                    borderTop: "2px solid #ccc",
-                    backgroundColor: "#f9fafb",
-                    padding: "12px",
-                    boxShadow: "0 -2px 8px rgba(0,0,0,0.1)",
-                    overflowY: "auto", // ✅ スクロール可能に
-                  }}
-                >
-                  <VoicePanel logs={voiceLogs} onLogsChange={setVoiceLogs} />
-                </div>
-              </div>
+                {/* ✅ 固定された音声送信パネル（表示/非表示切り替え可能） */}
+                {showVoicePanel && (
+                  <div
+                    style={{
+                      flexShrink: 0,
+                      height: "400px",
+                      borderTop: "2px solid #ccc",
+                      backgroundColor: "#f9fafb",
+                      padding: "12px",
+                      boxShadow: "0 -2px 8px rgba(0,0,0,0.1)",
+                      overflowY: "auto",
+                    }}
+                  >
+                    <VoicePanel logs={voiceLogs} onLogsChange={setVoiceLogs} />
+                  </div>
+                )}
+              </div>{" "}
+              {/* ← delivery-panelの終わり ✅ この行を追加 */}
               {/* ★ 右パネル用の仕切り線（必ず main の中の最後の子に） */}
               <div className="resizer" onMouseDown={startResize("right")} />
             </div>
@@ -3519,6 +3528,35 @@ function App() {
                     </div>
                   );
                 })}
+
+                <h3>表示設定</h3>
+                <div style={{ marginBottom: 16 }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={showVoicePanel}
+                      onChange={(e) => setShowVoicePanel(e.target.checked)}
+                    />
+                    <span>音声送信パネルを表示</span>
+                  </label>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#6b7280",
+                      marginLeft: 24,
+                      marginTop: 4,
+                    }}
+                  >
+                    配送分エリアの下部に音声送信パネルを表示します
+                  </div>
+                </div>
 
                 {/* シャーシプール設定セクション */}
                 <section className="modal-section">

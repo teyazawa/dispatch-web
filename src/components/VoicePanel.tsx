@@ -195,7 +195,19 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
             onClick={copyToTextarea}
             className="btn-small"
             disabled={logs.filter((l) => l.isSelected).length === 0}
-            style={{ fontSize: "12px" }}
+            style={{
+              fontSize: "12px",
+              backgroundColor: "#3b82f6", // ✅ 青色に変更
+              color: "white", // ✅ 文字色を白に
+              border: "none",
+              padding: "6px 12px",
+              borderRadius: "4px",
+              cursor:
+                logs.filter((l) => l.isSelected).length === 0
+                  ? "not-allowed"
+                  : "pointer",
+              opacity: logs.filter((l) => l.isSelected).length === 0 ? 0.5 : 1,
+            }}
           >
             選択中をコピー
           </button>
@@ -234,9 +246,11 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
           }
           style={{
             flex: 1,
-            padding: "12px",
+            padding: "12px 8px", // ✅ 上下のpaddingを確保
             fontSize: "14px",
             fontWeight: "bold",
+            lineHeight: "1.5", // ✅ 行の高さを追加
+            minHeight: "44px", // ✅ 最小高さを指定
           }}
         >
           🔊 音声変換・再生
@@ -245,7 +259,10 @@ function VoicePanel({ logs, onLogsChange }: VoicePanelProps) {
           onClick={clearAll}
           className="btn-delete"
           disabled={logs.length === 0}
-          style={{ padding: "12px 16px" }}
+          style={{
+            padding: "12px 16px",
+            minHeight: "44px", // ✅ 同じ高さに
+          }}
         >
           全削除
         </button>
