@@ -104,6 +104,7 @@ function VoicePanel({ logs, onLogsChange, voiceSettings }: VoicePanelProps) {
       品川: "しながわ",
       本牧: "ほんもく",
       南本牧: "なんもく",
+      ft: "ふぃーと",
     };
 
     let result = text;
