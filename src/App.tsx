@@ -870,13 +870,22 @@ function DraggableContainerCard({
           className="card-sub"
           style={{
             display: "flex",
-            justifyContent: "space-between", // ← 左右に配置
+            justifyContent: "space-between",
             alignItems: "center",
             marginTop: "2px",
             width: "100%",
+            gap: "4px" /* ← 追加：配送先とコンテナ番号の間に最小限の隙間 */,
           }}
         >
-          <span className="card-sub-text" style={{ textAlign: "left" }}>
+          <span
+            className="card-sub-text"
+            style={{
+              textAlign: "left",
+              overflow: "hidden" /* ← 追加 */,
+              textOverflow: "ellipsis" /* ← 追加 */,
+              whiteSpace: "nowrap" /* ← 追加 */,
+            }}
+          >
             {line2Dest}
           </span>
           <span
