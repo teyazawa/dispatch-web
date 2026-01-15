@@ -14,10 +14,7 @@ import AuthBar from "./components/AuthBar";
 import { DragOverlay } from "@dnd-kit/core";
 import { createPortal } from "react-dom";
 import tezukaLogo from "./assets/tezuka-logo.png";
-import {
-  openVoiceWindow,
-  addVoiceLog as sendVoiceLogToWindow,
-} from "./utils/voiceWindow";
+import { addVoiceLog as sendVoiceLogToWindow } from "./utils/voiceWindow";
 
 /** サイズ種別 */
 type Size = "20" | "40";
@@ -947,6 +944,8 @@ async function uploadThemeBgToStorage(file: File): Promise<string> {
   });
 }
 
+let voiceWindow: Window | null = null;
+
 /** メイン */
 
 function App() {
@@ -1114,6 +1113,47 @@ function App() {
   const [kindColors, setKindColors] = useState<Record<string, string>>({});
   const [axleColors, setAxleColors] = useState<Record<string, string>>({});
   const [sizeColors, setSizeColors] = useState<Record<string, string>>({});
+
+  // 音声送信パネルを開く
+  const openVoicePanel = () => {
+    if (voiceWindow && !voiceWindow.closed) {
+      voiceWindow.focus();
+      return;
+    }
+
+    const width = 450;
+    const height = 700;
+    const left = window.screen.width - width - 20;
+    const top = 100;
+
+    voiceWindow = window.open(
+      "/voice-panel.html",
+      "VoicePanel",
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
+
+    // VOICEVOX起動状態を定期的に送信
+    if (voiceWindow) {
+      const sendVoicevoxStatus = () => {
+        if (voiceWindow && !voiceWindow.closed) {
+          voiceWindow.postMessage(
+            { type: "VOICEVOX_STATUS", isRunning: isVoicevoxRunning },
+            window.location.origin
+          );
+        }
+      };
+
+      setTimeout(sendVoicevoxStatus, 500);
+
+      const interval = setInterval(() => {
+        if (voiceWindow && !voiceWindow.closed) {
+          sendVoicevoxStatus();
+        } else {
+          clearInterval(interval);
+        }
+      }, 5000);
+    }
+  };
 
   // 設定モーダルを開く
   const openSettings = () => {
@@ -2669,12 +2709,29 @@ function App() {
     );
   }, [hydrationDone, yards]);
 
+  // VOICEVOX起動チェック（5秒ごと）
+  useEffect(() => {
+    const checkVoicevox = async () => {
+      try {
+        const response = await fetch("http://localhost:50021/speakers");
+        setIsVoicevoxRunning(response.ok);
+      } catch {
+        setIsVoicevoxRunning(false);
+      }
+    };
+
+    checkVoicevox(); // 初回チェック
+    const interval = setInterval(checkVoicevox, 5000); // 5秒ごと
+    return () => clearInterval(interval);
+  }, []);
+
   // 配送レーンに表示すべき日付一覧（containers から動的に）
   const dayKeys = Array.from(new Set(containers.map((c) => c.date))).sort();
   const legend20 = sizeColors?.["size-20"];
   const legend40 = sizeColors?.["size-40"];
 
   const [themeUploading, setThemeUploading] = useState(false);
+  const [isVoicevoxRunning, setIsVoicevoxRunning] = useState(false);
 
   return (
     <>
@@ -3891,7 +3948,7 @@ function App() {
                   }}
                 >
                   <button
-                    onClick={() => openVoiceWindow()}
+                    onClick={() => openVoicePanel()}
                     style={{
                       width: "100%",
                       padding: "12px",
