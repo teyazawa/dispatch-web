@@ -639,14 +639,12 @@ function DraggableGroupCard({
     // 2行目：コンテナ番号（青文字で表示するため別変数に）
     acLine2 = c.no;
 
-    // 3行目：搬入ヤードがあるかで分岐
-    const hasDropoffYard = c.dropoffYard && c.dropoffYard.trim() !== "";
-
-    if (hasDropoffYard) {
-      // 作業工程①送信後：搬入ヤード / シャーシ番号
-      acLine3 = `${c.dropoffYard}`;
+    // 3行目：stepに応じてヤード表示を切り替え
+    if (c.step && c.step >= 1) {
+      // ✅ step1送信済み：搬入ヤード / シャーシ番号
+      acLine3 = `${c.dropoffYard || "未定"}`;
     } else {
-      // 通常時：搬出ヤード / シャーシ番号
+      // ✅ step1未送信：搬出ヤード / シャーシ番号
       acLine3 = `${c.pickupYard}`;
     }
   }
