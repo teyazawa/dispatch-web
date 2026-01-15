@@ -1,9 +1,12 @@
 // src/components/VoiceSettings.tsx
 import { useState, useEffect } from "react";
+//コメントアウト
+/*
 import {
   checkVoicevoxAvailable,
   RECOMMENDED_SPEAKERS,
 } from "../utils/voicevox";
+ */
 import type {
   VoiceSettings as VoiceSettingsType,
   Template,
@@ -41,7 +44,8 @@ export default function VoiceSettings({
 
   // Web Speech API用の音声エンジン
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [voicevoxAvailable, setVoicevoxAvailable] = useState(false);
+  // コメントアウト
+  //const [voicevoxAvailable, setVoicevoxAvailable] = useState(false);
 
   // 音声エンジンを取得
   useEffect(() => {
@@ -58,6 +62,7 @@ export default function VoiceSettings({
   }, []);
 
   // VOICEVOX起動チェック
+  /*
   useEffect(() => {
     const checkStatus = async () => {
       const available = await checkVoicevoxAvailable();
@@ -66,6 +71,7 @@ export default function VoiceSettings({
 
     checkStatus();
   }, []);
+  */
 
   // テンプレート追加
   const addTemplate = () => {
@@ -134,258 +140,132 @@ export default function VoiceSettings({
     >
       <h2 style={{ marginBottom: "24px" }}>⚙️ 音声設定</h2>
 
-      {/* 音声エンジン設定 */}
+      {/* Web Speech API設定（常に表示） */}
       <section style={{ marginBottom: "32px" }}>
-        <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>音声エンジン</h3>
+        <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>音声設定</h3>
 
-        <label
+        <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            marginBottom: "8px",
-            cursor: "pointer",
+            padding: "16px",
+            background: "#f9fafb",
+            borderRadius: "6px",
+            border: "1px solid #e5e7eb",
           }}
         >
-          <input
-            type="radio"
-            value="webspeech"
-            checked={voiceSettings.engine === "webspeech"}
-            onChange={(e) =>
-              setVoiceSettings({
-                ...voiceSettings,
-                engine: e.target.value as "webspeech",
-              })
-            }
-            style={{ marginRight: "8px" }}
-          />
-          <span>Web Speech API (標準)</span>
-        </label>
-
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            cursor: voicevoxAvailable ? "pointer" : "not-allowed",
-            color: voicevoxAvailable ? "inherit" : "#999",
-          }}
-        >
-          <input
-            type="radio"
-            value="voicevox"
-            checked={voiceSettings.engine === "voicevox"}
-            onChange={(e) =>
-              setVoiceSettings({
-                ...voiceSettings,
-                engine: e.target.value as "voicevox",
-              })
-            }
-            disabled={!voicevoxAvailable}
-            style={{ marginRight: "8px" }}
-          />
-          <span>
-            VOICEVOX (高品質)
-            {!voicevoxAvailable && " ⚠️ 起動してください"}
-          </span>
-        </label>
-
-        {/* Web Speech API設定 */}
-        {voiceSettings.engine === "webspeech" && (
-          <div
-            style={{
-              marginTop: "16px",
-              padding: "16px",
-              background: "#f9fafb",
-              borderRadius: "6px",
-              border: "1px solid #e5e7eb",
-            }}
-          >
-            <div style={{ marginBottom: "12px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "13px",
-                  marginBottom: "4px",
-                }}
-              >
-                音声エンジン
-              </label>
-              <select
-                value={voiceSettings.selectedVoice}
-                onChange={(e) =>
-                  setVoiceSettings({
-                    ...voiceSettings,
-                    selectedVoice: e.target.value,
-                  })
-                }
-                style={{
-                  width: "100%",
-                  padding: "6px",
-                  borderRadius: "4px",
-                  border: "1px solid #ccc",
-                }}
-              >
-                <option value="">デフォルト</option>
-                {voices
-                  .filter((v) => v.lang.startsWith("ja"))
-                  .map((voice, index) => (
-                    <option key={index} value={voice.name}>
-                      {voice.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div style={{ marginBottom: "12px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "13px",
-                  marginBottom: "4px",
-                }}
-              >
-                速度: {voiceSettings.rate.toFixed(2)}
-              </label>
-              <input
-                type="range"
-                min="0.5"
-                max="1.5"
-                step="0.05"
-                value={voiceSettings.rate}
-                onChange={(e) =>
-                  setVoiceSettings({
-                    ...voiceSettings,
-                    rate: Number(e.target.value),
-                  })
-                }
-                style={{ width: "100%" }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "13px",
-                  marginBottom: "4px",
-                }}
-              >
-                ピッチ: {voiceSettings.pitch.toFixed(2)}
-              </label>
-              <input
-                type="range"
-                min="0.5"
-                max="1.5"
-                step="0.05"
-                value={voiceSettings.pitch}
-                onChange={(e) =>
-                  setVoiceSettings({
-                    ...voiceSettings,
-                    pitch: Number(e.target.value),
-                  })
-                }
-                style={{ width: "100%" }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* VOICEVOX設定 */}
-        {voiceSettings.engine === "voicevox" && voicevoxAvailable && (
-          <div
-            style={{
-              marginTop: "16px",
-              padding: "16px",
-              background: "#f9fafb",
-              borderRadius: "6px",
-              border: "1px solid #e5e7eb",
-            }}
-          >
-            <div style={{ marginBottom: "12px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "13px",
-                  marginBottom: "4px",
-                }}
-              >
-                キャラクター
-              </label>
-              <select
-                value={voiceSettings.voicevoxSpeaker}
-                onChange={(e) =>
-                  setVoiceSettings({
-                    ...voiceSettings,
-                    voicevoxSpeaker: Number(e.target.value),
-                  })
-                }
-                style={{
-                  width: "100%",
-                  padding: "6px",
-                  borderRadius: "4px",
-                  border: "1px solid #ccc",
-                }}
-              >
-                {RECOMMENDED_SPEAKERS.map((speaker) => (
-                  <option key={speaker.id} value={speaker.id}>
-                    {speaker.name} - {speaker.description}
+          <div style={{ marginBottom: "12px" }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "13px",
+                marginBottom: "4px",
+              }}
+            >
+              音声選択
+            </label>
+            <select
+              value={voiceSettings.selectedVoice}
+              onChange={(e) =>
+                setVoiceSettings({
+                  ...voiceSettings,
+                  selectedVoice: e.target.value,
+                })
+              }
+              style={{
+                width: "100%",
+                padding: "6px",
+                borderRadius: "4px",
+                border: "1px solid #ccc",
+              }}
+            >
+              <option value="">デフォルト</option>
+              {voices
+                .filter((v) => v.lang.startsWith("ja"))
+                .map((voice, index) => (
+                  <option key={index} value={voice.name}>
+                    {voice.name}
                   </option>
                 ))}
-              </select>
-            </div>
+            </select>
+          </div>
 
-            <div style={{ marginBottom: "12px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "13px",
-                  marginBottom: "4px",
-                }}
-              >
-                速度: {voiceSettings.voicevoxSpeed.toFixed(2)}
-              </label>
-              <input
-                type="range"
-                min="0.5"
-                max="2.0"
-                step="0.1"
-                value={voiceSettings.voicevoxSpeed}
-                onChange={(e) =>
-                  setVoiceSettings({
-                    ...voiceSettings,
-                    voicevoxSpeed: Number(e.target.value),
-                  })
-                }
-                style={{ width: "100%" }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "13px",
-                  marginBottom: "4px",
-                }}
-              >
-                ピッチ: {voiceSettings.voicevoxPitch.toFixed(2)}
-              </label>
-              <input
-                type="range"
-                min="-0.15"
-                max="0.15"
-                step="0.01"
-                value={voiceSettings.voicevoxPitch}
-                onChange={(e) =>
-                  setVoiceSettings({
-                    ...voiceSettings,
-                    voicevoxPitch: Number(e.target.value),
-                  })
-                }
-                style={{ width: "100%" }}
-              />
+          <div style={{ marginBottom: "12px" }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "13px",
+                marginBottom: "4px",
+              }}
+            >
+              速度: {voiceSettings.rate.toFixed(2)}
+            </label>
+            <input
+              type="range"
+              min="0.5"
+              max="1.5"
+              step="0.05"
+              value={voiceSettings.rate}
+              onChange={(e) =>
+                setVoiceSettings({
+                  ...voiceSettings,
+                  rate: Number(e.target.value),
+                })
+              }
+              style={{ width: "100%" }}
+            />
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: "11px",
+                color: "#6b7280",
+                marginTop: "4px",
+              }}
+            >
+              <span>ゆっくり (0.5)</span>
+              <span>標準 (1.0)</span>
+              <span>速い (1.5)</span>
             </div>
           </div>
-        )}
+
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "13px",
+                marginBottom: "4px",
+              }}
+            >
+              ピッチ: {voiceSettings.pitch.toFixed(2)}
+            </label>
+            <input
+              type="range"
+              min="0.5"
+              max="1.5"
+              step="0.05"
+              value={voiceSettings.pitch}
+              onChange={(e) =>
+                setVoiceSettings({
+                  ...voiceSettings,
+                  pitch: Number(e.target.value),
+                })
+              }
+              style={{ width: "100%" }}
+            />
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: "11px",
+                color: "#6b7280",
+                marginTop: "4px",
+              }}
+            >
+              <span>低い (0.5)</span>
+              <span>標準 (1.0)</span>
+              <span>高い (1.5)</span>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* コンテナ番号読み上げ速度 */}
