@@ -935,31 +935,16 @@ function DroppableArea({
   );
 }
 
-async function uploadThemeBgToStorage(
-  file: File,
-  boardId: string
-): Promise<string> {
-  const bucket = "dispatch-assets";
-
-  // 同名で上書き（URLは cache 対策で ?v= を付ける）
-  const ext = (file.name.split(".").pop() || "png").toLowerCase();
-  const path = `${boardId}/theme/bg.${ext}`;
-
-  const { error: upErr } = await supabase.storage
-    .from(bucket)
-    .upload(path, file, {
-      upsert: true,
-      contentType: file.type || "image/png",
-      cacheControl: "3600",
-    });
-
-  if (upErr) throw upErr;
-
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  const publicUrl = data.publicUrl;
-
-  // CDNキャッシュ回避（上書きしても即反映させるため）
-  return `${publicUrl}?v=${Date.now()}`;
+async function uploadThemeBgToStorage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      resolve(dataUrl);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 /** メイン */
@@ -1130,77 +1115,39 @@ function App() {
   const [axleColors, setAxleColors] = useState<Record<string, string>>({});
   const [sizeColors, setSizeColors] = useState<Record<string, string>>({});
 
-  const [showVoicePanel, setShowVoicePanel] = useState<boolean>(() => {
-    const saved = localStorage.getItem("dispatch-show-voice-panel");
-    return saved !== null ? saved === "true" : true; // デフォルトは表示
-  });
-
-  useEffect(() => {
-    localStorage.setItem("dispatch-show-voice-panel", String(showVoicePanel));
-  }, [showVoicePanel]);
-
-  // 音声設定のstate（他のuseStateの近く）
-  const [voiceSettings, setVoiceSettings] = useState(() => {
-    const saved = localStorage.getItem("dispatch-voice-settings");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return { rate: 0.95, pitch: 0.95, selectedVoice: "" };
-      }
-    }
-    return { rate: 0.95, pitch: 0.95, selectedVoice: "" };
-  });
-
-  // 音声設定をlocalStorageに保存
-  useEffect(() => {
-    localStorage.setItem(
-      "dispatch-voice-settings",
-      JSON.stringify(voiceSettings)
-    );
-  }, [voiceSettings]);
-
-  // モーダルを開いた時点のスナップショット
-  const [settingsSnapshot, setSettingsSnapshot] = useState<any | null>(null);
-
+  // 設定モーダルを開く
   const openSettings = () => {
-    // ここに「設定で触るもの」を全部まとめて退避
+    // 現在の設定を退避
     setSettingsSnapshot({
-      axleColors,
+      theme,
       sizeColors,
-      kindColors,
-      theme, // 背景色/ヘッダー色/bgImageUrl など
+      axleColors,
       yards,
       driverGroups,
-      voiceSettings,
+      spareZones,
     });
     setIsSettingsOpen(true);
   };
 
+  // 保存せずに閉じる（設定を元に戻す）
   const closeSettingsWithoutSave = () => {
     if (settingsSnapshot) {
-      setAxleColors(settingsSnapshot.axleColors ?? {});
+      setTheme(settingsSnapshot.theme ?? DEFAULT_THEME);
       setSizeColors(settingsSnapshot.sizeColors ?? {});
-      setKindColors(settingsSnapshot.kindColors ?? {});
-      setTheme(settingsSnapshot.theme ?? {});
+      setAxleColors(settingsSnapshot.axleColors ?? {});
       setYards(settingsSnapshot.yards ?? []);
       setDriverGroups(settingsSnapshot.driverGroups ?? DEFAULT_DRIVER_GROUPS);
-      setVoiceSettings(
-        settingsSnapshot.voiceSettings ?? {
-          rate: 0.95,
-          pitch: 0.95,
-          selectedVoice: "",
-        }
-      );
+      setSpareZones(settingsSnapshot.spareZones ?? []);
     }
     setIsSettingsOpen(false);
     setSettingsSnapshot(null);
   };
 
+  // 保存して閉じる
   const closeSettingsWithSave = () => {
-    // いまの挙動：単に閉じる（既に state は反映済みなのでこれでOK）
     setIsSettingsOpen(false);
     setSettingsSnapshot(null);
+    // TODO: 必要ならここでlocalStorageやDBに保存
   };
 
   // ✅ 保存済みstateがあるか（trucksの「基本車両の自動割当」を抑止する用）
@@ -1262,6 +1209,8 @@ function App() {
   }, [driverGroups]);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const [settingsSnapshot, setSettingsSnapshot] = useState<any | null>(null);
 
   const [yards, setYards] = useState<YardConfig[]>(() => {
     const applyDefaults = (list: any[]): YardConfig[] =>
@@ -2853,6 +2802,662 @@ function App() {
             </div>
           </header>
 
+          {/* ========================================
+  設定モーダル JSX（ヘルパー関数使用版）
+  設定ボタンの後ろ（ヘッダー終わり付近）に追加
+======================================== */}
+
+          {/* 設定モーダル */}
+          {isSettingsOpen && (
+            <div className="modal-backdrop">
+              <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <h2>設定</h2>
+
+                <h3>表示テーマ</h3>
+
+                <div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
+                  {/* 全体背景色 */}
+                  <div
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  >
+                    <div style={{ width: 120 }}>全体背景色</div>
+                    <input
+                      type="color"
+                      value={theme.appBg ?? DEFAULT_THEME.appBg!}
+                      onChange={(e) =>
+                        setTheme((p) => ({ ...p, appBg: e.target.value }))
+                      }
+                    />
+                    <button
+                      className="btn-small btn-delete"
+                      onClick={() =>
+                        setTheme((p) => ({ ...p, appBg: DEFAULT_THEME.appBg }))
+                      }
+                    >
+                      戻す
+                    </button>
+                  </div>
+
+                  {/* ヘッダー背景色 */}
+                  <div
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  >
+                    <div style={{ width: 120 }}>ヘッダー背景色</div>
+                    <input
+                      type="color"
+                      value={theme.headerBg ?? DEFAULT_THEME.headerBg!}
+                      onChange={(e) =>
+                        setTheme((p) => ({ ...p, headerBg: e.target.value }))
+                      }
+                    />
+                    <button
+                      className="btn-small btn-delete"
+                      onClick={() =>
+                        setTheme((p) => ({
+                          ...p,
+                          headerBg: DEFAULT_THEME.headerBg,
+                        }))
+                      }
+                    >
+                      戻す
+                    </button>
+                  </div>
+
+                  {/* 背景画像アップロード（Storage） */}
+                  <div
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  >
+                    <div style={{ width: 120 }}>背景画像</div>
+
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={themeUploading}
+                      onChange={async (e) => {
+                        const inputEl = e.currentTarget;
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        try {
+                          setThemeUploading(true);
+                          const url = await uploadThemeBgToStorage(file);
+                          setTheme((p) => ({ ...p, bgImageUrl: url }));
+                        } catch (err) {
+                          console.error("bg upload failed:", err);
+                          alert("背景画像のアップロードに失敗しました。");
+                        } finally {
+                          setThemeUploading(false);
+                          inputEl.value = "";
+                        }
+                      }}
+                    />
+
+                    <button
+                      className="btn-small btn-delete"
+                      disabled={themeUploading}
+                      onClick={() =>
+                        setTheme((p) => ({ ...p, bgImageUrl: "" }))
+                      }
+                    >
+                      なし
+                    </button>
+
+                    <div style={{ fontSize: 12, color: "#6b7280" }}>
+                      {themeUploading
+                        ? "アップロード中…"
+                        : theme.bgImageUrl
+                        ? "設定済み"
+                        : "未設定"}
+                    </div>
+                  </div>
+
+                  {/* 背景画像の調整 */}
+                  <div
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  >
+                    <div style={{ width: 120 }}>表示サイズ</div>
+                    <select
+                      value={theme.bgSize ?? "cover"}
+                      onChange={(e) =>
+                        setTheme((p) => ({
+                          ...p,
+                          bgSize: e.target.value as any,
+                        }))
+                      }
+                    >
+                      <option value="cover">cover（全体にフィット）</option>
+                      <option value="contain">contain（全体が入る）</option>
+                      <option value="auto">auto（原寸）</option>
+                    </select>
+
+                    <div style={{ width: 70 }}>透明度</div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={theme.bgOpacity ?? 0.18}
+                      onChange={(e) =>
+                        setTheme((p) => ({
+                          ...p,
+                          bgOpacity: Number(e.target.value),
+                        }))
+                      }
+                    />
+                    <div style={{ width: 48 }}>
+                      {(theme.bgOpacity ?? 0.18).toFixed(2)}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  >
+                    <div style={{ width: 120 }}>繰り返し</div>
+                    <select
+                      value={theme.bgRepeat ?? "no-repeat"}
+                      onChange={(e) =>
+                        setTheme((p) => ({
+                          ...p,
+                          bgRepeat: e.target.value as any,
+                        }))
+                      }
+                    >
+                      <option value="no-repeat">なし</option>
+                      <option value="repeat">繰り返し</option>
+                      <option value="repeat-x">横だけ</option>
+                      <option value="repeat-y">縦だけ</option>
+                    </select>
+
+                    <div style={{ width: 70 }}>位置</div>
+                    <select
+                      value={theme.bgPosition ?? "center"}
+                      onChange={(e) =>
+                        setTheme((p) => ({
+                          ...p,
+                          bgPosition: e.target.value as any,
+                        }))
+                      }
+                    >
+                      <option value="center">中央</option>
+                      <option value="top">上</option>
+                      <option value="bottom">下</option>
+                      <option value="left">左</option>
+                      <option value="right">右</option>
+                    </select>
+                  </div>
+
+                  <button
+                    className="btn-small btn-delete"
+                    onClick={() => setTheme(DEFAULT_THEME)}
+                    disabled={themeUploading}
+                  >
+                    テーマを初期化
+                  </button>
+                </div>
+
+                <h3>サイズ色（左端）</h3>
+
+                {[
+                  { key: "size-20", label: "20F" },
+                  { key: "size-40", label: "40F" },
+                ].map((x) => {
+                  const current = sizeColors[x.key];
+                  return (
+                    <div
+                      key={x.key}
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                        marginBottom: 6,
+                      }}
+                    >
+                      <div style={{ width: 60 }}>{x.label}</div>
+
+                      <input
+                        type="color"
+                        value={current ?? "#000000"}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setSizeColors((prev) => ({ ...prev, [x.key]: v }));
+                        }}
+                      />
+
+                      <button
+                        className="btn-small btn-delete"
+                        onClick={() => {
+                          setSizeColors((prev) => {
+                            const copy = { ...prev };
+                            delete copy[x.key];
+                            return copy;
+                          });
+                        }}
+                      >
+                        なし
+                      </button>
+
+                      <div style={{ fontSize: 12, color: "#6b7280" }}>
+                        {current ? current : "未設定（色なし）"}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <h3>シャーシ上部色（軸種別）</h3>
+
+                {[
+                  { key: "axle-1", label: "1軸" },
+                  { key: "axle-2", label: "2軸" },
+                  { key: "axle-3", label: "3軸" },
+                  { key: "axle-MG", label: "MG" },
+                  { key: "axle-2stack", label: "2個積" },
+                  { key: "axle-both", label: "兼用" },
+                ].map((x) => {
+                  const current = axleColors[x.key];
+                  return (
+                    <div
+                      key={x.key}
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                        marginBottom: 6,
+                      }}
+                    >
+                      <div style={{ width: 60 }}>{x.label}</div>
+
+                      {/* 未設定でもinputは値が必要なのでダミー色 */}
+                      <input
+                        type="color"
+                        value={current ?? "#000000"}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setAxleColors((prev) => ({ ...prev, [x.key]: v }));
+                        }}
+                      />
+
+                      <button
+                        className="btn-small btn-delete"
+                        onClick={() => {
+                          setAxleColors((prev) => {
+                            const copy = { ...prev };
+                            delete copy[x.key]; // ✅ 色なしに戻す
+                            return copy;
+                          });
+                        }}
+                      >
+                        なし
+                      </button>
+
+                      <div style={{ fontSize: 12, color: "#6b7280" }}>
+                        {current ? current : "未設定（色なし）"}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* シャーシプール設定セクション */}
+                <section className="modal-section">
+                  <h3>シャーシプール設定</h3>
+
+                  {yards.map((yard, yIndex) => {
+                    const slotMode: SlotMode =
+                      yard.slotMode ??
+                      (yard.id === "kawaguchi" || yard.id === "custom"
+                        ? "single"
+                        : "three");
+
+                    const labels =
+                      yard.positionLabels ?? DEFAULT_POSITION_LABELS;
+
+                    return (
+                      <div key={yard.id} className="modal-yard-row">
+                        {/* ヤード名 */}
+                        <input
+                          className="modal-yard-name-input"
+                          value={yard.name}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setYards((prev) => {
+                              const copy = [...prev];
+                              copy[yIndex] = { ...copy[yIndex], name: value };
+                              return copy;
+                            });
+                          }}
+                        />
+
+                        {/* ★ マス数の設定 */}
+                        <div className="modal-yard-slot-config">
+                          <label>
+                            マス数：
+                            <select
+                              value={slotMode}
+                              onChange={(e) => {
+                                const value = e.target.value as SlotMode;
+                                setYards((prev) => {
+                                  const copy = [...prev];
+                                  copy[yIndex] = {
+                                    ...copy[yIndex],
+                                    slotMode: value,
+                                  };
+                                  return copy;
+                                });
+                              }}
+                            >
+                              <option value="single">
+                                1マス（フリー／川口車庫仕様）
+                              </option>
+                              <option value="one">1本（1マス固定）</option>{" "}
+                              {/* ← 追加 */}
+                              <option value="two">2本（前／奥）</option>
+                              <option value="three">3本（前／中／奥）</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        {/* ★ 前・中・奥の名称（single のときは非表示） */}
+                        {slotMode !== "single" && (
+                          <div className="modal-pos-labels">
+                            <span>マス名：</span>
+
+                            {/* front */}
+                            <input
+                              className="modal-pos-input"
+                              value={labels.front}
+                              placeholder="前"
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setYards((prev) => {
+                                  const copy = [...prev];
+                                  const current = copy[yIndex];
+                                  copy[yIndex] = {
+                                    ...current,
+                                    positionLabels: {
+                                      ...(current.positionLabels ??
+                                        DEFAULT_POSITION_LABELS),
+                                      front: value,
+                                    },
+                                  };
+                                  return copy;
+                                });
+                              }}
+                            />
+
+                            {/* middle（3マスのときだけ） */}
+                            {slotMode === "three" && (
+                              <input
+                                className="modal-pos-input"
+                                value={labels.middle}
+                                placeholder="中"
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setYards((prev) => {
+                                    const copy = [...prev];
+                                    const current = copy[yIndex];
+                                    copy[yIndex] = {
+                                      ...current,
+                                      positionLabels: {
+                                        ...(current.positionLabels ??
+                                          DEFAULT_POSITION_LABELS),
+                                        middle: value,
+                                      },
+                                    };
+                                    return copy;
+                                  });
+                                }}
+                              />
+                            )}
+
+                            {/* back */}
+                            <input
+                              className="modal-pos-input"
+                              value={labels.back}
+                              placeholder="奥"
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setYards((prev) => {
+                                  const copy = [...prev];
+                                  const current = copy[yIndex];
+                                  copy[yIndex] = {
+                                    ...current,
+                                    positionLabels: {
+                                      ...(current.positionLabels ??
+                                        DEFAULT_POSITION_LABELS),
+                                      back: value,
+                                    },
+                                  };
+                                  return copy;
+                                });
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* レーン一覧 */}
+                        <div className="modal-lanes">
+                          {yard.lanes.map((lane, lIndex) => (
+                            <div key={lane.id} className="modal-lane-row">
+                              <input
+                                className="modal-lane-input"
+                                value={lane.label}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setYards((prev) => {
+                                    const copy = [...prev];
+                                    const lanesCopy = [...copy[yIndex].lanes];
+                                    lanesCopy[lIndex] = {
+                                      ...lanesCopy[lIndex],
+                                      label: value,
+                                    };
+                                    copy[yIndex] = {
+                                      ...copy[yIndex],
+                                      lanes: lanesCopy,
+                                    };
+                                    return copy;
+                                  });
+                                }}
+                              />
+                              <button
+                                className="btn-small btn-delete"
+                                onClick={() => removeLane(yIndex, lIndex)}
+                              >
+                                レーン削除
+                              </button>
+                            </div>
+                          ))}
+
+                          <button
+                            className="btn-small btn-add"
+                            onClick={() => addLane(yIndex)}
+                          >
+                            レーン追加
+                          </button>
+                        </div>
+
+                        {/* ヤード操作ボタン（削除・上下移動） */}
+                        <div
+                          className="modal-yard-actions"
+                          style={{ display: "flex", gap: 8, marginTop: 8 }}
+                        >
+                          <button
+                            className="btn-small btn-delete"
+                            onClick={() => removeYard(yIndex)}
+                            disabled={yards.length <= 1}
+                          >
+                            置き場削除
+                          </button>
+
+                          <button
+                            className="btn-small"
+                            onClick={() => moveYardUp(yIndex)}
+                            disabled={yIndex === 0}
+                            style={{ background: "#6b7280", color: "white" }}
+                          >
+                            ↑ 上へ
+                          </button>
+
+                          <button
+                            className="btn-small"
+                            onClick={() => moveYardDown(yIndex)}
+                            disabled={yIndex === yards.length - 1}
+                            style={{ background: "#6b7280", color: "white" }}
+                          >
+                            ↓ 下へ
+                          </button>
+
+                          <button
+                            className="btn-small btn-add"
+                            onClick={() => insertYardAfter(yIndex)}
+                          >
+                            ↓ 下に追加
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* 一番下に「ヤード追加」 */}
+                  <button className="btn-small btn-add" onClick={addYard}>
+                    置き場を末尾に追加
+                  </button>
+
+                  {/* ここからドライバーグループ設定 */}
+
+                  <h3>自車グループ設定</h3>
+                  <div className="driver-group-list">
+                    {driverGroups.owned.map((g, index) => (
+                      <div key={`owned-${index}`} className="driver-group-row">
+                        {/* kintone の「ドライバー_グループ」に入っている値 */}
+                        <input
+                          className="driver-group-key-input"
+                          value={g.key}
+                          placeholder="kintone の値（例: ドレー, ポジション）"
+                          onChange={(e) =>
+                            updateOwnedGroup(index, { key: e.target.value })
+                          }
+                        />
+                        {/* 画面上の表示名 */}
+                        <input
+                          className="driver-group-name-input"
+                          value={g.label}
+                          placeholder="表示名（例: ポジ）"
+                          onChange={(e) =>
+                            updateOwnedGroup(index, { label: e.target.value })
+                          }
+                        />
+                        <button
+                          className="btn-small btn-delete"
+                          onClick={() => removeOwnedGroup(index)}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      className="btn-small btn-add"
+                      onClick={addOwnedGroup}
+                    >
+                      グループ追加
+                    </button>
+                  </div>
+
+                  <h3>傭車グループ設定</h3>
+                  <div className="driver-group-list">
+                    {driverGroups.outsourced.map((g, index) => (
+                      <div
+                        key={`outsourced-${index}`}
+                        className="driver-group-row"
+                      >
+                        <input
+                          className="driver-group-key-input"
+                          value={g.key}
+                          placeholder="kintone の値（例: ガレージ, 山翔）"
+                          onChange={(e) =>
+                            updateOutsourcedGroup(index, {
+                              key: e.target.value,
+                            })
+                          }
+                        />
+                        <input
+                          className="driver-group-name-input"
+                          value={g.label}
+                          placeholder="表示名"
+                          onChange={(e) =>
+                            updateOutsourcedGroup(index, {
+                              label: e.target.value,
+                            })
+                          }
+                        />
+                        <button
+                          className="btn-small btn-delete"
+                          onClick={() => removeOutsourcedGroup(index)}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      className="btn-small btn-add"
+                      onClick={addOutsourcedGroup}
+                    >
+                      グループ追加
+                    </button>
+                  </div>
+                </section>
+
+                <h3>予備車エリア設定</h3>
+                <div className="spare-zones-list" style={{ marginBottom: 16 }}>
+                  {spareZones.map((zone, index) => (
+                    <div
+                      key={zone.id}
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                        marginBottom: 6,
+                      }}
+                    >
+                      <input
+                        className="modal-yard-name-input"
+                        value={zone.name}
+                        placeholder="エリア名（例: 予備車、修理中）"
+                        onChange={(e) => updateSpareZone(index, e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        className="btn-small btn-delete"
+                        onClick={() => removeSpareZone(index)}
+                        disabled={spareZones.length <= 1}
+                      >
+                        削除
+                      </button>
+                    </div>
+                  ))}
+                  <button className="btn-small btn-add" onClick={addSpareZone}>
+                    エリア追加
+                  </button>
+                </div>
+
+                <div className="modal-footer">
+                  <button
+                    className="btn-delete"
+                    disabled={themeUploading} // アップロード中に戻すのは危険なので抑止推奨
+                    onClick={closeSettingsWithoutSave}
+                  >
+                    保存しないで閉じる
+                  </button>
+
+                  <button
+                    className="btn-primary"
+                    onClick={closeSettingsWithSave}
+                  >
+                    保存
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <DndContext
             sensors={sensors}
             onDragStart={(e) => {
@@ -3320,870 +3925,6 @@ function App() {
               document.body
             )}
           </DndContext>
-
-          {isSettingsOpen && (
-            <div className="modal-backdrop">
-              <div className="modal" onClick={(e) => e.stopPropagation()}>
-                <h2>設定</h2>
-
-                <h3>表示テーマ</h3>
-
-                <div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
-                  {/* 全体背景色 */}
-                  <div
-                    style={{ display: "flex", gap: 8, alignItems: "center" }}
-                  >
-                    <div style={{ width: 120 }}>全体背景色</div>
-                    <input
-                      type="color"
-                      value={theme.appBg ?? DEFAULT_THEME.appBg!}
-                      onChange={(e) =>
-                        setTheme((p) => ({ ...p, appBg: e.target.value }))
-                      }
-                    />
-                    <button
-                      className="btn-small btn-delete"
-                      onClick={() =>
-                        setTheme((p) => ({ ...p, appBg: DEFAULT_THEME.appBg }))
-                      }
-                    >
-                      戻す
-                    </button>
-                  </div>
-
-                  {/* ヘッダー背景色 */}
-                  <div
-                    style={{ display: "flex", gap: 8, alignItems: "center" }}
-                  >
-                    <div style={{ width: 120 }}>ヘッダー背景色</div>
-                    <input
-                      type="color"
-                      value={theme.headerBg ?? DEFAULT_THEME.headerBg!}
-                      onChange={(e) =>
-                        setTheme((p) => ({ ...p, headerBg: e.target.value }))
-                      }
-                    />
-                    <button
-                      className="btn-small btn-delete"
-                      onClick={() =>
-                        setTheme((p) => ({
-                          ...p,
-                          headerBg: DEFAULT_THEME.headerBg,
-                        }))
-                      }
-                    >
-                      戻す
-                    </button>
-                  </div>
-
-                  {/* 背景画像アップロード（Storage） */}
-                  <div
-                    style={{ display: "flex", gap: 8, alignItems: "center" }}
-                  >
-                    <div style={{ width: 120 }}>背景画像</div>
-
-                    <input
-                      type="file"
-                      accept="image/*"
-                      disabled={themeUploading || !boardId}
-                      onChange={async (e) => {
-                        const inputEl = e.currentTarget;
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-
-                        try {
-                          setThemeUploading(true);
-                          const url = await uploadThemeBgToStorage(
-                            file,
-                            boardId
-                          );
-                          setTheme((p) => ({ ...p, bgImageUrl: url }));
-                        } catch (err) {
-                          console.error("bg upload failed:", err);
-                          alert("背景画像のアップロードに失敗しました。");
-                        } finally {
-                          setThemeUploading(false);
-                          inputEl.value = "";
-                        }
-                      }}
-                    />
-
-                    <button
-                      className="btn-small btn-delete"
-                      disabled={themeUploading}
-                      onClick={() =>
-                        setTheme((p) => ({ ...p, bgImageUrl: "" }))
-                      }
-                    >
-                      なし
-                    </button>
-
-                    <div style={{ fontSize: 12, color: "#6b7280" }}>
-                      {themeUploading
-                        ? "アップロード中…"
-                        : theme.bgImageUrl
-                        ? "設定済み"
-                        : "未設定"}
-                    </div>
-                  </div>
-
-                  {/* 背景画像の調整 */}
-                  <div
-                    style={{ display: "flex", gap: 8, alignItems: "center" }}
-                  >
-                    <div style={{ width: 120 }}>表示サイズ</div>
-                    <select
-                      value={theme.bgSize ?? "cover"}
-                      onChange={(e) =>
-                        setTheme((p) => ({
-                          ...p,
-                          bgSize: e.target.value as any,
-                        }))
-                      }
-                    >
-                      <option value="cover">cover（全体にフィット）</option>
-                      <option value="contain">contain（全体が入る）</option>
-                      <option value="auto">auto（原寸）</option>
-                    </select>
-
-                    <div style={{ width: 70 }}>透明度</div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={theme.bgOpacity ?? 0.18}
-                      onChange={(e) =>
-                        setTheme((p) => ({
-                          ...p,
-                          bgOpacity: Number(e.target.value),
-                        }))
-                      }
-                    />
-                    <div style={{ width: 48 }}>
-                      {(theme.bgOpacity ?? 0.18).toFixed(2)}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{ display: "flex", gap: 8, alignItems: "center" }}
-                  >
-                    <div style={{ width: 120 }}>繰り返し</div>
-                    <select
-                      value={theme.bgRepeat ?? "no-repeat"}
-                      onChange={(e) =>
-                        setTheme((p) => ({
-                          ...p,
-                          bgRepeat: e.target.value as any,
-                        }))
-                      }
-                    >
-                      <option value="no-repeat">なし</option>
-                      <option value="repeat">繰り返し</option>
-                      <option value="repeat-x">横だけ</option>
-                      <option value="repeat-y">縦だけ</option>
-                    </select>
-
-                    <div style={{ width: 70 }}>位置</div>
-                    <select
-                      value={theme.bgPosition ?? "center"}
-                      onChange={(e) =>
-                        setTheme((p) => ({
-                          ...p,
-                          bgPosition: e.target.value as any,
-                        }))
-                      }
-                    >
-                      <option value="center">中央</option>
-                      <option value="top">上</option>
-                      <option value="bottom">下</option>
-                      <option value="left">左</option>
-                      <option value="right">右</option>
-                    </select>
-                  </div>
-
-                  <button
-                    className="btn-small btn-delete"
-                    onClick={() => setTheme(DEFAULT_THEME)}
-                    disabled={themeUploading}
-                  >
-                    テーマを初期化
-                  </button>
-                </div>
-
-                <h3>サイズ色（左端）</h3>
-
-                {[
-                  { key: "size-20", label: "20F" },
-                  { key: "size-40", label: "40F" },
-                ].map((x) => {
-                  const current = sizeColors[x.key];
-                  return (
-                    <div
-                      key={x.key}
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        alignItems: "center",
-                        marginBottom: 6,
-                      }}
-                    >
-                      <div style={{ width: 60 }}>{x.label}</div>
-
-                      <input
-                        type="color"
-                        value={current ?? "#000000"}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setSizeColors((prev) => ({ ...prev, [x.key]: v }));
-                        }}
-                      />
-
-                      <button
-                        className="btn-small btn-delete"
-                        onClick={() => {
-                          setSizeColors((prev) => {
-                            const copy = { ...prev };
-                            delete copy[x.key];
-                            return copy;
-                          });
-                        }}
-                      >
-                        なし
-                      </button>
-
-                      <div style={{ fontSize: 12, color: "#6b7280" }}>
-                        {current ? current : "未設定（色なし）"}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                <h3>シャーシ上部色（軸種別）</h3>
-
-                {[
-                  { key: "axle-1", label: "1軸" },
-                  { key: "axle-2", label: "2軸" },
-                  { key: "axle-3", label: "3軸" },
-                  { key: "axle-MG", label: "MG" },
-                  { key: "axle-2stack", label: "2個積" },
-                  { key: "axle-both", label: "兼用" },
-                ].map((x) => {
-                  const current = axleColors[x.key];
-                  return (
-                    <div
-                      key={x.key}
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        alignItems: "center",
-                        marginBottom: 6,
-                      }}
-                    >
-                      <div style={{ width: 60 }}>{x.label}</div>
-
-                      {/* 未設定でもinputは値が必要なのでダミー色 */}
-                      <input
-                        type="color"
-                        value={current ?? "#000000"}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setAxleColors((prev) => ({ ...prev, [x.key]: v }));
-                        }}
-                      />
-
-                      <button
-                        className="btn-small btn-delete"
-                        onClick={() => {
-                          setAxleColors((prev) => {
-                            const copy = { ...prev };
-                            delete copy[x.key]; // ✅ 色なしに戻す
-                            return copy;
-                          });
-                        }}
-                      >
-                        なし
-                      </button>
-
-                      <div style={{ fontSize: 12, color: "#6b7280" }}>
-                        {current ? current : "未設定（色なし）"}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                <h3>表示設定</h3>
-                <div style={{ marginBottom: 16 }}>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={showVoicePanel}
-                      onChange={(e) => setShowVoicePanel(e.target.checked)}
-                    />
-                    <span>音声送信パネルを表示</span>
-                  </label>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "#6b7280",
-                      marginLeft: 24,
-                      marginTop: 4,
-                    }}
-                  >
-                    配送分エリアの下部に音声送信パネルを表示します
-                  </div>
-                </div>
-
-                {/* ✅ ここから音声設定を追加 */}
-                <h3>音声設定</h3>
-                <div
-                  style={{
-                    marginBottom: 16,
-                    padding: "12px",
-                    backgroundColor: "#f9fafb",
-                    borderRadius: "4px",
-                    border: "1px solid #e5e7eb",
-                  }}
-                >
-                  {/* 音声エンジン選択 */}
-                  <div style={{ marginBottom: "12px" }}>
-                    <label
-                      style={{
-                        fontSize: "13px",
-                        display: "block",
-                        marginBottom: "6px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      音声エンジン
-                    </label>
-                    <select
-                      value={voiceSettings.selectedVoice}
-                      onChange={(e) =>
-                        setVoiceSettings(
-                          (prev: {
-                            rate: number;
-                            pitch: number;
-                            selectedVoice: string;
-                          }) => ({
-                            ...prev,
-                            selectedVoice: e.target.value,
-                          })
-                        )
-                      }
-                      style={{
-                        width: "100%",
-                        padding: "6px 8px",
-                        fontSize: "13px",
-                        borderRadius: "4px",
-                        border: "1px solid #d1d5db",
-                      }}
-                    >
-                      <option value="">デフォルト</option>
-                      {(() => {
-                        // 利用可能な日本語音声を取得
-                        const voices = speechSynthesis.getVoices();
-                        const japaneseVoices = voices.filter((v) =>
-                          v.lang.startsWith("ja")
-                        );
-                        return japaneseVoices.map((voice) => (
-                          <option key={voice.name} value={voice.name}>
-                            {voice.name}
-                          </option>
-                        ));
-                      })()}
-                    </select>
-                    <div
-                      style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}
-                    >
-                      読み上げに使用する音声を選択します
-                    </div>
-                  </div>
-
-                  {/* 速度調整 */}
-                  <div style={{ marginBottom: "12px" }}>
-                    <label
-                      style={{
-                        fontSize: "13px",
-                        display: "block",
-                        marginBottom: "6px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      読み上げ速度: {voiceSettings.rate.toFixed(2)}
-                    </label>
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="1.5"
-                      step="0.05"
-                      value={voiceSettings.rate}
-                      onChange={(e) =>
-                        setVoiceSettings(
-                          (prev: {
-                            rate: number;
-                            pitch: number;
-                            selectedVoice: string;
-                          }) => ({
-                            ...prev,
-                            rate: Number(e.target.value),
-                          })
-                        )
-                      }
-                      style={{ width: "100%" }}
-                    />
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: 11,
-                        color: "#6b7280",
-                        marginTop: 4,
-                      }}
-                    >
-                      <span>ゆっくり (0.5)</span>
-                      <span>標準 (1.0)</span>
-                      <span>速い (1.5)</span>
-                    </div>
-                  </div>
-
-                  {/* ピッチ調整 */}
-                  <div style={{ marginBottom: "12px" }}>
-                    <label
-                      style={{
-                        fontSize: "13px",
-                        display: "block",
-                        marginBottom: "6px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      声の高さ: {voiceSettings.pitch.toFixed(2)}
-                    </label>
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="1.5"
-                      step="0.05"
-                      value={voiceSettings.pitch}
-                      onChange={(e) =>
-                        setVoiceSettings(
-                          (prev: {
-                            rate: number;
-                            pitch: number;
-                            selectedVoice: string;
-                          }) => ({
-                            ...prev,
-                            pitch: Number(e.target.value),
-                          })
-                        )
-                      }
-                      style={{ width: "100%" }}
-                    />
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: 11,
-                        color: "#6b7280",
-                        marginTop: 4,
-                      }}
-                    >
-                      <span>低い (0.5)</span>
-                      <span>標準 (1.0)</span>
-                      <span>高い (1.5)</span>
-                    </div>
-                  </div>
-
-                  {/* リセットボタン */}
-                  <button
-                    onClick={() =>
-                      setVoiceSettings({
-                        rate: 0.95,
-                        pitch: 0.95,
-                        selectedVoice: "",
-                      })
-                    }
-                    style={{
-                      padding: "6px 12px",
-                      fontSize: "12px",
-                      backgroundColor: "#e5e7eb",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    音声設定をリセット
-                  </button>
-                </div>
-
-                {/* シャーシプール設定セクション */}
-                <section className="modal-section">
-                  <h3>シャーシプール設定</h3>
-
-                  {yards.map((yard, yIndex) => {
-                    const slotMode: SlotMode =
-                      yard.slotMode ??
-                      (yard.id === "kawaguchi" || yard.id === "custom"
-                        ? "single"
-                        : "three");
-
-                    const labels =
-                      yard.positionLabels ?? DEFAULT_POSITION_LABELS;
-
-                    return (
-                      <div key={yard.id} className="modal-yard-row">
-                        {/* ヤード名 */}
-                        <input
-                          className="modal-yard-name-input"
-                          value={yard.name}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setYards((prev) => {
-                              const copy = [...prev];
-                              copy[yIndex] = { ...copy[yIndex], name: value };
-                              return copy;
-                            });
-                          }}
-                        />
-
-                        {/* ★ マス数の設定 */}
-                        <div className="modal-yard-slot-config">
-                          <label>
-                            マス数：
-                            <select
-                              value={slotMode}
-                              onChange={(e) => {
-                                const value = e.target.value as SlotMode;
-                                setYards((prev) => {
-                                  const copy = [...prev];
-                                  copy[yIndex] = {
-                                    ...copy[yIndex],
-                                    slotMode: value,
-                                  };
-                                  return copy;
-                                });
-                              }}
-                            >
-                              <option value="single">
-                                1マス（フリー／川口車庫仕様）
-                              </option>
-                              <option value="one">1本（1マス固定）</option>{" "}
-                              {/* ← 追加 */}
-                              <option value="two">2本（前／奥）</option>
-                              <option value="three">3本（前／中／奥）</option>
-                            </select>
-                          </label>
-                        </div>
-
-                        {/* ★ 前・中・奥の名称（single のときは非表示） */}
-                        {slotMode !== "single" && (
-                          <div className="modal-pos-labels">
-                            <span>マス名：</span>
-
-                            {/* front */}
-                            <input
-                              className="modal-pos-input"
-                              value={labels.front}
-                              placeholder="前"
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                setYards((prev) => {
-                                  const copy = [...prev];
-                                  const current = copy[yIndex];
-                                  copy[yIndex] = {
-                                    ...current,
-                                    positionLabels: {
-                                      ...(current.positionLabels ??
-                                        DEFAULT_POSITION_LABELS),
-                                      front: value,
-                                    },
-                                  };
-                                  return copy;
-                                });
-                              }}
-                            />
-
-                            {/* middle（3マスのときだけ） */}
-                            {slotMode === "three" && (
-                              <input
-                                className="modal-pos-input"
-                                value={labels.middle}
-                                placeholder="中"
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  setYards((prev) => {
-                                    const copy = [...prev];
-                                    const current = copy[yIndex];
-                                    copy[yIndex] = {
-                                      ...current,
-                                      positionLabels: {
-                                        ...(current.positionLabels ??
-                                          DEFAULT_POSITION_LABELS),
-                                        middle: value,
-                                      },
-                                    };
-                                    return copy;
-                                  });
-                                }}
-                              />
-                            )}
-
-                            {/* back */}
-                            <input
-                              className="modal-pos-input"
-                              value={labels.back}
-                              placeholder="奥"
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                setYards((prev) => {
-                                  const copy = [...prev];
-                                  const current = copy[yIndex];
-                                  copy[yIndex] = {
-                                    ...current,
-                                    positionLabels: {
-                                      ...(current.positionLabels ??
-                                        DEFAULT_POSITION_LABELS),
-                                      back: value,
-                                    },
-                                  };
-                                  return copy;
-                                });
-                              }}
-                            />
-                          </div>
-                        )}
-
-                        {/* レーン一覧 */}
-                        <div className="modal-lanes">
-                          {yard.lanes.map((lane, lIndex) => (
-                            <div key={lane.id} className="modal-lane-row">
-                              <input
-                                className="modal-lane-input"
-                                value={lane.label}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  setYards((prev) => {
-                                    const copy = [...prev];
-                                    const lanesCopy = [...copy[yIndex].lanes];
-                                    lanesCopy[lIndex] = {
-                                      ...lanesCopy[lIndex],
-                                      label: value,
-                                    };
-                                    copy[yIndex] = {
-                                      ...copy[yIndex],
-                                      lanes: lanesCopy,
-                                    };
-                                    return copy;
-                                  });
-                                }}
-                              />
-                              <button
-                                className="btn-small btn-delete"
-                                onClick={() => removeLane(yIndex, lIndex)}
-                              >
-                                レーン削除
-                              </button>
-                            </div>
-                          ))}
-
-                          <button
-                            className="btn-small btn-add"
-                            onClick={() => addLane(yIndex)}
-                          >
-                            レーン追加
-                          </button>
-                        </div>
-
-                        {/* ヤード操作ボタン（削除・上下移動） */}
-                        <div
-                          className="modal-yard-actions"
-                          style={{ display: "flex", gap: 8, marginTop: 8 }}
-                        >
-                          <button
-                            className="btn-small btn-delete"
-                            onClick={() => removeYard(yIndex)}
-                            disabled={yards.length <= 1}
-                          >
-                            置き場削除
-                          </button>
-
-                          <button
-                            className="btn-small"
-                            onClick={() => moveYardUp(yIndex)}
-                            disabled={yIndex === 0}
-                            style={{ background: "#6b7280", color: "white" }}
-                          >
-                            ↑ 上へ
-                          </button>
-
-                          <button
-                            className="btn-small"
-                            onClick={() => moveYardDown(yIndex)}
-                            disabled={yIndex === yards.length - 1}
-                            style={{ background: "#6b7280", color: "white" }}
-                          >
-                            ↓ 下へ
-                          </button>
-
-                          <button
-                            className="btn-small btn-add"
-                            onClick={() => insertYardAfter(yIndex)}
-                          >
-                            ↓ 下に追加
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* 一番下に「ヤード追加」 */}
-                  <button className="btn-small btn-add" onClick={addYard}>
-                    置き場を末尾に追加
-                  </button>
-
-                  {/* ここからドライバーグループ設定 */}
-
-                  <h3>自車グループ設定</h3>
-                  <div className="driver-group-list">
-                    {driverGroups.owned.map((g, index) => (
-                      <div key={`owned-${index}`} className="driver-group-row">
-                        {/* kintone の「ドライバー_グループ」に入っている値 */}
-                        <input
-                          className="driver-group-key-input"
-                          value={g.key}
-                          placeholder="kintone の値（例: ドレー, ポジション）"
-                          onChange={(e) =>
-                            updateOwnedGroup(index, { key: e.target.value })
-                          }
-                        />
-                        {/* 画面上の表示名 */}
-                        <input
-                          className="driver-group-name-input"
-                          value={g.label}
-                          placeholder="表示名（例: ポジ）"
-                          onChange={(e) =>
-                            updateOwnedGroup(index, { label: e.target.value })
-                          }
-                        />
-                        <button
-                          className="btn-small btn-delete"
-                          onClick={() => removeOwnedGroup(index)}
-                        >
-                          削除
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      className="btn-small btn-add"
-                      onClick={addOwnedGroup}
-                    >
-                      グループ追加
-                    </button>
-                  </div>
-
-                  <h3>傭車グループ設定</h3>
-                  <div className="driver-group-list">
-                    {driverGroups.outsourced.map((g, index) => (
-                      <div
-                        key={`outsourced-${index}`}
-                        className="driver-group-row"
-                      >
-                        <input
-                          className="driver-group-key-input"
-                          value={g.key}
-                          placeholder="kintone の値（例: ガレージ, 山翔）"
-                          onChange={(e) =>
-                            updateOutsourcedGroup(index, {
-                              key: e.target.value,
-                            })
-                          }
-                        />
-                        <input
-                          className="driver-group-name-input"
-                          value={g.label}
-                          placeholder="表示名"
-                          onChange={(e) =>
-                            updateOutsourcedGroup(index, {
-                              label: e.target.value,
-                            })
-                          }
-                        />
-                        <button
-                          className="btn-small btn-delete"
-                          onClick={() => removeOutsourcedGroup(index)}
-                        >
-                          削除
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      className="btn-small btn-add"
-                      onClick={addOutsourcedGroup}
-                    >
-                      グループ追加
-                    </button>
-                  </div>
-                </section>
-
-                <h3>予備車エリア設定</h3>
-                <div className="spare-zones-list" style={{ marginBottom: 16 }}>
-                  {spareZones.map((zone, index) => (
-                    <div
-                      key={zone.id}
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        alignItems: "center",
-                        marginBottom: 6,
-                      }}
-                    >
-                      <input
-                        className="modal-yard-name-input"
-                        value={zone.name}
-                        placeholder="エリア名（例: 予備車、修理中）"
-                        onChange={(e) => updateSpareZone(index, e.target.value)}
-                        style={{ flex: 1 }}
-                      />
-                      <button
-                        className="btn-small btn-delete"
-                        onClick={() => removeSpareZone(index)}
-                        disabled={spareZones.length <= 1}
-                      >
-                        削除
-                      </button>
-                    </div>
-                  ))}
-                  <button className="btn-small btn-add" onClick={addSpareZone}>
-                    エリア追加
-                  </button>
-                </div>
-
-                <div className="modal-footer">
-                  <button
-                    className="btn-delete"
-                    disabled={themeUploading} // アップロード中に戻すのは危険なので抑止推奨
-                    onClick={closeSettingsWithoutSave}
-                  >
-                    保存しないで閉じる
-                  </button>
-
-                  <button
-                    className="btn-primary"
-                    onClick={closeSettingsWithSave}
-                  >
-                    保存
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {mailMenu.visible && mailMenu.group && mailMenu.driver && (
             <div

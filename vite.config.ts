@@ -10,6 +10,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         voicePanel: path.resolve(__dirname, 'voice-panel.html'),
+        settings: path.resolve(__dirname, 'settings-window.html'),
       },
     },
   },

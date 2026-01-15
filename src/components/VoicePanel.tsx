@@ -1,5 +1,16 @@
 // src/components/VoicePanel.tsx
 import { useState, useEffect } from "react";
+import { checkVoicevoxAvailable, speakWithVoicevox } from "../utils/voicevox";
+import type {
+  VoiceSettings,
+  Template,
+  PronunciationFix,
+} from "../types/settings";
+import {
+  DEFAULT_VOICE_SETTINGS,
+  DEFAULT_TEMPLATES,
+  DEFAULT_PRONUNCIATION_FIXES,
+} from "../types/settings";
 
 export interface VoiceLog {
   id: string;
@@ -15,13 +26,10 @@ interface VoicePanelProps {
   onDeleteLog: (id: string) => void;
   onToggleSelect: (id: string) => void;
   onClearLogs: () => void;
-  voiceSettings: {
-    rate: number;
-    pitch: number;
-    selectedVoice: string;
-  };
   isStandalone?: boolean;
 }
+
+let settingsWindow: Window | null = null;
 
 export default function VoicePanel({
   logs,
@@ -30,32 +38,29 @@ export default function VoicePanel({
   onDeleteLog,
   onToggleSelect,
   onClearLogs,
-  voiceSettings,
   isStandalone = false,
 }: VoicePanelProps) {
-  // 独立ウィンドウの場合、親からのメッセージを受信
-  useEffect(() => {
-    if (!isStandalone) return;
-
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-
-      const { type, payload } = event.data;
-
-      switch (type) {
-        case "ADD_LOG":
-          onAddLog(payload.text);
-          break;
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, [isStandalone, onAddLog]);
-
   const [editingText, setEditingText] = useState("");
 
-  // ✅ 利用可能な音声エンジン
+  // 設定
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(() => {
+    const saved = localStorage.getItem("voiceSettings");
+    return saved ? JSON.parse(saved) : DEFAULT_VOICE_SETTINGS;
+  });
+
+  const [templates, setTemplates] = useState<Template[]>(() => {
+    const saved = localStorage.getItem("voiceTemplates");
+    return saved ? JSON.parse(saved) : DEFAULT_TEMPLATES;
+  });
+
+  const [pronunciationFixes, setPronunciationFixes] = useState<
+    PronunciationFix[]
+  >(() => {
+    const saved = localStorage.getItem("pronunciationFixes");
+    return saved ? JSON.parse(saved) : DEFAULT_PRONUNCIATION_FIXES;
+  });
+
+  // Web Speech API用の音声エンジン
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   // 音声エンジンを取得
@@ -72,27 +77,46 @@ export default function VoicePanel({
     }
   }, []);
 
-  // テンプレート定義
-  const templates = [
-    {
-      id: "delivery",
-      label: "配送依頼",
-      template: "○○さん、□□へ配送お願いします",
-    },
-    {
-      id: "return",
-      label: "返却依頼",
-      template: "○○さん、△△に返却お願いします",
-    },
-  ];
+  // 設定更新を受信
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
 
-  // ✅ ドライバー名を抽出する関数
-  const extractDriver = (text: string): string | null => {
-    const match = text.match(/^(.+?)さん、/);
-    return match ? match[1] : null;
+      const { type, payload } = event.data;
+
+      if (type === "SETTINGS_UPDATED") {
+        setVoiceSettings(payload.voiceSettings);
+        setTemplates(payload.templates);
+        setPronunciationFixes(payload.pronunciationFixes);
+      } else if (type === "ADD_LOG" && isStandalone) {
+        onAddLog(payload.text);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [isStandalone, onAddLog]);
+
+  // 設定ウィンドウを開く
+  const openSettings = () => {
+    if (settingsWindow && !settingsWindow.closed) {
+      settingsWindow.focus();
+      return;
+    }
+
+    const width = 700;
+    const height = 800;
+    const left = window.screen.width - width - 50;
+    const top = 50;
+
+    settingsWindow = window.open(
+      "/settings-window.html",
+      "VoiceSettings",
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
   };
 
-  // ✅ 数字→カタカナ変換
+  // 数字→カタカナ変換
   const numToKanji: { [key: string]: string } = {
     "0": "ゼロ",
     "1": "イチ",
@@ -106,7 +130,7 @@ export default function VoicePanel({
     "9": "キュウ",
   };
 
-  // ✅ コンテナ番号フォーマット（カタカナ版）
+  // コンテナ番号フォーマット
   const formatContainerNumber = (text: string): string => {
     const containerPattern = /([A-Z]{4})(\d{7})/g;
 
@@ -114,39 +138,59 @@ export default function VoicePanel({
       const first3 = numbers.slice(0, 3);
       const last4 = numbers.slice(3, 7);
 
-      const first3Kana = first3
-        .split("")
-        .map((d: string) => numToKanji[d])
-        .join("、");
-      const last4Kana = last4
-        .split("")
-        .map((d: string) => numToKanji[d])
-        .join("、");
+      switch (voiceSettings.containerFormat) {
+        case "slow":
+          const first3Slow = first3
+            .split("")
+            .map((d: string) => numToKanji[d])
+            .join("、");
+          const last4Slow = last4
+            .split("")
+            .map((d: string) => numToKanji[d])
+            .join("、");
+          return `${letters}、${first3Slow}、${last4Slow}`;
 
-      return `${letters}、${first3Kana}、${last4Kana}`;
+        case "medium":
+          const first3Medium = first3
+            .split("")
+            .map((d: string) => numToKanji[d])
+            .join("");
+          const last4Medium = last4
+            .split("")
+            .map((d: string) => numToKanji[d])
+            .join("");
+          return `${letters}、${first3Medium}、${last4Medium}`;
+
+        case "fast":
+          const allNumbers = first3 + last4;
+          const numbersFast = allNumbers
+            .split("")
+            .map((d: string) => numToKanji[d])
+            .join("");
+          return `${letters} ${numbersFast}`;
+
+        default:
+          return _match;
+      }
     });
   };
 
-  // ✅ 読み間違い修正
+  // 読み間違い修正
   const fixPronunciation = (text: string): string => {
-    const replacements: { [key: string]: string } = {
-      中防: "ちゅうぼう",
-      大井: "おおい",
-      青海: "あおみ",
-      品川: "しながわ",
-      本牧: "ほんもく",
-      南本牧: "なんもく",
-      ft: "ふぃーと",
-    };
-
     let result = text;
-    for (const [wrong, correct] of Object.entries(replacements)) {
-      result = result.replace(new RegExp(wrong, "g"), correct);
+    for (const fix of pronunciationFixes) {
+      result = result.replace(new RegExp(fix.wrong, "g"), fix.correct);
     }
     return result;
   };
 
-  // ✅ 選択中のログを賢く連結する関数
+  // ドライバー名を抽出
+  const extractDriver = (text: string): string | null => {
+    const match = text.match(/^(.+?)さん、/);
+    return match ? match[1] : null;
+  };
+
+  // 選択中のログを賢く連結
   const getSmartConnectedText = () => {
     const selectedLogs = logs.filter((log) => log.isSelected);
     if (selectedLogs.length === 0) return "";
@@ -182,17 +226,8 @@ export default function VoicePanel({
     return result.join("\n\n");
   };
 
-  // ✅ 音声変換・再生
-  const handleSpeak = () => {
-    let text = editingText || getSmartConnectedText();
-    if (!text.trim()) {
-      alert("テキストが空です");
-      return;
-    }
-
-    text = formatContainerNumber(text);
-    text = fixPronunciation(text);
-
+  // Web Speech API再生
+  const speakWithWebSpeech = (text: string) => {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "ja-JP";
     utterance.rate = voiceSettings.rate;
@@ -210,22 +245,47 @@ export default function VoicePanel({
     speechSynthesis.speak(utterance);
   };
 
-  // ログの選択/非選択
-  const toggleLog = (id: string) => {
-    onToggleSelect(id);
+  // 音声変換・再生
+  const handleSpeak = async () => {
+    let text = editingText || getSmartConnectedText();
+    if (!text.trim()) {
+      alert("テキストが空です");
+      return;
+    }
+
+    text = formatContainerNumber(text);
+    text = fixPronunciation(text);
+
+    try {
+      if (voiceSettings.engine === "voicevox") {
+        const available = await checkVoicevoxAvailable();
+
+        if (!available) {
+          alert("VOICEVOXが起動していません。Web Speech APIで再生します。");
+          speakWithWebSpeech(text);
+          return;
+        }
+
+        await speakWithVoicevox(
+          text,
+          voiceSettings.voicevoxSpeaker,
+          voiceSettings.voicevoxSpeed,
+          voiceSettings.voicevoxPitch
+        );
+      } else {
+        speakWithWebSpeech(text);
+      }
+    } catch (error) {
+      console.error("音声再生エラー:", error);
+      alert("音声の再生に失敗しました");
+    }
   };
 
-  // ログのテキスト編集
-  const updateLogText = (id: string, newText: string) => {
+  const toggleLog = (id: string) => onToggleSelect(id);
+  const updateLogText = (id: string, newText: string) =>
     onUpdateLog(id, newText);
-  };
+  const deleteLog = (id: string) => onDeleteLog(id);
 
-  // ログの削除
-  const deleteLog = (id: string) => {
-    onDeleteLog(id);
-  };
-
-  // 全削除
   const clearAll = () => {
     if (window.confirm("すべてのログをリセットしますか？")) {
       onClearLogs();
@@ -233,19 +293,42 @@ export default function VoicePanel({
     }
   };
 
-  // テンプレート挿入
-  const insertTemplate = (template: string) => {
-    onAddLog(template);
-  };
+  const insertTemplate = (template: string) => onAddLog(template);
 
-  // ✅ テキストエリアにコピー（スマート連結版）
   const copyToTextarea = () => {
     setEditingText(getSmartConnectedText());
   };
 
   return (
     <div className="voice-panel">
-      <h3>🔊 音声送信パネル</h3>
+      {/* ヘッダー */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "12px",
+        }}
+      >
+        <h3>🔊 音声送信パネル</h3>
+        <button
+          onClick={openSettings}
+          style={{
+            padding: "6px 12px",
+            fontSize: "13px",
+            background: "#6c757d",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          ⚙️ 設定
+        </button>
+      </div>
 
       {/* テンプレートボタン */}
       <div
