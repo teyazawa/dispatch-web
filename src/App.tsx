@@ -1934,12 +1934,14 @@ function App() {
           if (parsed.mode === "single") {
             const yard = yards.find((y) => y.id === parsed.yardId);
             const message = `${driver?.name}さん、${yard?.name}へ台切ってください`;
+            console.log("🔊 [台切りsingle]", message);
             addVoiceLog(message);
           } else {
             // parsed.mode === "grid"
             const yard = yards.find((y) => y.id === parsed.yardId);
             const lane = yard?.lanes.find((l) => l.id === parsed.laneId);
             const message = `${driver?.name}さん、${yard?.name}${lane?.label}へ台切ってください`;
+            console.log("🔊 [台切りgrid]", message);
             addVoiceLog(message);
           }
         }
@@ -2012,6 +2014,7 @@ function App() {
           const chassisInfo = `${currentGroup.chassisLabel}(${currentGroup.size}ft)`;
 
           const message = `${driver?.name}さん、${yardName}${laneName}から${chassisInfo}を繋いでください`;
+          console.log("🔊 [シャーシ繋ぐ]", message);
           addVoiceLog(message);
         }
 

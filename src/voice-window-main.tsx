@@ -1,5 +1,5 @@
 // src/voice-window-main.tsx
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import VoicePanel from "./components/VoicePanel";
 import type { VoiceLog } from "./components/VoicePanel";
@@ -93,9 +93,7 @@ function VoiceWindowApp() {
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <VoiceWindowApp />
-  </React.StrictMode>,
+  <VoiceWindowApp />,
 );
 
 window.addEventListener("beforeunload", () => {
