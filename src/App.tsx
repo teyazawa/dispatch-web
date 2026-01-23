@@ -1129,28 +1129,6 @@ function App() {
       "VoicePanel",
       `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`,
     );
-
-    // VOICEVOX起動状態を定期的に送信
-    if (voiceWindow) {
-      const sendVoicevoxStatus = () => {
-        if (voiceWindow && !voiceWindow.closed) {
-          voiceWindow.postMessage(
-            { type: "VOICEVOX_STATUS", isRunning: isVoicevoxRunning },
-            window.location.origin,
-          );
-        }
-      };
-
-      setTimeout(sendVoicevoxStatus, 500);
-
-      const interval = setInterval(() => {
-        if (voiceWindow && !voiceWindow.closed) {
-          sendVoicevoxStatus();
-        } else {
-          clearInterval(interval);
-        }
-      }, 5000);
-    }
   };
 
   // 設定モーダルを開く
@@ -2709,29 +2687,12 @@ function App() {
     );
   }, [hydrationDone, yards]);
 
-  // VOICEVOX起動チェック（5秒ごと）
-  useEffect(() => {
-    const checkVoicevox = async () => {
-      try {
-        const response = await fetch("http://localhost:50021/speakers");
-        setIsVoicevoxRunning(response.ok);
-      } catch {
-        setIsVoicevoxRunning(false);
-      }
-    };
-
-    checkVoicevox(); // 初回チェック
-    const interval = setInterval(checkVoicevox, 5000); // 5秒ごと
-    return () => clearInterval(interval);
-  }, []);
-
   // 配送レーンに表示すべき日付一覧（containers から動的に）
   const dayKeys = Array.from(new Set(containers.map((c) => c.date))).sort();
   const legend20 = sizeColors?.["size-20"];
   const legend40 = sizeColors?.["size-40"];
 
   const [themeUploading, setThemeUploading] = useState(false);
-  const [isVoicevoxRunning, setIsVoicevoxRunning] = useState(false);
 
   return (
     <>
