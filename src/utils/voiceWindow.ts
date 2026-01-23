@@ -60,8 +60,11 @@ export function openVoiceWindow(): Window | null {
  * 音声送信ウィンドウにメッセージを送信
  */
 export function sendToVoiceWindow(message: VoiceWindowMessage): void {
+  console.log('📤 voiceWindow.ts: 送信', message, voiceWindow); 
   if (voiceWindow && !voiceWindow.closed) {
     voiceWindow.postMessage(message, window.location.origin);
+  }else {
+    console.warn('⚠️ 音声ウィンドウが開いていません'); // ← 追加
   }
 }
 

@@ -2201,6 +2201,7 @@ function App() {
         // ✅ 音声化処理を追加
         const driver = drivers.find((d) => d.id === driverId);
         const message = `${driver?.name}さん、${container.pickupYard}からコンテナ番号${container.no}を取ります`;
+        console.log("🔊 メインアプリ: 音声ログ送信", message);
         addVoiceLog(message);
 
         // 元の場所から削除
