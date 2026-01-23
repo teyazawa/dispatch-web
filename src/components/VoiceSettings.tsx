@@ -27,10 +27,10 @@ export default function VoiceSettings({
 }: VoiceSettingsProps) {
   // 編集中の設定
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsType>(
-    initialSettings.voiceSettings
+    initialSettings.voiceSettings,
   );
   const [templates, setTemplates] = useState<Template[]>(
-    initialSettings.templates
+    initialSettings.templates,
   );
   const [pronunciationFixes, setPronunciationFixes] = useState<
     PronunciationFix[]

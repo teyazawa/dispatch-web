@@ -58,7 +58,7 @@ function fileLinksText(
   label: string,
   files: Array<{ fileKey: string; name?: string }> | undefined,
   apiBase?: string,
-  emptyText: string = "" // ✅ 追加：未指定なら今まで通り「空文字」
+  emptyText: string = "", // ✅ 追加：未指定なら今まで通り「空文字」
 ) {
   const list = (files ?? []).filter((f) => f?.fileKey);
 
@@ -74,7 +74,7 @@ function fileLinksText(
   const urls = list.map((f) => {
     const name = (f.name ?? "file").toString();
     return `${base}/api/kintone/file?fileKey=${encodeURIComponent(
-      f.fileKey
+      f.fileKey,
     )}&name=${encodeURIComponent(name)}`;
   });
 
@@ -391,7 +391,7 @@ function mailBodySizeLabel(container: Container, sizeRaw?: string): string {
 function buildPickupMail(
   container: Container,
   apiBase: string,
-  sizeRaw?: string
+  sizeRaw?: string,
 ): { subject: string; body: string } {
   const subjectSize = container.size === "40" ? "40F" : "20F"; // 件名用
   const bodySize = mailBodySizeLabel(container, sizeRaw); // 本文用（フル）
@@ -403,7 +403,7 @@ function buildPickupMail(
   const dispatchBlock = fileLinksText(
     "ディスパッチ",
     container.dispatchFiles,
-    apiBase
+    apiBase,
   );
 
   const subject = `【${container.pickupYard}取り】 ${subjectSize} ${container.no}`;
@@ -429,7 +429,7 @@ function buildPickupMail(
 function buildDeliveryMail(
   container: Container,
   apiBase: string,
-  sizeRaw?: string
+  sizeRaw?: string,
 ): { subject: string; body: string } {
   const dayLabel = buildDayLabel(container.date);
   const subjectSize = container.size === "40" ? "40F" : "20F"; // 件名用
@@ -439,7 +439,7 @@ function buildDeliveryMail(
     "受領書",
     container.receiptFiles,
     apiBase,
-    "なし"
+    "なし",
   );
 
   const subject = `【${dayLabel}配送分】 ${container.eta} ${container.destination} ${subjectSize} ${container.no}`;
@@ -466,7 +466,7 @@ type DraggableGroupCardProps = {
   group: ChassisGroup;
   onContextMenuGroup?: (
     e: React.MouseEvent<HTMLDivElement>,
-    group: ChassisGroup
+    group: ChassisGroup,
   ) => void;
 
   axleColors?: Record<string, string>;
@@ -959,7 +959,7 @@ function App() {
         // ✅ Android 対応：delay を削除して distance のみに
         distance: 10, // 10px 動かしたらドラッグ開始
       },
-    })
+    }),
   );
 
   // ✅ ここに追加：詳細モーダル用の state
@@ -1073,7 +1073,7 @@ function App() {
     root.style.setProperty("--app-bg", theme.appBg || DEFAULT_THEME.appBg!);
     root.style.setProperty(
       "--header-bg",
-      theme.headerBg || DEFAULT_THEME.headerBg!
+      theme.headerBg || DEFAULT_THEME.headerBg!,
     );
 
     const img = theme.bgImageUrl ? `url("${theme.bgImageUrl}")` : "none";
@@ -1091,7 +1091,7 @@ function App() {
   const [tempContainers, setTempContainers] = useState<Container[]>([]);
   // 完了一覧
   const [completedContainers, setCompletedContainers] = useState<Container[]>(
-    []
+    [],
   );
   const [containers, setContainers] = useState<Container[]>([]);
 
@@ -1127,7 +1127,7 @@ function App() {
     voiceWindow = window.open(
       "/voice-panel.html",
       "VoicePanel",
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`,
     );
 
     // VOICEVOX起動状態を定期的に送信
@@ -1136,7 +1136,7 @@ function App() {
         if (voiceWindow && !voiceWindow.closed) {
           voiceWindow.postMessage(
             { type: "VOICEVOX_STATUS", isRunning: isVoicevoxRunning },
-            window.location.origin
+            window.location.origin,
           );
         }
       };
@@ -1242,7 +1242,7 @@ function App() {
   useEffect(() => {
     localStorage.setItem(
       "dispatch-driver-groups",
-      JSON.stringify(driverGroups)
+      JSON.stringify(driverGroups),
     );
   }, [driverGroups]);
 
@@ -1325,7 +1325,7 @@ function App() {
   const openMailMenu = (
     e: React.MouseEvent<HTMLDivElement>,
     group: ChassisGroup,
-    driver: Driver
+    driver: Driver,
   ) => {
     setMailMenu({
       visible: true,
@@ -1356,7 +1356,7 @@ function App() {
         : buildDeliveryMail(c, API_BASE, sizeRaw);
 
     const mailto = `mailto:${encodeURIComponent(
-      d.email
+      d.email,
     )}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
     window.location.href = mailto;
@@ -1440,7 +1440,7 @@ function App() {
             if (!num) return;
 
             const idx = trucksWithLocation.findIndex(
-              (t, i) => t.label === num && !usedIndex.has(i)
+              (t, i) => t.label === num && !usedIndex.has(i),
             );
             if (idx === -1) return;
 
@@ -1545,7 +1545,7 @@ function App() {
               kindLabel: c.kindLabel,
               note: c.note,
             },
-          })
+          }),
         );
 
         if (cancelled) return;
@@ -1567,7 +1567,7 @@ function App() {
       const gid = String(id);
 
       const fromAC = groupsRef.current.find(
-        (g) => g.container?.id === gid
+        (g) => g.container?.id === gid,
       )?.container;
       if (fromAC) return fromAC;
 
@@ -1596,8 +1596,8 @@ function App() {
     // ① シャーシ上にあれば「コンテナだけ外す」
     setGroups((prev) =>
       prev.map((g) =>
-        g.container?.id === String(id) ? { ...g, container: undefined } : g
-      )
+        g.container?.id === String(id) ? { ...g, container: undefined } : g,
+      ),
     );
 
     // ② リストから消す（ここで fetched を使わない）
@@ -1702,24 +1702,24 @@ function App() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ids: newIdsToAck }),
-              }
+              },
             );
 
             if (!ackRes.ok) {
               console.warn(
                 "mark-board-done failed:",
                 ackRes.status,
-                await ackRes.text()
+                await ackRes.text(),
               );
               // 失敗時は再送できるように戻す
               newIdsToAck.forEach((id) =>
-                ackedContainerIdsRef.current.delete(id)
+                ackedContainerIdsRef.current.delete(id),
               );
             }
           } catch (e) {
             console.warn("mark-board-done error:", e);
             newIdsToAck.forEach((id) =>
-              ackedContainerIdsRef.current.delete(id)
+              ackedContainerIdsRef.current.delete(id),
             );
           }
         }
@@ -1806,8 +1806,8 @@ function App() {
         setCompletedContainers((prev) => prev.map(applyPatch));
         setGroups((prev) =>
           prev.map((g) =>
-            g.container ? { ...g, container: applyPatch(g.container) } : g
-          )
+            g.container ? { ...g, container: applyPatch(g.container) } : g,
+          ),
         );
 
         // ② worker4 が入ったものは「コンテナだけ」配送完了へ移動
@@ -1886,33 +1886,33 @@ function App() {
 
   function getTruckForDriver(driverId: string) {
     return trucks.find(
-      (t) => t.location.type === "driver" && t.location.driverId === driverId
+      (t) => t.location.type === "driver" && t.location.driverId === driverId,
     );
   }
 
   function getGroupForDriver(driverId: string) {
     return groups.find(
-      (g) => g.location.type === "driver" && g.location.driverId === driverId
+      (g) => g.location.type === "driver" && g.location.driverId === driverId,
     );
   }
 
   function getSlotGroup(
     yardId: string,
     laneId: string,
-    pos: "front" | "middle" | "back"
+    pos: "front" | "middle" | "back",
   ) {
     return groups.find(
       (g) =>
         g.location.type === "pool" &&
         g.location.yardId === yardId &&
         g.location.laneId === laneId &&
-        g.location.pos === pos
+        g.location.pos === pos,
     );
   }
 
   // コンテナIDからどこにいるかを探す（配送枠 / 一時保管 / 完了）
   function findContainerById(
-    id: string
+    id: string,
   ): { container: Container; source: "containers" | "temp" | "done" } | null {
     let c = containers.find((x) => x.id === id);
     if (c) return { container: c, source: "containers" };
@@ -1982,8 +1982,8 @@ function App() {
                       pos: "front",
                     },
                   }
-                : g
-            )
+                : g,
+            ),
           );
           return;
         }
@@ -1998,8 +1998,8 @@ function App() {
           prev.map((g) =>
             g.id === groupId
               ? { ...g, location: { type: "pool", yardId, laneId, pos } }
-              : g
-          )
+              : g,
+          ),
         );
         return;
       }
@@ -2010,13 +2010,13 @@ function App() {
 
         const hasTruck = trucks.some(
           (t) =>
-            t.location.type === "driver" && t.location.driverId === driverId
+            t.location.type === "driver" && t.location.driverId === driverId,
         );
         if (!hasTruck) return;
 
         const occupied = groups.find(
           (g) =>
-            g.location.type === "driver" && g.location.driverId === driverId
+            g.location.type === "driver" && g.location.driverId === driverId,
         );
         if (occupied && occupied.id !== groupId) return;
 
@@ -2041,8 +2041,8 @@ function App() {
           prev.map((g) =>
             g.id === groupId
               ? { ...g, location: { type: "driver", driverId } }
-              : g
-          )
+              : g,
+          ),
         );
         return;
       }
@@ -2053,8 +2053,8 @@ function App() {
 
         setGroups((prev) =>
           prev.map((g) =>
-            g.id === currentGroup.id ? { ...g, container: undefined } : g
-          )
+            g.id === currentGroup.id ? { ...g, container: undefined } : g,
+          ),
         );
         setTempContainers((prev) => [...prev, released]);
         return;
@@ -2067,8 +2067,8 @@ function App() {
 
         setGroups((prev) =>
           prev.map((g) =>
-            g.id === currentGroup.id ? { ...g, container: undefined } : g
-          )
+            g.id === currentGroup.id ? { ...g, container: undefined } : g,
+          ),
         );
         setCompletedContainers((prev) => [...prev, released]);
         return;
@@ -2089,7 +2089,7 @@ function App() {
           (t) =>
             t.location.type === "driver" &&
             t.location.driverId === driverId &&
-            t.id !== truckId
+            t.id !== truckId,
         );
         if (occupied) return;
 
@@ -2097,8 +2097,8 @@ function App() {
           prev.map((t) =>
             t.id === truckId
               ? { ...t, location: { type: "driver", driverId } }
-              : t
-          )
+              : t,
+          ),
         );
         return;
       }
@@ -2108,8 +2108,10 @@ function App() {
         const zoneId = overId.replace("zone-", "");
         setTrucks((prev) =>
           prev.map((t) =>
-            t.id === truckId ? { ...t, location: { type: "spare", zoneId } } : t
-          )
+            t.id === truckId
+              ? { ...t, location: { type: "spare", zoneId } }
+              : t,
+          ),
         );
         return;
       }
@@ -2212,7 +2214,7 @@ function App() {
 
         const group = groups.find(
           (g) =>
-            g.location.type === "driver" && g.location.driverId === driverId
+            g.location.type === "driver" && g.location.driverId === driverId,
         );
         if (!group) return;
         if (group.container) return;
@@ -2234,7 +2236,7 @@ function App() {
 
         // シャーシに積む
         setGroups((prev) =>
-          prev.map((g) => (g.id === group.id ? { ...g, container } : g))
+          prev.map((g) => (g.id === group.id ? { ...g, container } : g)),
         );
         return;
       }
@@ -2289,7 +2291,7 @@ function App() {
 
   const ownedDrivers = effectiveDrivers.filter((d) => d.kind === "owned");
   const outsourcedDrivers = effectiveDrivers.filter(
-    (d) => d.kind === "outsourced"
+    (d) => d.kind === "outsourced",
   );
 
   // ===== シャーシプール（ヤード／レーン）操作ヘルパー =====
@@ -2453,7 +2455,7 @@ function App() {
 
   const updateOutsourcedGroup = (
     index: number,
-    patch: Partial<DriverGroup>
+    patch: Partial<DriverGroup>,
   ) => {
     setDriverGroups((prev) => {
       const outsourced = [...prev.outsourced];
@@ -2607,7 +2609,7 @@ function App() {
               hydratingRef.current = false;
             }, 50);
           }
-        }
+        },
       )
       .subscribe();
 
@@ -2703,7 +2705,7 @@ function App() {
             pos: "front",
           },
         };
-      })
+      }),
     );
   }, [hydrationDone, yards]);
 
@@ -2961,8 +2963,8 @@ function App() {
                       {themeUploading
                         ? "アップロード中…"
                         : theme.bgImageUrl
-                        ? "設定済み"
-                        : "未設定"}
+                          ? "設定済み"
+                          : "未設定"}
                     </div>
                   </div>
 
@@ -3552,20 +3554,32 @@ function App() {
                     slotMode === "single"
                       ? [] // 1マスフリーなので列は使わない
                       : slotMode === "one" // ← 追加
-                      ? [{ id: "front" as const, label: labels.front || "" }]
-                      : slotMode === "two"
-                      ? [
-                          { id: "front" as const, label: labels.front || "前" },
-                          { id: "back" as const, label: labels.back || "奥" },
-                        ]
-                      : [
-                          { id: "front" as const, label: labels.front || "前" },
-                          {
-                            id: "middle" as const,
-                            label: labels.middle || "中",
-                          },
-                          { id: "back" as const, label: labels.back || "奥" },
-                        ];
+                        ? [{ id: "front" as const, label: labels.front || "" }]
+                        : slotMode === "two"
+                          ? [
+                              {
+                                id: "front" as const,
+                                label: labels.front || "前",
+                              },
+                              {
+                                id: "back" as const,
+                                label: labels.back || "奥",
+                              },
+                            ]
+                          : [
+                              {
+                                id: "front" as const,
+                                label: labels.front || "前",
+                              },
+                              {
+                                id: "middle" as const,
+                                label: labels.middle || "中",
+                              },
+                              {
+                                id: "back" as const,
+                                label: labels.back || "奥",
+                              },
+                            ];
 
                   return (
                     <div key={yard.id} className="yard-section">
@@ -3582,7 +3596,7 @@ function App() {
                             .filter(
                               (g) =>
                                 g.location.type === "pool" &&
-                                g.location.yardId === yard.id
+                                g.location.yardId === yard.id,
                             )
                             .map((g) => (
                               <DraggableGroupCard
@@ -3618,7 +3632,7 @@ function App() {
                                 const group = getSlotGroup(
                                   yard.id,
                                   lane.id,
-                                  pos.id
+                                  pos.id,
                                 );
                                 const droppableId = `yard-${yard.id}-${lane.id}-${pos.id}`;
 
@@ -3654,7 +3668,7 @@ function App() {
                   const zoneTrucks = trucks.filter(
                     (t) =>
                       t.location.type === "spare" &&
-                      t.location.zoneId === zone.id
+                      t.location.zoneId === zone.id,
                   );
 
                   return (
@@ -3688,7 +3702,7 @@ function App() {
 
                     {OWNED_GROUP_ORDER.map(({ key, label }) => {
                       const groupDrivers = ownedDrivers.filter(
-                        (d) => (d.groupName || "") === key
+                        (d) => (d.groupName || "") === key,
                       );
                       if (groupDrivers.length === 0) return null;
 
@@ -3750,7 +3764,7 @@ function App() {
 
                     {OUTSOURCED_GROUP_ORDER.map(({ key, label }) => {
                       const groupDrivers = outsourcedDrivers.filter(
-                        (d) => (d.groupName || "") === key
+                        (d) => (d.groupName || "") === key,
                       );
                       if (groupDrivers.length === 0) return null;
 
@@ -3861,7 +3875,7 @@ function App() {
                                     .filter(
                                       (c) =>
                                         c.date === dayKey &&
-                                        c.pickupYardGroup === yardName
+                                        c.pickupYardGroup === yardName,
                                     )
                                     .map((c) => (
                                       <DraggableContainerCard
@@ -3977,7 +3991,7 @@ function App() {
               <DragOverlay style={{ zIndex: 999999 }}>
                 {activeDragId ? renderDragOverlay(activeDragId) : null}
               </DragOverlay>,
-              document.body
+              document.body,
             )}
           </DndContext>
 

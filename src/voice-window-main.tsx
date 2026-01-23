@@ -26,7 +26,26 @@ function VoiceWindowApp() {
     localStorage.setItem("voiceWindowLogs", JSON.stringify(logs));
   }, [logs]);
 
+  // ✅ メッセージ受信処理
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+
+      const { type, payload } = event.data;
+
+      console.log("🎤 音声パネル: 受信したメッセージ:", type, payload);
+
+      if (type === "ADD_LOG") {
+        handleAddLog(payload.text);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
   const handleAddLog = (text: string) => {
+    console.log("📝 ログ追加:", text); // デバッグ用
     const newLog: VoiceLog = {
       id: Date.now().toString(),
       text,
@@ -38,7 +57,7 @@ function VoiceWindowApp() {
 
   const handleUpdateLog = (id: string, text: string) => {
     setLogs((prev) =>
-      prev.map((log) => (log.id === id ? { ...log, text } : log))
+      prev.map((log) => (log.id === id ? { ...log, text } : log)),
     );
   };
 
@@ -49,8 +68,8 @@ function VoiceWindowApp() {
   const handleToggleSelect = (id: string) => {
     setLogs((prev) =>
       prev.map((log) =>
-        log.id === id ? { ...log, isSelected: !log.isSelected } : log
-      )
+        log.id === id ? { ...log, isSelected: !log.isSelected } : log,
+      ),
     );
   };
 
@@ -76,7 +95,7 @@ function VoiceWindowApp() {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <VoiceWindowApp />
-  </React.StrictMode>
+  </React.StrictMode>,
 );
 
 window.addEventListener("beforeunload", () => {

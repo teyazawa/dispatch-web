@@ -1,6 +1,6 @@
 // src/components/VoicePanel.tsx
 import { useState, useEffect } from "react";
-import { checkVoicevoxAvailable, speakWithVoicevox } from "../utils/voicevox";
+//import { checkVoicevoxAvailable, speakWithVoicevox } from "../utils/voicevox";
 import type {
   VoiceSettings,
   Template,
@@ -112,7 +112,7 @@ export default function VoicePanel({
     settingsWindow = window.open(
       "/settings-window.html",
       "VoiceSettings",
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`,
     );
   };
 
@@ -209,7 +209,7 @@ export default function VoicePanel({
       } else {
         if (currentDriver && currentSentences.length > 0) {
           result.push(
-            `${currentDriver}さん、${currentSentences.join("、その後に")}`
+            `${currentDriver}さん、${currentSentences.join("、その後に")}`,
           );
         }
         currentDriver = driver;
@@ -219,7 +219,7 @@ export default function VoicePanel({
 
     if (currentDriver && currentSentences.length > 0) {
       result.push(
-        `${currentDriver}さん、${currentSentences.join("、その後に")}`
+        `${currentDriver}さん、${currentSentences.join("、その後に")}`,
       );
     }
 
@@ -257,24 +257,8 @@ export default function VoicePanel({
     text = fixPronunciation(text);
 
     try {
-      if (voiceSettings.engine === "voicevox") {
-        const available = await checkVoicevoxAvailable();
-
-        if (!available) {
-          alert("VOICEVOXが起動していません。Web Speech APIで再生します。");
-          speakWithWebSpeech(text);
-          return;
-        }
-
-        await speakWithVoicevox(
-          text,
-          voiceSettings.voicevoxSpeaker,
-          voiceSettings.voicevoxSpeed,
-          voiceSettings.voicevoxPitch
-        );
-      } else {
-        speakWithWebSpeech(text);
-      }
+      // VOICEVOXは使用しないのでWeb Speech APIのみ
+      speakWithWebSpeech(text);
     } catch (error) {
       console.error("音声再生エラー:", error);
       alert("音声の再生に失敗しました");

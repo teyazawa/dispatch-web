@@ -11,7 +11,7 @@ import {
 
 function SettingsWindowApp() {
   const [initialSettings, setInitialSettings] = useState<AllSettings | null>(
-    null
+    null,
   );
 
   useEffect(() => {
@@ -52,12 +52,12 @@ function SettingsWindowApp() {
     // localStorageに保存
     localStorage.setItem(
       "voiceSettings",
-      JSON.stringify(settings.voiceSettings)
+      JSON.stringify(settings.voiceSettings),
     );
     localStorage.setItem("voiceTemplates", JSON.stringify(settings.templates));
     localStorage.setItem(
       "pronunciationFixes",
-      JSON.stringify(settings.pronunciationFixes)
+      JSON.stringify(settings.pronunciationFixes),
     );
 
     // 親ウィンドウに設定変更を通知
@@ -67,7 +67,7 @@ function SettingsWindowApp() {
           type: "SETTINGS_UPDATED",
           payload: settings,
         },
-        window.location.origin
+        window.location.origin,
       );
     }
 
@@ -97,5 +97,5 @@ function SettingsWindowApp() {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <SettingsWindowApp />
-  </React.StrictMode>
+  </React.StrictMode>,
 );
