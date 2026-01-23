@@ -86,7 +86,6 @@ function VoiceWindowApp() {
         onDeleteLog={handleDeleteLog}
         onToggleSelect={handleToggleSelect}
         onClearLogs={handleClearLogs}
-        isStandalone={true}
       />
     </div>
   );

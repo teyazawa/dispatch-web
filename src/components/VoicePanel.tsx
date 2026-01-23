@@ -26,7 +26,6 @@ interface VoicePanelProps {
   onDeleteLog: (id: string) => void;
   onToggleSelect: (id: string) => void;
   onClearLogs: () => void;
-  isStandalone?: boolean;
 }
 
 let settingsWindow: Window | null = null;
@@ -38,7 +37,6 @@ export default function VoicePanel({
   onDeleteLog,
   onToggleSelect,
   onClearLogs,
-  isStandalone = false,
 }: VoicePanelProps) {
   const [editingText, setEditingText] = useState("");
 
@@ -88,14 +86,13 @@ export default function VoicePanel({
         setVoiceSettings(payload.voiceSettings);
         setTemplates(payload.templates);
         setPronunciationFixes(payload.pronunciationFixes);
-      } else if (type === "ADD_LOG" && isStandalone) {
-        onAddLog(payload.text);
       }
+      // ✅ ADD_LOG の処理を削除（voice-window-main.tsx で処理する）
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [isStandalone, onAddLog]);
+  }, []);
 
   // 設定ウィンドウを開く
   const openSettings = () => {
