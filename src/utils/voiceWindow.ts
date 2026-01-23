@@ -5,13 +5,38 @@ export interface VoiceWindowMessage {
   payload?: any;
 }
 
+// グローバルに保持（リロードしても参照を維持）
 let voiceWindow: Window | null = null;
+
+// ウィンドウが既に開いているか確認する関数
+function findExistingVoiceWindow(): Window | null {
+  // 開いているウィンドウを探す
+  const name = 'VoicePanel';
+  try {
+    // すでに開いている同名ウィンドウを取得
+    const existing = window.open('', name);
+    if (existing && existing.location.href.includes('voice-panel.html')) {
+      return existing;
+    }
+  } catch (e) {
+    // アクセスできない場合は null
+  }
+  return null;
+}
 
 /**
  * 音声送信ウィンドウを開く
  */
 export function openVoiceWindow(): Window | null {
-  // 既に開いている場合はフォーカス
+  // まず既存のウィンドウを探す
+  const existing = findExistingVoiceWindow();
+  if (existing && !existing.closed) {
+    voiceWindow = existing;
+    voiceWindow.focus();
+    return voiceWindow;
+  }
+
+  // voiceWindow が null でも、実際には開いているかもしれない
   if (voiceWindow && !voiceWindow.closed) {
     voiceWindow.focus();
     return voiceWindow;
@@ -59,12 +84,20 @@ export function openVoiceWindow(): Window | null {
 /**
  * 音声送信ウィンドウにメッセージを送信
  */
-export function sendToVoiceWindow(message: VoiceWindowMessage): void {
-  console.log('📤 voiceWindow.ts: 送信', message, voiceWindow); 
+function sendToVoiceWindow(message: any): void {
+  // まず既存ウィンドウを探す
+  const existing = findExistingVoiceWindow();
+  if (existing) {
+    voiceWindow = existing;
+  }
+
+  console.log('📤 voiceWindow.ts: 送信', message, voiceWindow);
+  
   if (voiceWindow && !voiceWindow.closed) {
     voiceWindow.postMessage(message, window.location.origin);
-  }else {
-    console.warn('⚠️ 音声ウィンドウが開いていません'); // ← 追加
+    console.log('✅ 送信成功');
+  } else {
+    console.warn('⚠️ 音声ウィンドウが開いていません');
   }
 }
 
