@@ -14,7 +14,10 @@ import AuthBar from "./components/AuthBar";
 import { DragOverlay } from "@dnd-kit/core";
 import { createPortal } from "react-dom";
 import tezukaLogo from "./assets/tezuka-logo.png";
-import { addVoiceLog as sendVoiceLogToWindow } from "./utils/voiceWindow";
+import {
+  addVoiceLog as sendVoiceLogToWindow,
+  openVoiceWindow,
+} from "./utils/voiceWindow";
 
 /** サイズ種別 */
 type Size = "20" | "40";
@@ -942,8 +945,6 @@ async function uploadThemeBgToStorage(file: File): Promise<string> {
   });
 }
 
-let voiceWindow: Window | null = null;
-
 /** メイン */
 
 function App() {
@@ -1111,25 +1112,6 @@ function App() {
   const [kindColors, setKindColors] = useState<Record<string, string>>({});
   const [axleColors, setAxleColors] = useState<Record<string, string>>({});
   const [sizeColors, setSizeColors] = useState<Record<string, string>>({});
-
-  // 音声送信パネルを開く
-  const openVoicePanel = () => {
-    if (voiceWindow && !voiceWindow.closed) {
-      voiceWindow.focus();
-      return;
-    }
-
-    const width = 450;
-    const height = 700;
-    const left = window.screen.width - width - 20;
-    const top = 100;
-
-    voiceWindow = window.open(
-      "/voice-panel.html",
-      "VoicePanel",
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`,
-    );
-  };
 
   // 設定モーダルを開く
   const openSettings = () => {
@@ -3925,7 +3907,7 @@ function App() {
                   }}
                 >
                   <button
-                    onClick={() => openVoicePanel()}
+                    onClick={() => openVoiceWindow()}
                     style={{
                       width: "100%",
                       padding: "12px",
