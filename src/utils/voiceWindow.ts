@@ -1,43 +1,10 @@
-// 音声送信ウィンドウ管理ユーティリティ
-
-export interface VoiceWindowMessage {
-  type: 'ADD_LOG' | 'UPDATE_SETTINGS' | 'GET_STATE' | 'STATE_RESPONSE';
-  payload?: any;
-}
-
-// グローバルに保持（リロードしても参照を維持）
 let voiceWindow: Window | null = null;
-
-// ウィンドウが既に開いているか確認する関数
-function findExistingVoiceWindow(): Window | null {
-  // window.open を使わずに、既存の voiceWindow 参照だけを使う
-  if (voiceWindow && !voiceWindow.closed) {
-    try {
-      // アクセス可能かチェック
-      const href = voiceWindow.location.href;
-      if (href.includes('voice-panel.html')) {
-        return voiceWindow;
-      }
-    } catch (e) {
-      // アクセスできない場合は null
-    }
-  }
-  return null;
-}
 
 /**
  * 音声送信ウィンドウを開く
  */
 export function openVoiceWindow(): Window | null {
-  // まず既存のウィンドウを探す
-  const existing = findExistingVoiceWindow();
-  if (existing && !existing.closed) {
-    voiceWindow = existing;
-    voiceWindow.focus();
-    return voiceWindow;
-  }
-
-  // voiceWindow が null でも、実際には開いているかもしれない
+  // 既に開いている場合はフォーカス
   if (voiceWindow && !voiceWindow.closed) {
     voiceWindow.focus();
     return voiceWindow;
@@ -83,22 +50,25 @@ export function openVoiceWindow(): Window | null {
 }
 
 /**
- * 音声送信ウィンドウにメッセージを送信
+ * メッセージを音声ウィンドウに送信
  */
 function sendToVoiceWindow(message: any): void {
-  // まず既存ウィンドウを探す
-  const existing = findExistingVoiceWindow();
-  if (existing) {
-    voiceWindow = existing;
-  }
-
   console.log('📤 voiceWindow.ts: 送信', message, voiceWindow);
   
+  // ウィンドウが開いている場合のみ送信
   if (voiceWindow && !voiceWindow.closed) {
-    voiceWindow.postMessage(message, window.location.origin);
-    console.log('✅ 送信成功');
+    try {
+      voiceWindow.postMessage(message, window.location.origin);
+      console.log('✅ 送信成功');
+    } catch (e) {
+      console.error('❌ 送信失敗:', e);
+      // エラー時は参照をクリア
+      voiceWindow = null;
+    }
   } else {
-    console.warn('⚠️ 音声ウィンドウが開いていません');
+    console.warn('⚠️ 音声ウィンドウが開いていません（送信スキップ）');
+    // 参照をクリア
+    voiceWindow = null;
   }
 }
 
@@ -110,21 +80,4 @@ export function addVoiceLog(text: string): void {
     type: 'ADD_LOG',
     payload: { text },
   });
-}
-
-/**
- * ウィンドウが開いているかチェック
- */
-export function isVoiceWindowOpen(): boolean {
-  return voiceWindow !== null && !voiceWindow.closed;
-}
-
-/**
- * ウィンドウを閉じる
- */
-export function closeVoiceWindow(): void {
-  if (voiceWindow && !voiceWindow.closed) {
-    voiceWindow.close();
-    voiceWindow = null;
-  }
 }
