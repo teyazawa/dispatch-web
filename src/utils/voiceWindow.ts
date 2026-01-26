@@ -10,16 +10,17 @@ let voiceWindow: Window | null = null;
 
 // ウィンドウが既に開いているか確認する関数
 function findExistingVoiceWindow(): Window | null {
-  // 開いているウィンドウを探す
-  const name = 'VoicePanel';
-  try {
-    // すでに開いている同名ウィンドウを取得
-    const existing = window.open('', name);
-    if (existing && existing.location.href.includes('voice-panel.html')) {
-      return existing;
+  // window.open を使わずに、既存の voiceWindow 参照だけを使う
+  if (voiceWindow && !voiceWindow.closed) {
+    try {
+      // アクセス可能かチェック
+      const href = voiceWindow.location.href;
+      if (href.includes('voice-panel.html')) {
+        return voiceWindow;
+      }
+    } catch (e) {
+      // アクセスできない場合は null
     }
-  } catch (e) {
-    // アクセスできない場合は null
   }
   return null;
 }
