@@ -18,6 +18,7 @@ import {
   addVoiceLog as sendVoiceLogToWindow,
   openVoiceWindow,
 } from "./utils/voiceWindow";
+import { openDispatchTable } from "./utils/dispatchTableWindow";
 
 /** サイズ種別 */
 type Size = "20" | "40";
@@ -3925,6 +3926,27 @@ function App() {
                     }}
                   >
                     🔊 音声送信パネルを開く
+                  </button>
+                  <button
+                    onClick={() => openDispatchTable()}
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      fontSize: "16px",
+                      fontWeight: "bold",
+                      background: "#1976d2",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                      marginTop: "8px",
+                    }}
+                  >
+                    📋 配車表を開く
                   </button>
                 </div>
               </div>

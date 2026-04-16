@@ -673,6 +673,193 @@ app.get("/api/containers/updates", async (req, res) => {
 });
 
 /** =========================
+ *  GET /api/dispatch-sheet/drivers
+ *  スプレッドシート「リスト」シートから作業者名を取得
+ *  ========================= */
+app.get("/api/dispatch-workers", async (req, res) => {
+  const SHEET_ID = "18MKAWG5Ynl3HU2X60T_e3Z6zpJQn4ZDRwmaZMJkUiMM";
+  const GID = "0"; // リストシート
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`;
+
+  try {
+    const response = await axios.get(csvUrl, { responseType: "text" });
+    const lines = parseCSV(response.data);
+    if (lines.length < 2) {
+      return res.json({ drivers: [] });
+    }
+
+    const headers = lines[0];
+    const nameIdx = headers.findIndex((h) => h.trim() === "作業者名");
+    if (nameIdx < 0) {
+      return res.status(500).json({ error: "作業者名カラムが見つかりません" });
+    }
+
+    const drivers = [];
+    for (let i = 1; i < lines.length; i++) {
+      const name = (lines[i][nameIdx] || "").trim();
+      if (name) drivers.push(name);
+    }
+
+    res.json({ drivers });
+  } catch (err) {
+    console.error("dispatch-sheet/drivers エラー:", err.message);
+    res.status(500).json({ error: "作業者名取得失敗", detail: err.message });
+  }
+});
+
+/** =========================
+ *  GET /api/dispatch-sheet
+ *  スプレッドシートCSVから配車表データ取得
+ *  ========================= */
+app.get("/api/dispatch-sheet", async (req, res) => {
+  const { date } = req.query; // YYYY-MM-DD
+  if (!date) {
+    return res.status(400).json({ error: "date パラメータが必要です" });
+  }
+
+  const SHEET_ID = "18MKAWG5Ynl3HU2X60T_e3Z6zpJQn4ZDRwmaZMJkUiMM";
+  const GID = "1850964362";
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`;
+
+  try {
+    const response = await axios.get(csvUrl, { responseType: "text" });
+    const csvText = response.data;
+
+    // CSV パース（簡易: ダブルクォート対応）
+    const lines = parseCSV(csvText);
+    if (lines.length < 2) {
+      return res.json({ rows: [] });
+    }
+
+    // ヘッダーからカラムインデックスを動的マッピング
+    const headers = lines[0];
+    const colMap = {};
+    const targetHeaders = [
+      "配送日", "着時間", "得意先", "コンテナ番号",
+      "サイズ・種類", "搬出ヤード", "搬入ヤード", "作業先",
+    ];
+    for (const name of targetHeaders) {
+      const idx = headers.findIndex(
+        (h) => h.trim() === name
+      );
+      if (idx >= 0) colMap[name] = idx;
+    }
+
+    // クエリの date (YYYY-MM-DD) から月・日を取り出す
+    const queryParts = date.split("-"); // ["2026","04","16"]
+    const queryMonth = parseInt(queryParts[1], 10); // 4
+    const queryDay = parseInt(queryParts[2], 10);   // 16
+
+    // 配送日でフィルタ
+    const dataRows = lines.slice(1);
+    const filtered = [];
+    let no = 1;
+
+    for (const cols of dataRows) {
+      const dateIdx = colMap["配送日"];
+      if (dateIdx === undefined) continue;
+
+      const rawDate = (cols[dateIdx] || "").trim();
+      if (!rawDate) continue;
+
+      // スプレッドシートの日付形式に対応:
+      //   "4/16", "04/16", "2026/4/16", "2026-04-16" など
+      let matched = false;
+      const slashParts = rawDate.replace(/-/g, "/").split("/");
+      if (slashParts.length === 2) {
+        // "M/D" 形式（年なし）
+        matched =
+          parseInt(slashParts[0], 10) === queryMonth &&
+          parseInt(slashParts[1], 10) === queryDay;
+      } else if (slashParts.length === 3) {
+        // "YYYY/M/D" 形式
+        matched =
+          parseInt(slashParts[0], 10) === parseInt(queryParts[0], 10) &&
+          parseInt(slashParts[1], 10) === queryMonth &&
+          parseInt(slashParts[2], 10) === queryDay;
+      }
+      if (!matched) continue;
+
+      filtered.push({
+        no: no++,
+        time: (cols[colMap["着時間"]] || "").trim(),
+        customer: (cols[colMap["得意先"]] || "").trim(),
+        containerNumber: (cols[colMap["コンテナ番号"]] || "").trim(),
+        sizeType: (cols[colMap["サイズ・種類"]] || "").trim(),
+        yardOut: (cols[colMap["搬出ヤード"]] || "").trim(),
+        yardIn: (cols[colMap["搬入ヤード"]] || "").trim(),
+        workplace: (cols[colMap["作業先"]] || "").trim(),
+      });
+    }
+
+    // 着時間でソート
+    filtered.sort((a, b) => a.time.localeCompare(b.time));
+
+    res.json({ rows: filtered });
+  } catch (err) {
+    console.error("dispatch-sheet エラー:", err.message);
+    res.status(500).json({
+      error: "配車表データ取得失敗",
+      detail: err.message,
+    });
+  }
+});
+
+/**
+ * CSV パーサ（ダブルクォート対応）
+ */
+function parseCSV(text) {
+  const rows = [];
+  let current = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = text[i + 1];
+
+    if (inQuotes) {
+      if (ch === '"' && next === '"') {
+        field += '"';
+        i++; // skip escaped quote
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        field += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        current.push(field);
+        field = "";
+      } else if (ch === '\n' || (ch === '\r' && next === '\n')) {
+        current.push(field);
+        field = "";
+        rows.push(current);
+        current = [];
+        if (ch === '\r') i++; // skip \n
+      } else if (ch === '\r') {
+        current.push(field);
+        field = "";
+        rows.push(current);
+        current = [];
+      } else {
+        field += ch;
+      }
+    }
+  }
+
+  // 最終行
+  if (field || current.length > 0) {
+    current.push(field);
+    rows.push(current);
+  }
+
+  return rows;
+}
+
+/** =========================
  *  Start
  *  ========================= */
 const PORT = process.env.PORT || 3001;
