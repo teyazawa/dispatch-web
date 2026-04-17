@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import {
   DndContext,
@@ -985,6 +985,16 @@ function App() {
 
   const [userId, setUserId] = useState<string>("");
 
+  // ★ 自動/手動ポーリング切替
+  const [autoSync, setAutoSync] = useState<boolean>(() => {
+    return localStorage.getItem("dispatch-sync-mode") !== "manual";
+  });
+  const autoSyncRef = useRef(autoSync);
+  useEffect(() => {
+    autoSyncRef.current = autoSync;
+    localStorage.setItem("dispatch-sync-mode", autoSync ? "auto" : "manual");
+  }, [autoSync]);
+
   // ✅ ログイン状態（userId）だけを App で保持
   useEffect(() => {
     let mounted = true;
@@ -1705,17 +1715,20 @@ function App() {
       }
     }
 
-    // 初回
+    // 初回は常に実行（モード切替時にも最新データを取得）
     syncContainersOnce();
 
-    // 30秒ごとポーリング
-    const timer = setInterval(syncContainersOnce, 30000);
+    // 自動モードの場合のみインターバル設定
+    let timer: ReturnType<typeof setInterval> | null = null;
+    if (autoSync) {
+      timer = setInterval(syncContainersOnce, 30000);
+    }
 
     return () => {
       isCancelled = true;
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
     };
-  }, []);
+  }, [autoSync]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1788,16 +1801,149 @@ function App() {
       }
     }
 
-    // 初回
+    // 初回は常に実行
     syncContainerUpdatesOnce();
 
-    // 10秒ごと
-    const timer = setInterval(syncContainerUpdatesOnce, 10000);
+    // 自動モードの場合のみインターバル設定
+    let timer: ReturnType<typeof setInterval> | null = null;
+    if (autoSync) {
+      timer = setInterval(syncContainerUpdatesOnce, 10000);
+    }
 
     return () => {
       isCancelled = true;
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
     };
+  }, [autoSync]);
+
+  // ★ 手動更新（両APIを呼ぶ）
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const manualRefresh = useCallback(async () => {
+    setIsManualRefreshing(true);
+    try {
+      // autoSyncを一瞬trueにしてuseEffectを再実行させるより、直接APIを叩く
+      const [containersRes, updatesRes] = await Promise.allSettled([
+        fetch(`${API_BASE}/api/containers`),
+        fetch(`${API_BASE}/api/containers/updates`),
+      ]);
+      // containers の処理
+      if (containersRes.status === "fulfilled" && containersRes.value.ok) {
+        const data = await containersRes.value.json();
+        const fetched: Container[] = (data.containers ?? []).map((c: any) => {
+          const id = String(c.id);
+          const sizeRaw = (c.sizeRaw ?? "").toString().trim();
+          if (sizeRaw) {
+            containerMetaRef.current.set(id, {
+              sizeRaw: sizeRaw.replace(/'/g, "\u2019").replace(/\s+/g, " "),
+            });
+          } else {
+            containerMetaRef.current.delete(id);
+          }
+          return {
+            id,
+            size: c.size as Size,
+            date: c.date,
+            eta: c.eta,
+            pickupYardGroup: c.pickupYardGroup,
+            pickupYard: c.pickupYard,
+            no: c.no,
+            kindCode: c.kindCode,
+            destination: c.destination,
+            dropoffYard: c.dropoffYard,
+            ship: c.ship,
+            booking: c.booking,
+            destadd: c.destadd,
+            desttel: c.desttel,
+            handoverNo: (c.handoverNo ?? "").toString().trim(),
+            receiptFiles: Array.isArray(c.receiptFiles) ? c.receiptFiles : [],
+            dispatchFiles: Array.isArray(c.dispatchFiles) ? c.dispatchFiles : [],
+            worker4: (c.worker4 ?? "").toString().trim(),
+            step: c.step ?? undefined,
+          };
+        });
+
+        const newIdsToAck = fetched
+          .map((c) => c.id)
+          .filter((id) => !ackedContainerIdsRef.current.has(id));
+
+        setContainers((prev) => {
+          const map = new Map<string, Container>();
+          prev.forEach((p) => map.set(p.id, p));
+          for (const nc of fetched) {
+            const existing = map.get(nc.id);
+            map.set(nc.id, existing ? { ...existing, ...nc } : nc);
+          }
+          return Array.from(map.values());
+        });
+
+        if (newIdsToAck.length > 0) {
+          newIdsToAck.forEach((id) => ackedContainerIdsRef.current.add(id));
+          try {
+            const ackRes = await fetch(
+              `${API_BASE}/api/containers/mark-board-done`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ids: newIdsToAck }),
+              },
+            );
+            if (!ackRes.ok) {
+              newIdsToAck.forEach((id) => ackedContainerIdsRef.current.delete(id));
+            }
+          } catch {
+            newIdsToAck.forEach((id) => ackedContainerIdsRef.current.delete(id));
+          }
+        }
+      }
+      // updates の処理
+      if (updatesRes.status === "fulfilled" && updatesRes.value.ok) {
+        const data = await updatesRes.value.json();
+        const patches: Array<{
+          id: string; no?: string; dropoffYard?: string; step?: any; worker4?: string;
+          handoverNo?: string; receiptFiles?: any; dispatchFiles?: any;
+        }> = data.containers ?? [];
+        if (patches.length > 0) {
+          const patchMap = new Map<string, any>();
+          for (const p of patches) patchMap.set(String(p.id), p);
+          const applyPatch = (c: Container): Container => {
+            const p = patchMap.get(String(c.id));
+            if (!p) return c;
+            return {
+              ...c,
+              no: p.no ?? c.no,
+              dropoffYard: p.dropoffYard ?? c.dropoffYard,
+              step: p.step ?? c.step,
+              worker4: (p.worker4 ?? c.worker4 ?? "").toString().trim(),
+              handoverNo: p.handoverNo ?? c.handoverNo,
+              receiptFiles: p.receiptFiles ?? c.receiptFiles,
+              dispatchFiles: p.dispatchFiles ?? c.dispatchFiles,
+            };
+          };
+          setContainers((prev) => prev.map(applyPatch));
+          setTempContainers((prev) => prev.map(applyPatch));
+          setCompletedContainers((prev) => prev.map(applyPatch));
+          setGroups((prev) =>
+            prev.map((g) =>
+              g.container ? { ...g, container: applyPatch(g.container) } : g,
+            ),
+          );
+          for (const p of patches) {
+            const stepNum = Number(p.step);
+            if (stepNum !== 4) continue;
+            moveContainerToDelivered(String(p.id), {
+              no: p.no,
+              dropoffYard: p.dropoffYard,
+              step: stepNum,
+              worker4: (p.worker4 ?? "").toString().trim(),
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("手動更新に失敗", err);
+    } finally {
+      setIsManualRefreshing(false);
+    }
   }, []);
 
   const [leftWidth, setLeftWidth] = useState<number>(700); // シャーシプール
@@ -2699,6 +2845,43 @@ function App() {
             </div>
 
             <div className="header-right">
+              {/* ★ 同期モード切替 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: 8 }}>
+                <button
+                  onClick={() => setAutoSync((p) => !p)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: 13,
+                    border: '1px solid #aaa',
+                    borderRadius: 4,
+                    background: autoSync ? '#e8f5e9' : '#fff3e0',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={autoSync ? '自動ポーリング中（10秒/30秒）' : '手動モード：更新ボタンで同期'}
+                >
+                  {autoSync ? '🔄 自動' : '⏸ 手動'}
+                </button>
+                {!autoSync && (
+                  <button
+                    onClick={manualRefresh}
+                    disabled={isManualRefreshing}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: 13,
+                      border: '1px solid #aaa',
+                      borderRadius: 4,
+                      background: '#e3f2fd',
+                      cursor: isManualRefreshing ? 'wait' : 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title="今すぐサーバーと同期"
+                  >
+                    {isManualRefreshing ? '⏳ 更新中…' : '🔃 更新'}
+                  </button>
+                )}
+              </div>
+
               <AuthBar />
 
               {/* ★ ここがヘッダー右側の凡例 */}
