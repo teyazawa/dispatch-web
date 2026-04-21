@@ -468,10 +468,9 @@ body.dragging {
   }
 }
 
-/* ドラッグ中 */
+/* ドラッグ中（元カードは非表示、DragOverlayのみ表示） */
 .obj-card.is-dragging {
-  opacity: 0.8;
-  transform: scale(1.08) rotate(3deg);
+  opacity: 0 !important;
 }
 
 /* アイコン＆テキスト構造 */
@@ -1111,11 +1110,9 @@ body.dragging {
   background: #22c55e;
 }
 
-/* ★ dnd-kit でドラッグ中の要素を最前面にする */
+/* ★ dnd-kit でドラッグ中の元要素（DragOverlay使用のため非表示） */
 [data-dnd-kit-dragging="true"] {
-  position: relative; /* 念のため明示 */
-  z-index: 99999 !important; /* 他のルールより優先させる */
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  opacity: 0 !important;
 }
 
 /* 軸種別／MG／2個積み別の色（上辺にカラーライン） */

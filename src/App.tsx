@@ -570,11 +570,9 @@ function DraggableGroupCard({
   const kindColor = kindLabel ? kindColors?.[kindLabel] : undefined;
 
   const style: React.CSSProperties = {
-    transform: transform
-      ? `translate(${transform.x}px, ${transform.y}px)`
-      : undefined,
-    zIndex: transform ? 9999 : "auto",
-    position: transform ? "relative" : "static",
+    // DragOverlay使用時は元カードを動かさず非表示にする
+    opacity: isDragging ? 0 : undefined,
+    pointerEvents: isDragging ? "none" : undefined,
 
     ...(axleColor ? { borderTop: `6px solid ${axleColor}` } : {}),
     ...(sizeColor ? { borderLeft: `5px solid ${sizeColor}` } : {}),
@@ -758,14 +756,14 @@ function getOrCreateClientId() {
 }
 
 function DraggableTruckCard({ truck }: { truck: Truck }) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `truck-${truck.id}`,
   });
 
   const style: React.CSSProperties = {
-    transform: transform
-      ? `translate(${transform.x}px, ${transform.y}px)`
-      : undefined,
+    // DragOverlay使用時は元カードを動かさず非表示にする
+    opacity: isDragging ? 0 : undefined,
+    pointerEvents: isDragging ? "none" : undefined,
   };
 
   return (
@@ -795,7 +793,7 @@ function DraggableContainerCard({
   sizeColors?: Record<string, string>;
   onTap?: (container: Container) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `cont-${container.id}`,
   });
 
@@ -803,9 +801,9 @@ function DraggableContainerCard({
   const sizeColor = sizeColors?.[sizeKey];
 
   const style: React.CSSProperties = {
-    transform: transform
-      ? `translate(${transform.x}px, ${transform.y}px)`
-      : undefined,
+    // DragOverlay使用時は元カードを動かさず非表示にする
+    opacity: isDragging ? 0 : undefined,
+    pointerEvents: isDragging ? "none" : undefined,
     ...(sizeColor ? { borderLeft: `5px solid ${sizeColor}` } : {}),
   };
 
