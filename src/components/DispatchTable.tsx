@@ -19,7 +19,7 @@ type DriverAssignment = Record<number, Record<string, string>>;
 const ASSIGN_COLUMNS = ["積み", "行き", "帰り", "降ろし"] as const;
 
 const API_BASE =
-  import.meta.env.VITE_API_URL || "http://localhost:3001";
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
 function formatDateForInput(d: Date): string {
   const y = d.getFullYear();
