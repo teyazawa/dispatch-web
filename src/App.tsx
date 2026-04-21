@@ -488,7 +488,7 @@ function DraggableGroupCard({
   onTap,
 }: DraggableGroupCardProps & { onTap?: (group: ChassisGroup) => void }) {
   // ✅ isDragging を追加で取得
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
+  const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: `group-${group.id}`,
     });
