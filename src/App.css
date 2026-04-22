@@ -2000,11 +2000,11 @@ body.dragging {
 
 /* --- CSS変数をスマホ用に上書き --- */
 .mode-phone {
-  --card-width: 120px;
-  --truck-width: 56px;
-  --slot-pool-width: 132px;
-  --slot-driver-truck-width: 62px;
-  --slot-delivery-width: 140px;
+  --card-width: 130px;
+  --truck-width: 58px;
+  --slot-pool-width: 140px;
+  --slot-driver-truck-width: 64px;
+  --slot-delivery-width: 150px;
 }
 
 /* --- シャーシプール --- */

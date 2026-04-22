@@ -2863,7 +2863,11 @@ function App() {
     if (!meta) return;
     if (displayMode === "pc") {
       meta.setAttribute("content", "width=1400, initial-scale=0.3, minimum-scale=0.1, maximum-scale=5.0, user-scalable=yes");
+    } else if (displayMode === "phone") {
+      // 480px幅でレイアウト → iPhone(390px)では約80%縮小で表示
+      meta.setAttribute("content", "width=480, initial-scale=1.0, minimum-scale=0.1, maximum-scale=5.0, user-scalable=yes");
     } else {
+      // タブレット
       meta.setAttribute("content", "width=device-width, initial-scale=1.0, minimum-scale=0.1, maximum-scale=5.0, user-scalable=yes");
     }
   }, [displayMode]);
