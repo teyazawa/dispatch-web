@@ -500,6 +500,7 @@ function DraggableGroupCard({
   sizeColors,
   onTap,
 }: DraggableGroupCardProps & { onTap?: (group: ChassisGroup) => void }) {
+  const displayMode = React.useContext(DisplayModeContext);
   // ✅ isDragging を追加で取得
   const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
@@ -699,7 +700,7 @@ function DraggableGroupCard({
       ref={setNodeRef}
       style={style}
       className={cardClassName} // ✅ 変更
-      {...listeners}
+      {...(displayMode !== "phone" ? listeners : {})}
       {...attributes}
       title={tooltip}
       onContextMenu={handleContextMenu}
@@ -709,6 +710,9 @@ function DraggableGroupCard({
       onTouchCancel={handleTouchEnd}
       onClick={() => onTap?.(group)}
     >
+      {displayMode === "phone" && (
+        <div className="drag-handle" {...listeners}>{"\u2630"}</div>
+      )}
       {/* ✅ 追加：上部の色帯（色が設定されている時だけ表示） */}
       {kindColor ? (
         <div
@@ -769,6 +773,7 @@ function getOrCreateClientId() {
 }
 
 function DraggableTruckCard({ truck }: { truck: Truck }) {
+  const displayMode = React.useContext(DisplayModeContext);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `truck-${truck.id}`,
   });
@@ -784,10 +789,13 @@ function DraggableTruckCard({ truck }: { truck: Truck }) {
       ref={setNodeRef}
       style={style}
       className="obj-card truck-card"
-      {...listeners}
+      {...(displayMode !== "phone" ? listeners : {})}
       {...attributes}
       title={truck.carNo || truck.label}
     >
+      {displayMode === "phone" && (
+        <div className="drag-handle" {...listeners}>{"\u2630"}</div>
+      )}
       <div className="card-body">
         <div className="card-title"> {truck.label}</div>
       </div>
@@ -806,6 +814,7 @@ function DraggableContainerCard({
   sizeColors?: Record<string, string>;
   onTap?: (container: Container) => void;
 }) {
+  const displayMode = React.useContext(DisplayModeContext);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `cont-${container.id}`,
   });
@@ -866,11 +875,14 @@ function DraggableContainerCard({
       ref={setNodeRef}
       style={style}
       className={`obj-card container-card size-${container.size} ${stepClass}`} // ← ここに ${stepClass} が入っていることを確認
-      {...listeners}
+      {...(displayMode !== "phone" ? listeners : {})}
       {...attributes}
       title={full}
       onClick={() => onTap?.(container)}
     >
+      {displayMode === "phone" && (
+        <div className="drag-handle" {...listeners}>{"\u2630"}</div>
+      )}
       <div className="card-body" style={{ width: "100%" }}>
         {/* 1行目 */}
         <div
@@ -967,17 +979,13 @@ function App() {
     return detectDisplayMode();
   });
 
-  // センサー設定（スマホは長押しでドラッグ、通常スワイプはスクロール）
+  // センサー設定（スマホではドラッグハンドル経由なので共通設定でOK）
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: displayMode === "phone"
-        ? { delay: 9999, tolerance: 0 }  // スマホでは実質無効化
-        : { distance: 5 },
+      activationConstraint: { distance: 5 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: displayMode === "phone"
-        ? { delay: 250, tolerance: 10 }
-        : { distance: 10 },
+      activationConstraint: { distance: 10 },
     }),
   );
 

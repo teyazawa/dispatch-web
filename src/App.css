@@ -1935,14 +1935,41 @@ body.dragging {
   overflow-y: visible;
 }
 
-/* 全要素でスクロールを阻害しない（長押しでドラッグ開始） */
-.mode-phone .obj-card,
-.mode-phone .truck-card,
-.mode-phone .card-container,
-.mode-phone .left-panel,
-.mode-phone .driver-panel,
-.mode-phone .delivery-panel {
-  touch-action: pan-y !important;
+/* ========================================
+   ドラッグハンドル（スマホ専用）
+======================================== */
+
+.drag-handle {
+  display: none; /* PC/タブレットでは非表示 */
+}
+
+.mode-phone .drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  min-width: 22px;
+  align-self: stretch;
+  color: #9ca3af;
+  font-size: 14px;
+  cursor: grab;
+  touch-action: none;  /* ハンドルはブラウザにタッチを渡さない → ドラッグ有効 */
+  user-select: none;
+  flex-shrink: 0;
+  border-right: 1px solid #e5e7eb;
+  margin-right: 4px;
+}
+
+.mode-phone .drag-handle:active {
+  color: #3b82f6;
+  background: #eff6ff;
+}
+
+/* スマホモードのカードを横並び（ハンドル + コンテンツ）に */
+.mode-phone .obj-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
 }
 
 /* リサイザー非表示 */
