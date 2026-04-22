@@ -492,11 +492,6 @@ type DraggableGroupCardProps = {
   onTap?: (group: ChassisGroup) => void;
 };
 
-/** スマホモードか判定するヘルパー（コンポーネント外から使える） */
-function isPhoneMode(): boolean {
-  return document.querySelector(".mode-phone") !== null;
-}
-
 function DraggableGroupCard({
   group,
   onContextMenuGroup,
