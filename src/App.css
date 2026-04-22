@@ -1734,3 +1734,443 @@ body.dragging {
     padding: 8px 16px;
   }
 }
+
+/* ========================================
+   表示モード切替ボタン
+======================================== */
+
+.mode-toggle-group {
+  display: flex;
+  gap: 2px;
+  background: #e5e7eb;
+  border-radius: 6px;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.mode-toggle-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: auto;
+  min-width: auto;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mode-toggle-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.mode-toggle-btn.active {
+  background: #ffffff;
+  color: #111827;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ========================================
+   タブレットモード
+======================================== */
+
+.mode-tablet .header {
+  padding: 6px 12px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mode-tablet .title {
+  font-size: 20px;
+}
+
+.mode-tablet .title-logo {
+  width: 30px;
+  height: 30px;
+}
+
+.mode-tablet .header-main {
+  flex: 0 0 auto;
+}
+
+.mode-tablet .header-right {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mode-tablet .header-legend {
+  display: none;
+}
+
+.mode-tablet .main {
+  margin-top: 56px;
+}
+
+.mode-tablet .left-panel {
+  width: 500px;
+  flex: 0 0 auto;
+}
+
+.mode-tablet .driver-panel {
+  width: 450px;
+  flex: 0 0 auto;
+}
+
+.mode-tablet .delivery-panel {
+  width: 400px;
+  flex: 0 0 auto;
+}
+
+.mode-tablet .obj-card {
+  min-height: 44px;
+  padding: 6px 10px;
+}
+
+.mode-tablet .truck-card {
+  min-height: 44px;
+}
+
+.mode-tablet .card-container {
+  min-height: 48px;
+}
+
+.mode-tablet button {
+  min-height: 40px;
+}
+
+.mode-tablet .driver-name {
+  font-size: 13px;
+}
+
+.mode-tablet .day-column {
+  flex: 0 0 180px;
+  min-width: 180px;
+  max-width: 180px;
+}
+
+.mode-tablet .mode-toggle-btn {
+  min-height: auto;
+  min-width: auto;
+}
+
+/* ========================================
+   スマホモード
+======================================== */
+
+/* --- ヘッダー --- */
+.mode-phone .header {
+  padding: 4px 6px;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+.mode-phone .title {
+  font-size: 14px;
+}
+
+.mode-phone .title-logo {
+  width: 22px;
+  height: 22px;
+}
+
+.mode-phone .header-legend {
+  display: none;
+}
+
+.mode-phone .header-right {
+  flex-wrap: nowrap;
+  gap: 4px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.mode-phone .header-main {
+  flex: 0 0 auto;
+}
+
+/* 同期・モード切替ボタンを小さく */
+.mode-phone .sync-toggle-btn {
+  min-height: 28px !important;
+  min-width: auto !important;
+}
+
+.mode-phone .mode-toggle-group {
+  padding: 1px;
+  gap: 1px;
+}
+
+.mode-phone .mode-toggle-btn {
+  min-height: auto !important;
+  min-width: auto !important;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+/* --- レイアウト --- */
+.mode-phone.app-scroll-x {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;          /* モバイルのアドレスバー対応 */
+  overflow-x: hidden;
+  overflow-y: scroll;      /* 明示的にスクロールコンテナにする */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;     /* ブラウザに縦スクロールを委ねる */
+}
+
+.mode-phone .app-root {
+  min-width: 0;
+  min-height: 0;           /* 100vh 制約を解除 */
+}
+
+.mode-phone .main {
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px;
+  margin-top: 80px;
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+/* 全要素でスクロールを阻害しない（長押しでドラッグ開始） */
+.mode-phone .obj-card,
+.mode-phone .truck-card,
+.mode-phone .card-container,
+.mode-phone .left-panel,
+.mode-phone .driver-panel,
+.mode-phone .delivery-panel {
+  touch-action: pan-y !important;
+}
+
+/* リサイザー非表示 */
+.mode-phone .resizer {
+  display: none;
+}
+
+/* --- パネル共通 --- */
+.mode-phone .left-panel,
+.mode-phone .driver-panel,
+.mode-phone .delivery-panel {
+  width: 100% !important;
+  max-height: none;
+  overflow-y: visible;
+  overflow-x: auto;
+  border-radius: 8px;
+  margin-bottom: 0;
+  padding: 8px;
+  scroll-margin-top: 80px;
+}
+
+.mode-phone .left-panel h2,
+.mode-phone .driver-panel h2,
+.mode-phone .delivery-panel h2 {
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+/* --- CSS変数をスマホ用に上書き --- */
+.mode-phone {
+  --card-width: 120px;
+  --truck-width: 56px;
+  --slot-pool-width: 132px;
+  --slot-driver-truck-width: 62px;
+  --slot-delivery-width: 140px;
+}
+
+/* --- シャーシプール --- */
+.mode-phone .yard-title {
+  font-size: 16px;
+}
+
+.mode-phone .yard-section {
+  margin-bottom: 10px;
+}
+
+.mode-phone .yard-header-row,
+.mode-phone .yard-lane-row {
+  grid-template-columns: 50px repeat(3, minmax(50px, 1fr));
+  gap: 2px;
+}
+
+.mode-phone .yard-lane-name {
+  font-size: 14px;
+}
+
+.mode-phone .yard-header-cell {
+  font-size: 10px;
+}
+
+/* スロット枠の高さ */
+.mode-phone .card-container.slot-pool {
+  height: 50px;
+  min-height: 50px;
+  max-height: 50px;
+}
+
+.mode-phone .card-container.slot-tall {
+  height: 50px;
+  min-height: 50px;
+  max-height: 50px;
+}
+
+/* --- カード (obj-card / truck-card) --- */
+.mode-phone .obj-card {
+  min-height: 40px;
+  padding: 4px 6px;
+  font-size: 10px;
+}
+
+.mode-phone .obj-card .card-title {
+  font-size: 10px;
+}
+
+.mode-phone .obj-card .card-icon {
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+}
+
+.mode-phone .truck-card {
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  font-size: 9px;
+}
+
+.mode-phone .truck-card .card-title {
+  font-size: 14px;
+}
+
+/* --- ドライバーパネル --- */
+.mode-phone .driver-groups-grid {
+  grid-template-columns: 1fr;
+  column-gap: 0;
+}
+
+.mode-phone .driver-group-column-title {
+  font-size: 15px;
+}
+
+.mode-phone .driver-row {
+  grid-template-columns: 80px 1fr;
+}
+
+.mode-phone .driver-name {
+  font-size: 11px;
+}
+
+.mode-phone .card-container.slot-driver-truck {
+  height: 36px;
+  min-height: 36px;
+  max-height: 36px;
+}
+
+.mode-phone .card-container.slot-driver-group {
+  min-height: 44px;
+}
+
+/* --- 配送パネル --- */
+.mode-phone .delivery-panel {
+  height: auto !important;
+  overflow: visible !important;
+}
+
+.mode-phone .delivery-scroll {
+  overflow-x: auto; /* 日付が多い場合は横スクロール許可 */
+}
+
+.mode-phone .days-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mode-phone .day-column {
+  flex: none;
+  min-width: 100%;
+  max-width: 100%;
+}
+
+.mode-phone .day-column h3 {
+  font-size: 14px;
+}
+
+.mode-phone .delivery-yard-row {
+  grid-template-columns: 30px 1fr;
+}
+
+.mode-phone .delivery-yard-name {
+  font-size: 11px;
+}
+
+.mode-phone .delivery-panel .slot-auto.card-container {
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+}
+
+/* --- タッチターゲット（ボタン系） --- */
+.mode-phone button {
+  min-height: 40px;
+}
+
+.mode-phone .mode-toggle-btn {
+  min-height: auto;
+  padding: 3px 6px;
+  font-size: 10px;
+}
+
+/* 下タブバー分の余白 */
+.mode-phone .main {
+  padding-bottom: 60px;
+}
+
+/* ========================================
+   スマホ用タブバー
+======================================== */
+
+.phone-tab-bar {
+  display: flex;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: #ffffff;
+  border-top: 1px solid #e5e7eb;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
+  padding: 0;
+}
+
+.phone-tab-btn {
+  flex: 1;
+  padding: 10px 4px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: #6b7280;
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+  min-height: 48px;
+  min-width: auto;
+  transition: color 0.15s, background 0.15s;
+}
+
+.phone-tab-btn:hover {
+  background: #f9fafb;
+}
+
+.phone-tab-btn.active {
+  color: #2563eb;
+  font-weight: 600;
+  background: #eff6ff;
+}
+
+/* スマホモード時は下タブバー分のパディング確保 */
+.mode-phone .main {
+  padding-bottom: 60px;
+}

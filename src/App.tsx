@@ -20,6 +20,19 @@ import {
 } from "./utils/voiceWindow";
 import { openDispatchTable } from "./utils/dispatchTableWindow";
 
+/** 表示モード */
+type DisplayMode = "pc" | "tablet" | "phone";
+
+const DisplayModeContext = React.createContext<DisplayMode>("pc");
+
+/** デバイス自動判定 */
+function detectDisplayMode(): DisplayMode {
+  const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+  if (isTouch && window.innerWidth <= 768) return "phone";
+  if (isTouch) return "tablet";
+  return "pc";
+}
+
 /** サイズ種別 */
 type Size = "20" | "40";
 
@@ -478,6 +491,11 @@ type DraggableGroupCardProps = {
   sizeColors?: Record<string, string>; // 追加（size-20 / size-40 など）
   onTap?: (group: ChassisGroup) => void;
 };
+
+/** スマホモードか判定するヘルパー（コンポーネント外から使える） */
+function isPhoneMode(): boolean {
+  return document.querySelector(".mode-phone") !== null;
+}
 
 function DraggableGroupCard({
   group,
@@ -947,18 +965,24 @@ async function uploadThemeBgToStorage(file: File): Promise<string> {
 /** メイン */
 
 function App() {
-  // センサー設定を変更
+  // ── 表示モード（sensors より先に定義） ──
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(() => {
+    const saved = localStorage.getItem("dispatch-display-mode");
+    if (saved === "pc" || saved === "tablet" || saved === "phone") return saved;
+    return detectDisplayMode();
+  });
+
+  // センサー設定（スマホは長押しでドラッグ、通常スワイプはスクロール）
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
+      activationConstraint: displayMode === "phone"
+        ? { delay: 9999, tolerance: 0 }  // スマホでは実質無効化
+        : { distance: 5 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: {
-        // ✅ Android 対応：delay を削除して distance のみに
-        distance: 10, // 10px 動かしたらドラッグ開始
-      },
+      activationConstraint: displayMode === "phone"
+        ? { delay: 250, tolerance: 10 }
+        : { distance: 10 },
     }),
   );
 
@@ -2825,9 +2849,25 @@ function App() {
 
   const [themeUploading, setThemeUploading] = useState(false);
 
+  // localStorage に保存
+  useEffect(() => {
+    localStorage.setItem("dispatch-display-mode", displayMode);
+  }, [displayMode]);
+
+  // viewport meta タグ切替
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return;
+    if (displayMode === "pc") {
+      meta.setAttribute("content", "width=1400, initial-scale=0.3, minimum-scale=0.1, maximum-scale=5.0, user-scalable=yes");
+    } else {
+      meta.setAttribute("content", "width=device-width, initial-scale=1.0, minimum-scale=0.1, maximum-scale=5.0, user-scalable=yes");
+    }
+  }, [displayMode]);
+
   return (
-    <>
-      <div className="app-scroll-x">
+    <DisplayModeContext.Provider value={displayMode}>
+      <div className={`app-scroll-x mode-${displayMode}`}>
         <div className="app-root">
           <header className="header">
             {/* 左側：タイトル＋サブタイトル */}
@@ -2844,12 +2884,13 @@ function App() {
 
             <div className="header-right">
               {/* ★ 同期モード切替 */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: displayMode === "phone" ? 0 : 8 }}>
                 <button
+                  className="sync-toggle-btn"
                   onClick={() => setAutoSync((p) => !p)}
                   style={{
-                    padding: '4px 10px',
-                    fontSize: 13,
+                    padding: displayMode === "phone" ? '2px 6px' : '4px 10px',
+                    fontSize: displayMode === "phone" ? 11 : 13,
                     border: '1px solid #aaa',
                     borderRadius: 4,
                     background: autoSync ? '#e8f5e9' : '#fff3e0',
@@ -2862,11 +2903,12 @@ function App() {
                 </button>
                 {!autoSync && (
                   <button
+                    className="sync-toggle-btn"
                     onClick={manualRefresh}
                     disabled={isManualRefreshing}
                     style={{
-                      padding: '4px 10px',
-                      fontSize: 13,
+                      padding: displayMode === "phone" ? '2px 6px' : '4px 10px',
+                      fontSize: displayMode === "phone" ? 11 : 13,
                       border: '1px solid #aaa',
                       borderRadius: 4,
                       background: '#e3f2fd',
@@ -2875,9 +2917,26 @@ function App() {
                     }}
                     title="今すぐサーバーと同期"
                   >
-                    {isManualRefreshing ? '⏳ 更新中…' : '🔃 更新'}
+                    {isManualRefreshing ? '⏳…' : '🔃 更新'}
                   </button>
                 )}
+              </div>
+
+              {/* ★ 表示モード切替 */}
+              <div className="mode-toggle-group">
+                {([
+                  ["pc", "\u{1F5A5}", "PC"],
+                  ["tablet", "\u{1F4CB}", "タブレット"],
+                  ["phone", "\u{1F4F1}", "スマホ"],
+                ] as [DisplayMode, string, string][]).map(([mode, icon, label]) => (
+                  <button
+                    key={mode}
+                    className={`mode-toggle-btn${displayMode === mode ? " active" : ""}`}
+                    onClick={() => setDisplayMode(mode)}
+                  >
+                    {displayMode === "phone" ? icon : `${icon} ${label}`}
+                  </button>
+                ))}
               </div>
 
               <AuthBar />
@@ -3660,11 +3719,32 @@ function App() {
               handleDragEnd(e);
             }}
           >
+            {/* スマホ用タブバー（スクロールジャンプ方式） */}
+            {displayMode === "phone" && (
+              <div className="phone-tab-bar">
+                {([
+                  ["phone-panel-chassis", "\u{1F69B} シャーシ"],
+                  ["phone-panel-driver", "\u{1F468}\u200D\u{1F4BC} ドライバー"],
+                  ["phone-panel-delivery", "\u{1F4E6} 配送"],
+                ] as [string, string][]).map(([panelId, label]) => (
+                  <button
+                    key={panelId}
+                    className="phone-tab-btn"
+                    onClick={() => {
+                      document.getElementById(panelId)?.scrollIntoView({ behavior: "smooth" });
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="main">
               {/* 左：シャーシプール＋予備車 */}
               <div
+                id="phone-panel-chassis"
                 className="left-panel"
-                style={{ width: leftWidth, flex: "0 0 auto" }}
+                style={displayMode === "pc" ? { width: leftWidth, flex: "0 0 auto" } : undefined}
               >
                 <h2>シャーシプール</h2>
 
@@ -3819,8 +3899,9 @@ function App() {
               <div className="resizer" onMouseDown={startResize("left")} />
               {/* 中央：ドライバー */}
               <div
+                id="phone-panel-driver"
                 className="driver-panel"
-                style={{ width: middleWidth, flex: "0 0 auto" }}
+                style={displayMode === "pc" ? { width: middleWidth, flex: "0 0 auto" } : undefined}
               >
                 <h2>ドライバー</h2>
 
@@ -3953,14 +4034,18 @@ function App() {
               <div className="resizer" onMouseDown={startResize("middle")} />
               {/* 右：配送分＋一時保管＋配送完了 */}
               <div
+                id="phone-panel-delivery"
                 className="delivery-panel"
-                style={{
+                style={displayMode === "pc" ? {
                   width: deliveryWidth,
                   flex: "0 0 auto",
                   display: "flex",
                   flexDirection: "column",
                   height: "100vh",
                   overflow: "hidden",
+                } : {
+                  display: "flex",
+                  flexDirection: "column" as const,
                 }}
               >
                 {/* ✅ スクロール可能エリア */}
@@ -4375,7 +4460,7 @@ function App() {
           )}
         </div>
       </div>
-    </>
+    </DisplayModeContext.Provider>
   );
 }
 
