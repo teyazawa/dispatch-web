@@ -3712,6 +3712,7 @@ function App() {
 
           <DndContext
             sensors={sensors}
+            autoScroll={{ enabled: true, threshold: { x: 0, y: 0.15 } }}
             onDragStart={(e) => {
               setActiveDragId(String(e.active.id));
               document.body.classList.add("dragging"); // ✅ 追加

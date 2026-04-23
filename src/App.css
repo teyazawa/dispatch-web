@@ -1977,6 +1977,11 @@ body.dragging {
   display: none;
 }
 
+/* --- ピンチズーム許可（touch-action は祖先の交差で決まるため子要素にも必要） --- */
+.mode-phone .card-container {
+  touch-action: pan-y pinch-zoom;
+}
+
 /* --- パネル共通 --- */
 .mode-phone .left-panel,
 .mode-phone .driver-panel,
