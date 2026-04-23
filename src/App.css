@@ -317,7 +317,7 @@ body::before {
   max-height: 40px;
   border: 1px dashed #e2e8f0;
   transition: border-color 0.15s ease, background-color 0.15s ease;
-  touch-action: pan-y pinch-zoom; /* 縦スクロール+ピンチズーム許可、横はドラッグ用に予約 */
+  touch-action: pan-y; /* 縦スクロールは許可、横はドラッグ用に予約 */
   justify-content: flex-end; /* ← 追加：下揃え */
 }
 
