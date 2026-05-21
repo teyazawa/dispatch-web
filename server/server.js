@@ -971,9 +971,17 @@ async function fetchSheetContainers() {
  *  ========================= */
 app.post("/api/load-sheet-containers", async (req, res) => {
   try {
-    const containers = await fetchSheetContainers();
+    let containers;
+    if (req.body && Array.isArray(req.body.containers)) {
+      // GASから処理済みコンテナを受け取る（ヤード正規化・紐付けシート書込み済み）
+      containers = req.body.containers;
+      console.log(`[sheet] received ${containers.length} containers from GAS`);
+    } else {
+      // フォールバック: サーバーがシートを直接読む
+      containers = await fetchSheetContainers();
+      console.log(`[sheet] fetched ${containers.length} containers from sheet`);
+    }
     sheetContainerMemory = containers;
-    console.log(`[sheet] loaded ${containers.length} containers from sheet`);
     return res.json({ ok: true, loaded: containers.length });
   } catch (err) {
     console.error("load-sheet-containers エラー:", err.message);
