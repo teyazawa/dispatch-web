@@ -1719,20 +1719,6 @@ function App() {
             );
           }
         }
-
-        setContainers((prev) => {
-          // id → 既存コンテナ のマップ
-          const map = new Map<string, Container>();
-          prev.forEach((p) => map.set(p.id, p));
-
-          // 同じ id があれば上書き、なければ追加
-          for (const nc of fetched) {
-            const existing = map.get(nc.id);
-            map.set(nc.id, existing ? { ...existing, ...nc } : nc);
-          }
-
-          return Array.from(map.values());
-        });
       } catch (err) {
         if (!isCancelled) {
           console.error("コンテナ同期に失敗", err);
