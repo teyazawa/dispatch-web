@@ -31,6 +31,9 @@ const CONTAINER_API_TOKEN = process.env.KINTONE_CONTAINER_API_TOKEN;
 // Kintone write switch（安全装置）
 const ALLOW_KINTONE_WRITE = process.env.ALLOW_KINTONE_WRITE === "true";
 
+/** GASボタン経由でシートから読み込んだコンテナをメモリに保持 */
+let sheetContainerMemory = [];
+
 /** =========================
  *  CORS / JSON
  *  ========================= */
@@ -389,103 +392,93 @@ app.get("/api/chassis", async (req, res) => {
  *  ========================= */
 app.get("/api/containers", async (req, res) => {
   try {
-    if (!assertContainerEnv(res)) return;
+    // ── kintone からコンテナ取得（環境変数が揃っている場合のみ）──
+    let kintoneContainers = [];
+    if (SUBDOMAIN && CONTAINER_APP_ID && CONTAINER_API_TOKEN) {
+      try {
+        const query =
+          '配車_連携2 in ("未")' +
+          ' and 配送先_配送依頼 not like "FEEDER"' +
+          ' and 配送先_配送依頼 not like "POSITION"' +
+          " order by 配送日 asc";
 
-    // Web用フラグ：配車_連携2
-    const query =
-      '配車_連携2 in ("未")' +
-      ' and 配送先_配送依頼 not like "FEEDER"' +
-      ' and 配送先_配送依頼 not like "POSITION"' +
-      " order by 配送日 asc";
+        const records = await kintoneGetRecords({
+          appId: CONTAINER_APP_ID,
+          apiToken: CONTAINER_API_TOKEN,
+          query,
+        });
 
-    const records = await kintoneGetRecords({
-      appId: CONTAINER_APP_ID,
-      apiToken: CONTAINER_API_TOKEN,
-      query,
-    });
+        const eligibleRecords = records.filter((r) => {
+          const destinationRaw = (r["配送先_配送依頼"]?.value ?? "").toString();
+          return !shouldSkipDestination(destinationRaw);
+        });
 
-    if (!records.length) return res.json({ containers: [] });
+        kintoneContainers = eligibleRecords.map((r) => {
+          const pickupYard = (r["搬出"]?.value ?? "").toString();
+          const pickupYardGroup = resolvePickupYardGroup(pickupYard);
 
-    const eligibleRecords = records.filter((r) => {
-      const destinationRaw = (r["配送先_配送依頼"]?.value ?? "").toString();
-      return !shouldSkipDestination(destinationRaw);
-    });
+          const sizeRaw = (r["サイズ"]?.value ?? "").toString();
+          let size = "20";
+          if (sizeRaw.includes("40")) size = "40";
 
-    if (!eligibleRecords.length) return res.json({ containers: [] });
+          const rawDate = (r["配送日"]?.value ?? "").toString();
+          let date = "";
+          if (rawDate) {
+            const [, mm, dd] = rawDate.split("-");
+            if (mm && dd) date = `${mm}/${dd}`;
+          }
 
-    const containers = eligibleRecords.map((r) => {
-      const pickupYard = (r["搬出"]?.value ?? "").toString();
-      const pickupYardGroup = resolvePickupYardGroup(pickupYard);
+          const eta = (r["着時間0"]?.value ?? "").toString();
+          const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
+          const dropoffBase = (r["搬入"]?.value ?? "").toString().trim();
+          const dropoffYard = dropoffOverride || dropoffBase;
+          const destinationRaw = (r["配送先_配送依頼"]?.value ?? "").toString();
+          const destination = stripCompanyTokens(destinationRaw);
+          const destadd = (r["配送先住所"]?.value ?? "").toString();
+          const desttel = (r["連絡先電話番号"]?.value ?? "").toString();
+          const no = (r["コンテナ番号_配送依頼"]?.value ?? "").toString();
+          const ship = (r["本船名_配送依頼"]?.value ?? "").toString();
+          const booking = (r["BL_BK"]?.value ?? "").toString();
+          const kindCode = (r["種類"]?.value ?? "").toString();
+          const handoverNo = (r["引渡番号"]?.value ?? "").toString().trim();
+          const receiptFiles = mapKintoneFiles(r["受領書"]?.value ?? []);
+          const dispatchFiles = mapKintoneFiles(r["ディスパッチ"]?.value ?? []);
+          const step = parseStepValue(r);
+          const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
 
-      const sizeRaw = (r["サイズ"]?.value ?? "").toString();
-      let size = "20";
-      if (sizeRaw.includes("40")) size = "40";
-
-      const rawDate = (r["配送日"]?.value ?? "").toString();
-      let date = "";
-      if (rawDate) {
-        const [, mm, dd] = rawDate.split("-");
-        if (mm && dd) date = `${mm}/${dd}`;
+          return {
+            id: r.$id.value,
+            size,
+            sizeRaw,
+            date,
+            eta,
+            pickupYard,
+            pickupYardGroup,
+            dropoffYard,
+            destination,
+            destadd,
+            desttel,
+            no,
+            ship,
+            booking,
+            kindCode,
+            handoverNo,
+            receiptFiles,
+            dispatchFiles,
+            step,
+            worker4,
+          };
+        });
+      } catch (kErr) {
+        console.error("kintone コンテナ取得エラー:", kErr.response?.status, kErr.message);
       }
+    }
 
-      const eta = (r["着時間0"]?.value ?? "").toString();
-
-      const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
-      const dropoffBase = (r["搬入"]?.value ?? "").toString().trim();
-      const dropoffYard = dropoffOverride || dropoffBase;
-
-      const destinationRaw = (r["配送先_配送依頼"]?.value ?? "").toString();
-      const destination = stripCompanyTokens(destinationRaw);
-
-      const destadd = (r["配送先住所"]?.value ?? "").toString();
-      const desttel = (r["連絡先電話番号"]?.value ?? "").toString();
-      const no = (r["コンテナ番号_配送依頼"]?.value ?? "").toString();
-      const ship = (r["本船名_配送依頼"]?.value ?? "").toString();
-      const booking = (r["BL_BK"]?.value ?? "").toString();
-      const kindCode = (r["種類"]?.value ?? "").toString();
-      const handoverNo = (r["引渡番号"]?.value ?? "").toString().trim();
-      const receiptFiles = mapKintoneFiles(r["受領書"]?.value ?? []);
-      const dispatchFiles = mapKintoneFiles(r["ディスパッチ"]?.value ?? []);
-      // ✅ ここが重要：step を必ず数値で返す（0なら未設定）
-      const step = parseStepValue(r);
-      const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
-
-      return {
-        id: r.$id.value,
-        size,
-	sizeRaw,
-        date,
-        eta,
-        pickupYard,
-        pickupYardGroup,
-        dropoffYard,
-        destination,
-        destadd,
-        desttel,
-        no,
-        ship,
-        booking,
-        kindCode,
-	handoverNo,
-	receiptFiles,
-	dispatchFiles,
-        step,     // ★ 常に 0〜4 が入る（undefinedにならない）
-        worker4,  // ★ 空なら ""
-      };
-    });
-
-    return res.json({ containers });
+    return res.json({ containers: [...kintoneContainers, ...sheetContainerMemory] });
   } catch (err) {
-    console.error("===== kintone コンテナエラー =====");
-    console.error("status:", err.response?.status);
-    console.error("data  :", err.response?.data);
-    console.error("msg   :", err.message);
-    console.error("====================================");
-    res.status(500).json({
-      error: "kintone からコンテナ取得に失敗しました",
-      status: err.response?.status,
-      detail: err.response?.data || err.message,
-    });
+    console.error("===== /api/containers エラー =====");
+    console.error("msg:", err.message);
+    res.status(500).json({ error: "コンテナ取得に失敗しました", detail: err.message });
   }
 });
 
@@ -496,17 +489,25 @@ app.get("/api/containers", async (req, res) => {
  *  ========================= */
 app.post("/api/containers/mark-board-done", async (req, res) => {
   try {
-    if (!assertContainerEnv(res)) return;
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const allIds = ids.map((v) => String(v || "").trim()).filter(Boolean);
 
-    if (!ALLOW_KINTONE_WRITE) {
-      return res.status(403).json({ error: "Kintone write disabled" });
+    // sheet_ IDをメモリから削除
+    const sheetIds = allIds.filter((v) => v.startsWith("sheet_"));
+    if (sheetIds.length) {
+      sheetContainerMemory = sheetContainerMemory.filter((c) => !sheetIds.includes(c.id));
+      console.log(`[sheet] removed ${sheetIds.length} containers from memory`);
     }
 
-    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
-    const cleaned = ids.map((v) => String(v || "").trim()).filter(Boolean);
-
+    // kintone更新対象（sheet_ 以外）
+    const cleaned = allIds.filter((v) => !v.startsWith("sheet_"));
     if (!cleaned.length) {
-      return res.status(400).json({ error: "ids is required" });
+      return res.json({ ok: true, updated: 0 });
+    }
+
+    if (!assertContainerEnv(res)) return;
+    if (!ALLOW_KINTONE_WRITE) {
+      return res.status(403).json({ error: "Kintone write disabled" });
     }
 
     const chunks = chunk(cleaned, 100);
@@ -802,6 +803,181 @@ app.get("/api/dispatch-sheet", async (req, res) => {
       error: "配車表データ取得失敗",
       detail: err.message,
     });
+  }
+});
+
+/** =========================
+ *  貼付シートの「サイズ：種類」文字列を kindCode に変換
+ *  例: "ドライ" → "D", "リーファー" → "R"
+ *  ========================= */
+function kindStrToCode(s) {
+  const t = (s || "").trim();
+  if (t.includes("ドライ")) return "D";
+  if (t.includes("リーファー") || t.includes("リーファ")) return "R";
+  if (t.includes("フラット")) return "F";
+  if (t.includes("オープントップ") || t.includes("OT")) return "O";
+  if (t.includes("タンク")) return "T";
+  return t ? t.charAt(0) : "D";
+}
+
+/** =========================
+ *  スプレッドシート「貼付シート」からコンテナを取得
+ *  SHEET_CONTAINERS_GID が設定されている場合のみ動作
+ *
+ *  対応フォーマット（1件=2行、18行ごとにヘッダー繰り返し）:
+ *  上段ヘッダー: No. | 時間 | 得意先略称 | コンテナ番号 | BL/BK | 搬出 | 作業先 | 作業先住所
+ *  下段ヘッダー:               | サイズ：種類 | 本船 | 搬入 | 指示書備考
+ *  ========================= */
+async function fetchSheetContainers() {
+  const GID = process.env.SHEET_CONTAINERS_GID;
+  if (!GID) return [];
+
+  const SHEET_ID = "18MKAWG5Ynl3HU2X60T_e3Z6zpJQn4ZDRwmaZMJkUiMM";
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`;
+
+  try {
+    const response = await axios.get(csvUrl, { responseType: "text" });
+    const allLines = parseCSV(response.data);
+    if (allLines.length < 2) return [];
+
+    // ── 1. シート上部から日付を検出（"XX年XX月XX日"形式）──
+    let sheetDate = "";
+    for (const row of allLines) {
+      for (const cell of row) {
+        const m = cell.match(/(\d{2,4})年(\d{1,2})月(\d{1,2})日/);
+        if (m) {
+          sheetDate = `${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`;
+          break;
+        }
+      }
+      if (sheetDate) break;
+    }
+
+    // ── 2. 上段ヘッダー行を検出（"No." を含む行）──
+    let headerIdx = -1;
+    for (let i = 0; i < allLines.length; i++) {
+      if (allLines[i].some((c) => c.trim() === "No.")) {
+        headerIdx = i;
+        break;
+      }
+    }
+    if (headerIdx < 0) return [];
+
+    const h1 = allLines[headerIdx].map((c) => c.trim());            // 上段
+    const h2 = (allLines[headerIdx + 1] || []).map((c) => c.trim()); // 下段
+
+    // カラム位置を名前で動的検索（複数候補に対応）
+    const findCol = (headers, ...names) => {
+      for (const name of names) {
+        const idx = headers.findIndex((c) => c === name);
+        if (idx >= 0) return idx;
+      }
+      return -1;
+    };
+
+    // 上段ヘッダーから取る列
+    const cNo     = findCol(h1, "No.");
+    const cTime   = findCol(h1, "時間");
+    const cCust   = findCol(h1, "得意先略称", "得意先");
+    const cContNo = findCol(h1, "コンテナ番号");
+    const cBLBK   = findCol(h1, "BL/BK", "BL・BK", "BL_BK");
+    const cPickup = findCol(h1, "搬出");
+    const cWork   = findCol(h1, "作業先");    // 上段にある場合
+    const cAddr   = findCol(h1, "作業先住所");
+
+    // 下段ヘッダーから取る列
+    const cSizeType = findCol(h2, "サイズ：種類", "サイズ:種類");
+    const cShip     = findCol(h2, "本船");
+    const cDropoff  = findCol(h2, "搬入");
+    const cWork2    = findCol(h2, "指示書備考", "作業先"); // 下段の作業先/指示書備考
+
+    // ── 3. データ行を2行ずつ読む（ヘッダー繰り返しをスキップ）──
+    const looksLikeHeader = (row) =>
+      row.some((c) => c.trim() === "No.") ||
+      row.some((c) => c.trim() === "コンテナ番号") ||
+      row.some((c) => c.trim() === "サイズ：種類");
+
+    const containers = [];
+    let seqNo = 1;
+    let i = headerIdx + 2; // 上段・下段ヘッダーをスキップ
+
+    while (i < allLines.length) {
+      const rowA = allLines[i] || [];
+      const rowB = allLines[i + 1] || [];
+
+      // 繰り返しヘッダー行をスキップ（2行分）
+      if (looksLikeHeader(rowA)) { i += 2; continue; }
+
+      // コンテナ番号が空 → 空行としてスキップ
+      const contNo = cContNo >= 0 ? (rowA[cContNo] || "").trim() : "";
+      if (!contNo) { i += 2; continue; }
+
+      // サイズ：種類 パース（例: "40 9'6:ドライ" → size=40, sizeRaw="40 9'6", kindCode="D"）
+      const sizeTypeStr = cSizeType >= 0 ? (rowB[cSizeType] || "").trim() : "";
+      const colonPos = sizeTypeStr.indexOf(":");
+      const sizeLeft = colonPos >= 0 ? sizeTypeStr.slice(0, colonPos).trim() : sizeTypeStr;
+      const kindStr  = colonPos >= 0 ? sizeTypeStr.slice(colonPos + 1).trim() : "";
+      const size     = sizeLeft.includes("40") ? "40" : "20";
+      const kindCode = kindStrToCode(kindStr);
+
+      const pickupYard  = cPickup  >= 0 ? (rowA[cPickup]  || "").trim() : "";
+      const dropoffYard = cDropoff >= 0 ? (rowB[cDropoff] || "").trim() : "";
+
+      // 作業先: 下段の指示書備考列 → 上段の作業先列 の順で優先
+      const workVal = (cWork2 >= 0 ? (rowB[cWork2] || "").trim() : "") ||
+                      (cWork  >= 0 ? (rowA[cWork]  || "").trim() : "");
+      // destination は 作業先（配送先）を使用。なければ得意先略称
+      const custVal = cCust >= 0 ? (rowA[cCust] || "").trim() : "";
+      const destination = stripCompanyTokens(workVal || custVal);
+
+      containers.push({
+        id: `sheet_${String(seqNo).padStart(4, "0")}`,
+        size,
+        sizeRaw: sizeLeft,
+        date: sheetDate,
+        eta:     cTime  >= 0 ? (rowA[cTime]  || "").trim() : "",
+        pickupYard,
+        pickupYardGroup: resolvePickupYardGroup(pickupYard),
+        dropoffYard,
+        destination,
+        destadd: cAddr  >= 0 ? (rowA[cAddr]  || "").trim() : "",
+        desttel: "",
+        no: contNo,
+        ship:    cShip  >= 0 ? (rowB[cShip]  || "").trim() : "",
+        booking: cBLBK  >= 0 ? (rowA[cBLBK]  || "").trim() : "",
+        kindCode,
+        handoverNo: "",
+        receiptFiles: [],
+        dispatchFiles: [],
+        step: 0,
+        worker4: "",
+      });
+
+      seqNo++;
+      i += 2;
+    }
+
+    return containers;
+  } catch (err) {
+    console.error("シートコンテナ取得エラー:", err.message);
+    return [];
+  }
+}
+
+/** =========================
+ *  POST /api/load-sheet-containers
+ *  GASボタンから呼び出すトリガー。
+ *  貼付シートを読んでメモリに保存し、配車ボードに反映する。
+ *  ========================= */
+app.post("/api/load-sheet-containers", async (req, res) => {
+  try {
+    const containers = await fetchSheetContainers();
+    sheetContainerMemory = containers;
+    console.log(`[sheet] loaded ${containers.length} containers from sheet`);
+    return res.json({ ok: true, loaded: containers.length });
+  } catch (err) {
+    console.error("load-sheet-containers エラー:", err.message);
+    res.status(500).json({ error: "シートコンテナ読み込み失敗", detail: err.message });
   }
 });
 
