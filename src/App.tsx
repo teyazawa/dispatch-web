@@ -1566,19 +1566,28 @@ function App() {
     const findBase = (): Container | null => {
       const gid = String(id);
 
-      const fromAC = groupsRef.current.find(
-        (g) => g.container?.id === gid,
-      )?.container;
+      // まず ID で直接検索
+      const fromAC = groupsRef.current.find((g) => g.container?.id === gid)?.container;
       if (fromAC) return fromAC;
-
       const fromA = containersRef.current.find((c) => c.id === gid);
       if (fromA) return fromA;
-
       const fromT = tempRef.current.find((c) => c.id === gid);
       if (fromT) return fromT;
-
       const fromD = doneRef.current.find((c) => c.id === gid);
       if (fromD) return fromD;
+
+      // "no:CONTNO" 形式 or patch.no でコンテナ番号フォールバック検索
+      const noKey = gid.startsWith("no:")
+        ? gid.slice(3).toUpperCase()
+        : (patch?.no ? String(patch.no).toUpperCase() : null);
+      if (noKey) {
+        const byNo =
+          groupsRef.current.find((g) => g.container?.no.toUpperCase() === noKey)?.container ??
+          containersRef.current.find((c) => c.no.toUpperCase() === noKey) ??
+          tempRef.current.find((c) => c.no.toUpperCase() === noKey) ??
+          doneRef.current.find((c) => c.no.toUpperCase() === noKey);
+        if (byNo) return byNo;
+      }
 
       return null;
     };
@@ -1586,29 +1595,30 @@ function App() {
     const base = findBase();
     if (!base) return;
 
+    const realId = base.id; // "no:CONTNO" ではなく実際のコンテナID
     const merged: Container = {
       ...base,
       ...(patch ?? {}),
-      id: String(id),
+      id: realId,
       worker4: (patch?.worker4 ?? base.worker4 ?? "").toString().trim(),
     };
 
     // ① シャーシ上にあれば「コンテナだけ外す」
     setGroups((prev) =>
       prev.map((g) =>
-        g.container?.id === String(id) ? { ...g, container: undefined } : g,
+        g.container?.id === realId ? { ...g, container: undefined } : g,
       ),
     );
 
-    // ② リストから消す（ここで fetched を使わない）
-    setContainers((prev) => prev.filter((c) => c.id !== String(id)));
-    setTempContainers((prev) => prev.filter((c) => c.id !== String(id)));
+    // ② リストから消す
+    setContainers((prev) => prev.filter((c) => c.id !== realId));
+    setTempContainers((prev) => prev.filter((c) => c.id !== realId));
 
     // ③ 完了へ upsert
     setCompletedContainers((prev) => {
-      const exists = prev.find((c) => c.id === String(id));
+      const exists = prev.find((c) => c.id === realId);
       if (exists) {
-        return prev.map((c) => (c.id === String(id) ? { ...c, ...merged } : c));
+        return prev.map((c) => (c.id === realId ? { ...c, ...merged } : c));
       }
       return [...prev, merged];
     });
