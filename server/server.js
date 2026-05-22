@@ -34,6 +34,9 @@ const ALLOW_KINTONE_WRITE = process.env.ALLOW_KINTONE_WRITE === "true";
 /** GASボタン経由でシートから読み込んだコンテナをメモリに保持 */
 let sheetContainerMemory = [];
 
+/** GASアプリからの工程通知（kintoneId → { step, yardIn2? }）*/
+const stepOverridesMap = new Map();
+
 /** =========================
  *  CORS / JSON
  *  ========================= */
@@ -474,7 +477,11 @@ app.get("/api/containers", async (req, res) => {
       }
     }
 
-    return res.json({ containers: [...kintoneContainers, ...sheetContainerMemory] });
+    const overriddenKintone = kintoneContainers.map(c => {
+      const ov = stepOverridesMap.get(String(c.id));
+      return ov ? { ...c, ...ov } : c;
+    });
+    return res.json({ containers: [...overriddenKintone, ...sheetContainerMemory] });
   } catch (err) {
     console.error("===== /api/containers エラー =====");
     console.error("msg:", err.message);
@@ -634,6 +641,16 @@ app.get("/api/containers/updates", async (req, res) => {
       // ★ step=4 のときだけ ACK 対象にする
       if (step === 4) {
         ackTargets.push(r.$id.value);
+      }
+    }
+
+    // Add direct step overrides from GAS notifications (for immediate update without kintone poll)
+    for (const [id, ov] of stepOverridesMap.entries()) {
+      const existing = containers.find(c => String(c.id) === id);
+      if (existing) {
+        Object.assign(existing, ov);
+      } else {
+        containers.push({ id, ...ov });
       }
     }
 
@@ -963,6 +980,34 @@ async function fetchSheetContainers() {
     return [];
   }
 }
+
+/** =========================
+ *  POST /api/step-update
+ *  GASアプリから工程完了を直接通知。kintoneポーリングより即時反映。
+ *  Body: { kintoneId, no?, step, yardIn2? }
+ *  ========================= */
+app.post("/api/step-update", (req, res) => {
+  const { kintoneId, no, step, yardIn2 } = req.body ?? {};
+  if (!kintoneId || step == null) {
+    return res.status(400).json({ error: "kintoneId and step are required" });
+  }
+  const id = String(kintoneId).trim();
+  const stepNum = Number(step);
+  const override = { step: stepNum };
+  if (yardIn2) override.yardIn2 = String(yardIn2).trim();
+  stepOverridesMap.set(id, override);
+
+  // sheet containers に同じコンテナ番号があれば直接更新
+  if (no) {
+    const noStr = String(no).trim();
+    sheetContainerMemory = sheetContainerMemory.map(c =>
+      c.no === noStr ? { ...c, ...override } : c
+    );
+  }
+
+  console.log(`[step-update] id=${id} no=${no || "-"} step=${stepNum} yardIn2=${yardIn2 || "-"}`);
+  return res.json({ ok: true });
+});
 
 /** =========================
  *  POST /api/load-sheet-containers

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 
 type DispatchRow = {
   no: number;
@@ -35,6 +35,13 @@ export default function DispatchTable() {
   const [assignments, setAssignments] = useState<DriverAssignment>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noSortDir, setNoSortDir] = useState<"asc" | "desc">("asc");
+
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) =>
+      noSortDir === "asc" ? a.no - b.no : b.no - a.no
+    );
+  }, [rows, noSortDir]);
 
   // 作業者名一覧を取得（スプレッドシートのリストシートから）
   useEffect(() => {
@@ -139,11 +146,24 @@ export default function DispatchTable() {
         >
           <thead>
             <tr style={{ background: "#e3f2fd" }}>
-              <th style={thStyle}>No.</th>
+              <th
+                style={sortThStyle}
+                onClick={() => setNoSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              >
+                No.{noSortDir === "asc" ? " ↑" : " ↓"}
+              </th>
               <th style={thStyle}>時間</th>
-              <th style={thStyle}>得意先略称</th>
-              <th style={thStyle}>コンテナ番号<br />サイズ:種類</th>
-              <th style={thStyle}>搬出<br />搬入</th>
+              <th style={thStyle}>得意先</th>
+              <th style={thStyle}>
+                コンテナ番号
+                <br />
+                <span style={{ fontWeight: "normal", fontSize: "11px" }}>サイズ:種類</span>
+              </th>
+              <th style={thStyle}>
+                搬出
+                <br />
+                <span style={{ fontWeight: "normal", fontSize: "11px" }}>搬入</span>
+              </th>
               <th style={thStyle}>作業先</th>
               {ASSIGN_COLUMNS.map((col) => (
                 <th key={col} style={{ ...thStyle, minWidth: "100px" }}>
@@ -163,7 +183,7 @@ export default function DispatchTable() {
                 </td>
               </tr>
             ) : (
-              rows.map((row, idx) => (
+              sortedRows.map((row, idx) => (
                 <tr
                   key={idx}
                   style={{
@@ -230,6 +250,12 @@ const thStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
   fontSize: "13px",
   fontWeight: "bold",
+};
+
+const sortThStyle: React.CSSProperties = {
+  ...thStyle,
+  cursor: "pointer",
+  userSelect: "none",
 };
 
 const tdStyle: React.CSSProperties = {

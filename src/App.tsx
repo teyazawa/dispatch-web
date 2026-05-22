@@ -114,6 +114,7 @@ type Container = {
   kindCode: string; // D, R など略称
   destination: string; // 配送先名 例: "千葉RDC"
   dropoffYard: string; // 搬入ヤード 例: "青海EIR"
+  yardIn2?: string;   // 搬入ヤード(2)
   handoverNo?: string; // 引渡番号
   receiptFiles?: KintoneFileLink[]; //受領書link
   dispatchFiles?: KintoneFileLink[]; //ディスパッチlink
@@ -613,8 +614,11 @@ function DraggableGroupCard({
     const [, d] = c.date.split("/");
     const dayLabel = d ? `${parseInt(d, 10)}日` : c.date;
 
-    // ▼ 1行目：28日 9:00 千葉RDC 青海A-1 ABCD1234567 青海EIR
-    const line1 = `${dayLabel} ${c.eta} ${c.destination} ${c.pickupYard} ${c.no} ${c.dropoffYard}`;
+    // ▼ 1行目：28日 9:00 千葉RDC 青海A-1 ABCD1234567 青海EIR（大井B-3）
+    const dropoffDisplay = c.yardIn2
+      ? `${c.dropoffYard}（${c.yardIn2}）`
+      : c.dropoffYard;
+    const line1 = `${dayLabel} ${c.eta} ${c.destination} ${c.pickupYard} ${c.no} ${dropoffDisplay}`;
 
     // ▼ 2行目：車番 / サイズ / 種別 / 備考
     const parts: string[] = [
@@ -1651,6 +1655,7 @@ function App() {
             kindCode: c.kindCode,
             destination: c.destination,
             dropoffYard: c.dropoffYard,
+            yardIn2: (c.yardIn2 ?? "").toString().trim() || undefined,
             ship: c.ship,
             booking: c.booking,
             destadd: c.destadd,
@@ -1777,6 +1782,7 @@ function App() {
             ...c,
             no: p.no ?? c.no,
             dropoffYard: p.dropoffYard ?? c.dropoffYard,
+            yardIn2: p.yardIn2 ?? c.yardIn2,
             step: p.step ?? c.step,
             worker4: (p.worker4 ?? c.worker4 ?? "").toString().trim(),
             handoverNo: p.handoverNo ?? c.handoverNo,
@@ -1961,20 +1967,7 @@ function App() {
   const [middleWidth, setMiddleWidth] = useState<number>(610); // ドライバー
   const [deliveryWidth, setDeliveryWidth] = useState<number>(500); // 配送分
 
-  // 配送分横スクロール同期
   const deliveryScrollRef = useRef<HTMLDivElement>(null);
-  const deliveryStickyBarRef = useRef<HTMLDivElement>(null);
-  const [deliveryScrollContentWidth, setDeliveryScrollContentWidth] = useState(0);
-  useEffect(() => {
-    const el = deliveryScrollRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setDeliveryScrollContentWidth(el.scrollWidth);
-    });
-    ro.observe(el);
-    setDeliveryScrollContentWidth(el.scrollWidth);
-    return () => ro.disconnect();
-  }, []);
 
   // ヤードグループ（大井・青海・品川・本牧）
   const yardGroups = ["大井", "青海", "中防", "品川", "本牧", "その他"];
@@ -2065,7 +2058,25 @@ function App() {
 
   function handleDragEnd(event: any) {
     const { active, over } = event;
-    if (!over) return;
+
+    // ドロップ不可エリアに A+C をドロップ → C だけ配送分へ（日付・ヤード変更なし）
+    if (!over) {
+      const activeId = String(active.id);
+      if (activeId.startsWith("group-")) {
+        const groupId = activeId.replace("group-", "");
+        const currentGroup = groups.find((g) => g.id === groupId);
+        if (currentGroup?.container) {
+          const released = currentGroup.container;
+          setGroups((prev) =>
+            prev.map((g) =>
+              g.id === groupId ? { ...g, container: undefined } : g,
+            ),
+          );
+          setContainers((prev) => [...prev, released]);
+        }
+      }
+      return;
+    }
 
     const activeId = String(active.id);
     const overId = String(over.id);
@@ -2207,6 +2218,31 @@ function App() {
           ),
         );
         setCompletedContainers((prev) => [...prev, released]);
+        return;
+      }
+
+      // 配送分枠へ：A+C → CをC自身の日付で配送分へ、Aはコンテナ解除
+      // delivery-DATE-YARD ゾーン上 or そこにある既存コンテナ上にドロップ
+      const deliveryOverId = overId.startsWith("delivery-")
+        ? overId
+        : overId.startsWith("cont-")
+          ? (() => {
+              const contId = overId.replace("cont-", "");
+              const hit = containers.find((c) => c.id === contId);
+              return hit ? `delivery-${hit.date}-${hit.pickupYardGroup}` : null;
+            })()
+          : null;
+
+      if (deliveryOverId) {
+        if (!currentGroup.container) return;
+        const released = currentGroup.container;
+
+        setGroups((prev) =>
+          prev.map((g) =>
+            g.id === currentGroup.id ? { ...g, container: undefined } : g,
+          ),
+        );
+        setContainers((prev) => [...prev, released]);
         return;
       }
 
@@ -4057,57 +4093,29 @@ function App() {
                   flexDirection: "column" as const,
                 }}
               >
-                {/* ✅ スクロール可能エリア */}
+                {/* 配送分: flex column で上下2ブロック */}
                 <div
                   style={{
                     flex: 1,
-                    overflowY: "auto",
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: 0,
+                    overflow: "hidden",
                     paddingRight: "8px",
                   }}
                 >
-                  <h2>配送分</h2>
+                  <h2 style={{ flexShrink: 0 }}>配送分</h2>
 
-                  {/* ▼ スティッキー横スクロールバー（常時表示） */}
-                  <div
-                    ref={deliveryStickyBarRef}
-                    onScroll={(e) => {
-                      if (deliveryScrollRef.current)
-                        deliveryScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
-                    }}
-                    style={{
-                      position: "sticky",
-                      top: 0,
-                      overflowX: "auto",
-                      overflowY: "hidden",
-                      height: "12px",
-                      zIndex: 5,
-                      marginBottom: "2px",
-                    }}
-                  >
-                    <div style={{ width: deliveryScrollContentWidth, height: "1px" }} />
-                  </div>
-
-                  {/* ▼ 追加：この箱の中だけ横スクロール */}
+                  {/* 配送分スクロールボックス */}
                   <div
                     ref={deliveryScrollRef}
                     className="delivery-scroll"
-                    onScroll={(e) => {
-                      if (deliveryStickyBarRef.current)
-                        deliveryStickyBarRef.current.scrollLeft = e.currentTarget.scrollLeft;
-                    }}
+                    style={{ flex: "1 1 0", minHeight: 0, overflow: "auto" }}
                   >
                     <div className="days-scroll">
                       {dayKeys.map((dayKey) => {
-                        // 日付の前ゼロを削除して表示
-                        const formattedDate = dayKey
-                          .split("/")
-                          .map((n) => parseInt(n, 10))
-                          .join("/");
-
                         return (
                           <section key={dayKey} className="day-column">
-                            <h3>{formattedDate}</h3>
-
                             {yardGroups.map((yardName) => (
                               <div
                                 key={`${dayKey}-${yardName}`}
@@ -4138,39 +4146,12 @@ function App() {
                               </div>
                             ))}
                           </section>
-                        ); // ← 追加
+                        );
                       })}
                     </div>
                   </div>
 
-                  {/* ▼ 日付自動振分枠 */}
-                  <div className="delivery-auto">
-                    <h3>日付自動振分</h3>
-                    <DroppableArea
-                      id="zone-delivery-own-date"
-                      placeholder="コンテナが持っている配送日で配送分に戻す"
-                      className="slot-row-wrap"
-                    />
-                  </div>
-
-                  <div className="delivery-temp">
-                    <h3>一時保管</h3>
-                    <DroppableArea
-                      id="zone-temp"
-                      placeholder="A+C をここにドロップするとコンテナだけ一時保管"
-                      className="slot-row-wrap"
-                    >
-                      {tempContainers.map((c) => (
-                        <DraggableContainerCard
-                          key={c.id}
-                          container={c}
-                          sizeColors={sizeColors}
-                        />
-                      ))}
-                    </DroppableArea>
-                  </div>
-
-                  <div className="delivery-completed">
+                  <div className="delivery-completed" style={{ flexShrink: 0, maxHeight: "220px", overflowY: "auto" }}>
                     <h3>
                       配送完了{" "}
                       {completedContainers.length > 0 && (
@@ -4198,7 +4179,7 @@ function App() {
                     </DroppableArea>
                   </div>
                 </div>
-                {/* ↑ スクロールエリアここまで */}
+                {/* ↑ 配送分フレックスエリアここまで */}
 
                 {/* ✅ ボタンをスクロールエリアの外に配置（固定） */}
                 <div
