@@ -1961,6 +1961,21 @@ function App() {
   const [middleWidth, setMiddleWidth] = useState<number>(610); // ドライバー
   const [deliveryWidth, setDeliveryWidth] = useState<number>(500); // 配送分
 
+  // 配送分横スクロール同期
+  const deliveryScrollRef = useRef<HTMLDivElement>(null);
+  const deliveryStickyBarRef = useRef<HTMLDivElement>(null);
+  const [deliveryScrollContentWidth, setDeliveryScrollContentWidth] = useState(0);
+  useEffect(() => {
+    const el = deliveryScrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      setDeliveryScrollContentWidth(el.scrollWidth);
+    });
+    ro.observe(el);
+    setDeliveryScrollContentWidth(el.scrollWidth);
+    return () => ro.disconnect();
+  }, []);
+
   // ヤードグループ（大井・青海・品川・本牧）
   const yardGroups = ["大井", "青海", "中防", "品川", "本牧", "その他"];
 
@@ -4052,8 +4067,35 @@ function App() {
                 >
                   <h2>配送分</h2>
 
+                  {/* ▼ スティッキー横スクロールバー（常時表示） */}
+                  <div
+                    ref={deliveryStickyBarRef}
+                    onScroll={(e) => {
+                      if (deliveryScrollRef.current)
+                        deliveryScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
+                    }}
+                    style={{
+                      position: "sticky",
+                      top: 0,
+                      overflowX: "auto",
+                      overflowY: "hidden",
+                      height: "12px",
+                      zIndex: 5,
+                      marginBottom: "2px",
+                    }}
+                  >
+                    <div style={{ width: deliveryScrollContentWidth, height: "1px" }} />
+                  </div>
+
                   {/* ▼ 追加：この箱の中だけ横スクロール */}
-                  <div className="delivery-scroll">
+                  <div
+                    ref={deliveryScrollRef}
+                    className="delivery-scroll"
+                    onScroll={(e) => {
+                      if (deliveryStickyBarRef.current)
+                        deliveryStickyBarRef.current.scrollLeft = e.currentTarget.scrollLeft;
+                    }}
+                  >
                     <div className="days-scroll">
                       {dayKeys.map((dayKey) => {
                         // 日付の前ゼロを削除して表示
