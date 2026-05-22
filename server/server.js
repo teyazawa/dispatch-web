@@ -969,13 +969,14 @@ async function fetchSheetContainers() {
  *  Body: { kintoneId, no?, step, yardIn2? }
  *  ========================= */
 app.post("/api/step-update", (req, res) => {
-  const { kintoneId, no, step, yardIn2 } = req.body ?? {};
+  const { kintoneId, no, step, yardIn2, dropoffYard } = req.body ?? {};
   if (step == null || (!kintoneId && !no)) {
     return res.status(400).json({ error: "step and (kintoneId or no) are required" });
   }
   const stepNum = Number(step);
   const override = { step: stepNum };
   if (yardIn2) override.yardIn2 = String(yardIn2).trim();
+  if (dropoffYard) override.dropoffYard = String(dropoffYard).trim();
 
   if (kintoneId) {
     stepOverridesMap.set(String(kintoneId).trim(), override);
@@ -996,7 +997,8 @@ app.post("/api/step-update", (req, res) => {
     console.log(`[step-update] sheet match: ${matched}, no=${noStr}`);
   }
 
-  console.log(`[step-update] id=${id} no=${no || "-"} step=${stepNum} yardIn2=${yardIn2 || "-"} map_size=${stepOverridesMap.size}`);
+  const id = kintoneId ? String(kintoneId).trim() : `no:${String(no).trim().toUpperCase()}`;
+  console.log(`[step-update] id=${id} step=${stepNum} dropoffYard=${dropoffYard || "-"} yardIn2=${yardIn2 || "-"} map_size=${stepOverridesMap.size}`);
   return res.json({ ok: true, id, step: stepNum });
 });
 
