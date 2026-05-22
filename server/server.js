@@ -603,90 +603,72 @@ app.get("/api/kintone/file", async (req, res) => {
  *  ========================= */
 app.get("/api/containers/updates", async (req, res) => {
   try {
-    if (!assertContainerEnv(res)) return;
-
-    const query = '配車_更新2 in ("未") order by 更新日時 asc';
-
-    const records = await kintoneGetRecords({
-      appId: CONTAINER_APP_ID,
-      apiToken: CONTAINER_API_TOKEN,
-      query,
-    });
-
-    if (!records.length) return res.json({ containers: [] });
-
+    // GAS direct notifications: always available regardless of kintone config
     const containers = [];
-    const ackTargets = [];
-
-    for (const r of records) {
-      const step = parseStepValue(r);
-
-      // 工程が入ってない(=0)ものは誤更新の可能性があるので返さない＆ACKもしない
-      if (!step) continue;
-
-      const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
-      const dropoffBase = (r["搬入"]?.value ?? "").toString().trim();
-      const dropoffYard = dropoffOverride || dropoffBase;
-
-      const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
-
-      containers.push({
-        id: r.$id.value,
-        no: (r["コンテナ番号_配送依頼"]?.value ?? "").toString(),
-        dropoffYard,
-        step,
-        worker4,
-      });
-
-      // ★ step=4 のときだけ ACK 対象にする
-      if (step === 4) {
-        ackTargets.push(r.$id.value);
-      }
-    }
-
-    // Add direct step overrides from GAS notifications (for immediate update without kintone poll)
     for (const [id, ov] of stepOverridesMap.entries()) {
-      const existing = containers.find(c => String(c.id) === id);
-      if (existing) {
-        Object.assign(existing, ov);
-      } else {
-        containers.push({ id, ...ov });
-      }
+      containers.push({ id, ...ov });
     }
 
-    if (!containers.length) return res.json({ containers: [] });
+    // kintone polling: only when env vars are configured
+    const ackTargets = [];
+    if (SUBDOMAIN && CONTAINER_APP_ID && CONTAINER_API_TOKEN) {
+      try {
+        const query = '配車_更新2 in ("未") order by 更新日時 asc';
+        const records = await kintoneGetRecords({
+          appId: CONTAINER_APP_ID,
+          apiToken: CONTAINER_API_TOKEN,
+          query,
+        });
 
-    // ACK（配車_更新2 を済）…ただし書き込み許可のときのみ ＆ step=4 のものだけ
-    if (ALLOW_KINTONE_WRITE) {
-      if (ackTargets.length > 0) {
-        const chunks = chunk(ackTargets, 100);
-        for (const part of chunks) {
-          await kintonePutRecords({
-            appId: CONTAINER_APP_ID,
-            apiToken: CONTAINER_API_TOKEN,
-            records: part.map((id) => ({
-              id,
-              record: { 配車_更新2: { value: ["済"] } },
-            })),
-          });
+        for (const r of records) {
+          const step = parseStepValue(r);
+          if (!step) continue;
+
+          const dropoffOverride = (r["搬入_配車上書き"]?.value ?? "").toString().trim();
+          const dropoffBase = (r["搬入"]?.value ?? "").toString().trim();
+          const dropoffYard = dropoffOverride || dropoffBase;
+          const worker4 = (r["作業者_4"]?.value ?? "").toString().trim();
+          const rid = r.$id.value;
+
+          const existing = containers.find(c => String(c.id) === rid);
+          if (existing) {
+            Object.assign(existing, { dropoffYard, step, worker4,
+              no: (r["コンテナ番号_配送依頼"]?.value ?? "").toString() });
+          } else {
+            containers.push({
+              id: rid,
+              no: (r["コンテナ番号_配送依頼"]?.value ?? "").toString(),
+              dropoffYard,
+              step,
+              worker4,
+            });
+          }
+
+          if (step === 4) ackTargets.push(rid);
         }
+
+        if (ALLOW_KINTONE_WRITE && ackTargets.length > 0) {
+          const chunks = chunk(ackTargets, 100);
+          for (const part of chunks) {
+            await kintonePutRecords({
+              appId: CONTAINER_APP_ID,
+              apiToken: CONTAINER_API_TOKEN,
+              records: part.map((id) => ({
+                id,
+                record: { 配車_更新2: { value: ["済"] } },
+              })),
+            });
+          }
+        }
+      } catch (kErr) {
+        console.error("[updates] kintone fetch error:", kErr.message);
       }
-    } else {
-      console.log("[updates] skip kintone update (ALLOW_KINTONE_WRITE != true)");
     }
 
     return res.json({ containers });
   } catch (err) {
-    console.error("===== updates エラー =====");
-    console.error("status:", err.response?.status);
-    console.error("data  :", err.response?.data);
-    console.error("msg   :", err.message);
-    console.error("====================================");
-    res.status(500).json({
-      error: "updates 取得失敗",
-      status: err.response?.status,
-      detail: err.response?.data || err.message,
-    });
+    console.error("===== updates エラー =====", err.message);
+    res.status(500).json({ error: "updates 取得失敗", detail: err.message });
   }
 });
 
@@ -988,25 +970,40 @@ async function fetchSheetContainers() {
  *  ========================= */
 app.post("/api/step-update", (req, res) => {
   const { kintoneId, no, step, yardIn2 } = req.body ?? {};
-  if (!kintoneId || step == null) {
-    return res.status(400).json({ error: "kintoneId and step are required" });
+  if (step == null || (!kintoneId && !no)) {
+    return res.status(400).json({ error: "step and (kintoneId or no) are required" });
   }
-  const id = String(kintoneId).trim();
   const stepNum = Number(step);
   const override = { step: stepNum };
   if (yardIn2) override.yardIn2 = String(yardIn2).trim();
-  stepOverridesMap.set(id, override);
+
+  if (kintoneId) {
+    stepOverridesMap.set(String(kintoneId).trim(), override);
+  }
 
   // sheet containers に同じコンテナ番号があれば直接更新
   if (no) {
-    const noStr = String(no).trim();
-    sheetContainerMemory = sheetContainerMemory.map(c =>
-      c.no === noStr ? { ...c, ...override } : c
-    );
+    const noStr = String(no).trim().toUpperCase();
+    let matched = false;
+    sheetContainerMemory = sheetContainerMemory.map(c => {
+      if (c.no.toUpperCase() === noStr) { matched = true; return { ...c, ...override }; }
+      return c;
+    });
+    // kintoneId がなければコンテナ番号をキーに stepOverridesMap にも登録
+    if (!kintoneId) {
+      stepOverridesMap.set(`no:${noStr}`, override);
+    }
+    console.log(`[step-update] sheet match: ${matched}, no=${noStr}`);
   }
 
-  console.log(`[step-update] id=${id} no=${no || "-"} step=${stepNum} yardIn2=${yardIn2 || "-"}`);
-  return res.json({ ok: true });
+  console.log(`[step-update] id=${id} no=${no || "-"} step=${stepNum} yardIn2=${yardIn2 || "-"} map_size=${stepOverridesMap.size}`);
+  return res.json({ ok: true, id, step: stepNum });
+});
+
+/** GET /api/step-overrides — デバッグ用：現在のstepOverridesMapを確認 */
+app.get("/api/step-overrides", (_req, res) => {
+  const entries = Object.fromEntries(stepOverridesMap);
+  res.json({ count: stepOverridesMap.size, entries });
 });
 
 /** =========================
