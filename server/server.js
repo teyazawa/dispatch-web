@@ -985,16 +985,22 @@ app.post("/api/step-update", (req, res) => {
   // sheet containers に同じコンテナ番号があれば直接更新
   if (no) {
     const noStr = String(no).trim().toUpperCase();
+    const kidStr = kintoneId ? String(kintoneId).trim() : '';
     let matched = false;
     sheetContainerMemory = sheetContainerMemory.map(c => {
-      if (c.no.toUpperCase() === noStr) { matched = true; return { ...c, ...override }; }
+      // kintoneId が指定された場合はIDで一意に特定（noは同一番号が複数存在する可能性があるため）
+      if (kidStr) {
+        if (String(c.id) === kidStr) { matched = true; return { ...c, ...override }; }
+      } else {
+        if (c.no.toUpperCase() === noStr) { matched = true; return { ...c, ...override }; }
+      }
       return c;
     });
     // kintoneId がなければコンテナ番号をキーに stepOverridesMap にも登録
     if (!kintoneId) {
       stepOverridesMap.set(`no:${noStr}`, override);
     }
-    console.log(`[step-update] sheet match: ${matched}, no=${noStr}`);
+    console.log(`[step-update] sheet match: ${matched}, no=${noStr}, kid=${kidStr || '-'}`);
   }
 
   const id = kintoneId ? String(kintoneId).trim() : `no:${String(no).trim().toUpperCase()}`;
