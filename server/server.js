@@ -996,10 +996,9 @@ app.post("/api/step-update", (req, res) => {
       }
       return c;
     });
-    // kintoneId がなければコンテナ番号をキーに stepOverridesMap にも登録
-    if (!kintoneId) {
-      stepOverridesMap.set(`no:${noStr}`, override);
-    }
+    // no:CONTNO キーは常に登録（kintoneId がある場合も fallback として残す）
+    // ※ Render 再デプロイ等で sheetContainerMemory の ID がズレた場合の保険
+    stepOverridesMap.set(`no:${noStr}`, override);
     console.log(`[step-update] sheet match: ${matched}, no=${noStr}, kid=${kidStr || '-'}`);
   }
 

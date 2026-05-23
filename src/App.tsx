@@ -1938,9 +1938,15 @@ function App() {
         }> = data.containers ?? [];
         if (patches.length > 0) {
           const patchMap = new Map<string, any>();
-          for (const p of patches) patchMap.set(String(p.id), p);
+          for (const p of patches) {
+            patchMap.set(String(p.id), p);
+            if (String(p.id).startsWith("no:") && p.id.length > 3) {
+              patchMap.set(`no:${String(p.id).slice(3).toUpperCase()}`, p);
+            }
+          }
           const applyPatch = (c: Container): Container => {
-            const p = patchMap.get(String(c.id));
+            const p = patchMap.get(String(c.id))
+              ?? patchMap.get(`no:${String(c.no).toUpperCase()}`);
             if (!p) return c;
             return {
               ...c,
