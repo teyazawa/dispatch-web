@@ -1600,6 +1600,8 @@ function App() {
       ...base,
       ...(patch ?? {}),
       id: realId,
+      no: patch?.no ?? base.no,
+      dropoffYard: patch?.dropoffYard ?? base.dropoffYard,
       worker4: (patch?.worker4 ?? base.worker4 ?? "").toString().trim(),
     };
 

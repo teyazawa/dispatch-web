@@ -999,6 +999,14 @@ app.post("/api/step-update", (req, res) => {
     // no:CONTNO キーは常に登録（kintoneId がある場合も fallback として残す）
     // ※ Render 再デプロイ等で sheetContainerMemory の ID がズレた場合の保険
     stepOverridesMap.set(`no:${noStr}`, override);
+
+    // ④配送完了: sheetContainerMemory から除去（GET /api/containers が再度追加しないよう）
+    if (stepNum === 4) {
+      const before = sheetContainerMemory.length;
+      sheetContainerMemory = sheetContainerMemory.filter(c => c.no.toUpperCase() !== noStr);
+      console.log(`[step-update] step=4, removed ${before - sheetContainerMemory.length} container(s) with no=${noStr} from memory`);
+    }
+
     console.log(`[step-update] sheet match: ${matched}, no=${noStr}, kid=${kidStr || '-'}`);
   }
 
