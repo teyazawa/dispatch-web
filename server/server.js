@@ -969,7 +969,7 @@ async function fetchSheetContainers() {
  *  Body: { kintoneId, no?, step, yardIn2? }
  *  ========================= */
 app.post("/api/step-update", (req, res) => {
-  const { kintoneId, no, step, yardIn2, dropoffYard } = req.body ?? {};
+  const { kintoneId, no, step, yardIn2, dropoffYard, xray } = req.body ?? {};
   if (step == null || (!kintoneId && !no)) {
     return res.status(400).json({ error: "step and (kintoneId or no) are required" });
   }
@@ -996,22 +996,30 @@ app.post("/api/step-update", (req, res) => {
       }
       return c;
     });
-    // step=4+kintoneId の場合は no:CONTNO を登録しない
-    // 同一コンテナ番号の通常ドレーが誤って配送完了へ移動するのを防ぐ
-    if (!(kidStr && stepNum === 4)) {
+    // xray=true: xray:CONTNOキーを使用（no:CONTNOは通常ドレー用に保持、step=4汚染を防ぐ）
+    // step=4+kintoneId: no:CONTNOを登録しない（通常ドレーが誤って配送完了へ移動するのを防ぐ）
+    if (xray) {
+      stepOverridesMap.set(`xray:${noStr}`, override);
+    } else if (!(kidStr && stepNum === 4)) {
       stepOverridesMap.set(`no:${noStr}`, override);
     }
 
     // ④配送完了: sheetContainerMemory から除去（GET /api/containers が再度追加しないよう）
     // kintoneId 指定時はIDで除去（同一コンテナ番号の別レコード＝通常ドレーは残す）
+    // xray=true 時はdestinationで識別し、通常ドレーは残す
     if (stepNum === 4) {
       const before = sheetContainerMemory.length;
       if (kidStr) {
         sheetContainerMemory = sheetContainerMemory.filter(c => String(c.id) !== kidStr);
+      } else if (xray) {
+        sheetContainerMemory = sheetContainerMemory.filter(c => {
+          if (c.no.toUpperCase() !== noStr) return true;
+          return !/(X線|税関)/i.test(c.destination || '');
+        });
       } else {
         sheetContainerMemory = sheetContainerMemory.filter(c => c.no.toUpperCase() !== noStr);
       }
-      console.log(`[step-update] step=4, removed ${before - sheetContainerMemory.length} container(s) no=${noStr} kid=${kidStr || '-'}`);
+      console.log(`[step-update] step=4, removed ${before - sheetContainerMemory.length} container(s) no=${noStr} kid=${kidStr || '-'} xray=${!!xray}`);
     }
 
     console.log(`[step-update] sheet match: ${matched}, no=${noStr}, kid=${kidStr || '-'}`);

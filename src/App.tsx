@@ -1821,26 +1821,73 @@ function App() {
         );
 
         // ② step=4 を配送完了へ移動。X線完了時は通常ドレーを元のシャーシへ入れ替え
-        // 先にシャーシ位置とコンテナ番号を記録（ref は re-render 前の状態を保持している）
-        // pId(kintoneId) -> { chassisId, containerNo }
-        const xrayChassisMap = new Map<string, { chassisId: string; containerNo: string }>();
+        // kintoneId エントリ用フォールバック: pId(kintoneId) -> { chassisId, containerNo, xrayId }
+        const xrayChassisMap = new Map<string, { chassisId: string; containerNo: string; xrayId: string }>();
         for (const p of patches) {
           if (Number(p.step) !== 4) continue;
           const pId = String(p.id);
-          if (pId.startsWith("no:")) continue; // no:CONTNO エントリはスキップ
+          if (pId.startsWith("no:") || pId.startsWith("xray:")) continue;
           const xrayGroup = groupsRef.current.find((g) => g.container?.id === pId);
           const containerNo = xrayGroup?.container?.no?.toUpperCase();
           if (xrayGroup && containerNo) {
-            xrayChassisMap.set(pId, { chassisId: xrayGroup.id, containerNo });
+            xrayChassisMap.set(pId, { chassisId: xrayGroup.id, containerNo, xrayId: pId });
           }
         }
 
         for (const p of patches) {
           const stepNum = Number(p.step);
           if (stepNum !== 4) continue;
-
           const pId = String(p.id);
-          // kintoneId エントリには no を渡さない（fallback で通常ドレーを誤検索しないよう）
+
+          if (pId.startsWith("xray:")) {
+            // X線専用処理: destinationでX線カードを識別してdoneへ移動し通常ドレーをswap
+            const noKey = pId.slice(5).toUpperCase();
+            const xrayGroup = groupsRef.current.find(
+              (g) =>
+                g.container?.no?.toUpperCase() === noKey &&
+                /(X線|税関)/i.test(g.container?.destination ?? ""),
+            );
+            if (!xrayGroup?.container) continue;
+
+            const xrayId = xrayGroup.container.id;
+            const chassisId = xrayGroup.id;
+
+            moveContainerToDelivered(xrayId, {
+              dropoffYard: p.dropoffYard,
+              step: 4,
+              worker4: (p.worker4 ?? "").toString().trim(),
+            });
+
+            const normalCard =
+              containersRef.current.find(
+                (c) => c.no?.toUpperCase() === noKey && c.id !== xrayId,
+              ) ??
+              tempRef.current.find(
+                (c) => c.no?.toUpperCase() === noKey && c.id !== xrayId,
+              ) ??
+              groupsRef.current.find(
+                (g) =>
+                  g.container?.no?.toUpperCase() === noKey && g.container?.id !== xrayId,
+              )?.container;
+            if (!normalCard) continue;
+
+            const normalId = normalCard.id;
+            setContainers((prev) => prev.filter((c) => c.id !== normalId));
+            setTempContainers((prev) => prev.filter((c) => c.id !== normalId));
+            setGroups((prev) =>
+              prev.map((g) => (g.container?.id === normalId ? { ...g, container: undefined } : g)),
+            );
+            setGroups((prev) =>
+              prev.map((g) =>
+                g.id === chassisId && !g.container
+                  ? { ...g, container: { ...normalCard, step: 1 } }
+                  : g,
+              ),
+            );
+            continue;
+          }
+
+          // 通常の step=4 処理（kintoneId または no: エントリ）
           moveContainerToDelivered(pId, {
             no: pId.startsWith("no:") ? (p.no ?? pId.slice(3)) : undefined,
             dropoffYard: p.dropoffYard,
@@ -1848,28 +1895,25 @@ function App() {
             worker4: (p.worker4 ?? "").toString().trim(),
           });
 
-          // X線完了後の入れ替わり（kintoneId エントリのみ対象）
+          // X線完了後の入れ替わり（kintoneId エントリ: フォールバック用）
           const xrayInfo = xrayChassisMap.get(pId);
           if (!xrayInfo) continue;
-          const { chassisId, containerNo } = xrayInfo;
+          const { chassisId, containerNo, xrayId } = xrayInfo;
 
-          // 同一コンテナ番号・別 ID の通常ドレーを refs から直接検索
           const normalCard =
             containersRef.current.find(
-              (c) => c.no?.toUpperCase() === containerNo && c.id !== pId,
+              (c) => c.no?.toUpperCase() === containerNo && c.id !== xrayId,
             ) ??
             tempRef.current.find(
-              (c) => c.no?.toUpperCase() === containerNo && c.id !== pId,
+              (c) => c.no?.toUpperCase() === containerNo && c.id !== xrayId,
             ) ??
             groupsRef.current.find(
               (g) =>
-                g.container?.no?.toUpperCase() === containerNo && g.container?.id !== pId,
+                g.container?.no?.toUpperCase() === containerNo && g.container?.id !== xrayId,
             )?.container;
           if (!normalCard) continue;
 
           const normalId = normalCard.id;
-
-          // 通常ドレーをプール・シャーシから除去し、X線の元シャーシへ配置
           setContainers((prev) => prev.filter((c) => c.id !== normalId));
           setTempContainers((prev) => prev.filter((c) => c.id !== normalId));
           setGroups((prev) =>
