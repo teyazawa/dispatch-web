@@ -979,7 +979,9 @@ app.post("/api/step-update", (req, res) => {
   if (dropoffYard) override.dropoffYard = String(dropoffYard).trim();
 
   if (kintoneId) {
-    stepOverridesMap.set(String(kintoneId).trim(), override);
+    // no がある場合はコンテナ番号もエントリに含める（クライアントが番号で通常ドレーを特定できるよう）
+    const kidEntry = no ? { ...override, no: String(no).trim().toUpperCase() } : override;
+    stepOverridesMap.set(String(kintoneId).trim(), kidEntry);
   }
 
   // sheet containers に同じコンテナ番号があれば直接更新
@@ -996,9 +998,11 @@ app.post("/api/step-update", (req, res) => {
       }
       return c;
     });
-    // no:CONTNO キーは常に登録（kintoneId がある場合も fallback として残す）
-    // ※ Render 再デプロイ等で sheetContainerMemory の ID がズレた場合の保険
-    stepOverridesMap.set(`no:${noStr}`, override);
+    // step=4+kintoneId の場合は no:CONTNO を登録しない
+    // 同一コンテナ番号の通常ドレーが誤って配送完了へ移動するのを防ぐ
+    if (!(kidStr && stepNum === 4)) {
+      stepOverridesMap.set(`no:${noStr}`, override);
+    }
 
     // ④配送完了: sheetContainerMemory から除去（GET /api/containers が再度追加しないよう）
     // kintoneId 指定時はIDで除去（同一コンテナ番号の別レコード＝通常ドレーは残す）
