@@ -1821,18 +1821,18 @@ function App() {
         );
 
         // ② step=4 を配送完了へ移動。X線完了時は通常ドレーを元のシャーシへ入れ替え
-        // 先にシャーシ位置を記録（ref は re-render 前の状態を保持している）
-        const xrayChassisMap = new Map<string, string>(); // containerNo -> chassisGroupId
+        // 先にシャーシ位置とコンテナ番号を記録（ref は re-render 前の状態を保持している）
+        // pId(kintoneId) -> { chassisId, containerNo }
+        const xrayChassisMap = new Map<string, { chassisId: string; containerNo: string }>();
         for (const p of patches) {
           if (Number(p.step) !== 4) continue;
           const pId = String(p.id);
-          const pNo = p.no ?? (pId.startsWith("no:") ? pId.slice(3) : null);
-          if (!pNo) continue;
-          const noUp = String(pNo).toUpperCase();
-          const xrayGroup = pId.startsWith("no:")
-            ? groupsRef.current.find((g) => g.container?.no?.toUpperCase() === noUp)
-            : groupsRef.current.find((g) => g.container?.id === pId);
-          if (xrayGroup) xrayChassisMap.set(noUp, xrayGroup.id);
+          if (pId.startsWith("no:")) continue; // no:CONTNO エントリはスキップ
+          const xrayGroup = groupsRef.current.find((g) => g.container?.id === pId);
+          const containerNo = xrayGroup?.container?.no?.toUpperCase();
+          if (xrayGroup && containerNo) {
+            xrayChassisMap.set(pId, { chassisId: xrayGroup.id, containerNo });
+          }
         }
 
         for (const p of patches) {
@@ -1840,37 +1840,34 @@ function App() {
           if (stepNum !== 4) continue;
 
           const pId = String(p.id);
+          // kintoneId エントリには no を渡さない（fallback で通常ドレーを誤検索しないよう）
           moveContainerToDelivered(pId, {
-            no: p.no,
+            no: pId.startsWith("no:") ? (p.no ?? pId.slice(3)) : undefined,
             dropoffYard: p.dropoffYard,
             step: stepNum,
             worker4: (p.worker4 ?? "").toString().trim(),
           });
 
-          // X線完了後の入れ替わり：同一コンテナ番号の step=1 カードを元のシャーシへ配置
-          const pNo = p.no ?? (pId.startsWith("no:") ? pId.slice(3) : null);
-          if (!pNo) continue;
-          const noUp = String(pNo).toUpperCase();
-          const chassisId = xrayChassisMap.get(noUp);
-          if (!chassisId) continue;
+          // X線完了後の入れ替わり（kintoneId エントリのみ対象）
+          const xrayInfo = xrayChassisMap.get(pId);
+          if (!xrayInfo) continue;
+          const { chassisId, containerNo } = xrayInfo;
 
-          // 同一コンテナ番号・step=1 の通常ドレーを探す（no:CONTNO エントリは除外）
-          const normalPatch = patches.find(
-            (q) =>
-              Number(q.step) === 1 &&
-              q.id !== pId &&
-              !String(q.id).startsWith("no:") &&
-              (q.no?.toUpperCase() === noUp ||
-                (String(q.id).startsWith("no:") && String(q.id).slice(3).toUpperCase() === noUp)),
-          );
-          const normalId = normalPatch?.id;
-          if (!normalId) continue;
-
+          // 同一コンテナ番号・別 ID の通常ドレーを refs から直接検索
           const normalCard =
-            containersRef.current.find((c) => c.id === normalId) ??
-            tempRef.current.find((c) => c.id === normalId) ??
-            groupsRef.current.find((g) => g.container?.id === normalId)?.container;
+            containersRef.current.find(
+              (c) => c.no?.toUpperCase() === containerNo && c.id !== pId,
+            ) ??
+            tempRef.current.find(
+              (c) => c.no?.toUpperCase() === containerNo && c.id !== pId,
+            ) ??
+            groupsRef.current.find(
+              (g) =>
+                g.container?.no?.toUpperCase() === containerNo && g.container?.id !== pId,
+            )?.container;
           if (!normalCard) continue;
+
+          const normalId = normalCard.id;
 
           // 通常ドレーをプール・シャーシから除去し、X線の元シャーシへ配置
           setContainers((prev) => prev.filter((c) => c.id !== normalId));

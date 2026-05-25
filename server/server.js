@@ -979,9 +979,7 @@ app.post("/api/step-update", (req, res) => {
   if (dropoffYard) override.dropoffYard = String(dropoffYard).trim();
 
   if (kintoneId) {
-    // no がある場合はコンテナ番号もエントリに含める（クライアントが番号で通常ドレーを特定できるよう）
-    const kidEntry = no ? { ...override, no: String(no).trim().toUpperCase() } : override;
-    stepOverridesMap.set(String(kintoneId).trim(), kidEntry);
+    stepOverridesMap.set(String(kintoneId).trim(), override);
   }
 
   // sheet containers に同じコンテナ番号があれば直接更新
