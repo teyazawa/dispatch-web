@@ -1001,10 +1001,15 @@ app.post("/api/step-update", (req, res) => {
     stepOverridesMap.set(`no:${noStr}`, override);
 
     // ④配送完了: sheetContainerMemory から除去（GET /api/containers が再度追加しないよう）
+    // kintoneId 指定時はIDで除去（同一コンテナ番号の別レコード＝通常ドレーは残す）
     if (stepNum === 4) {
       const before = sheetContainerMemory.length;
-      sheetContainerMemory = sheetContainerMemory.filter(c => c.no.toUpperCase() !== noStr);
-      console.log(`[step-update] step=4, removed ${before - sheetContainerMemory.length} container(s) with no=${noStr} from memory`);
+      if (kidStr) {
+        sheetContainerMemory = sheetContainerMemory.filter(c => String(c.id) !== kidStr);
+      } else {
+        sheetContainerMemory = sheetContainerMemory.filter(c => c.no.toUpperCase() !== noStr);
+      }
+      console.log(`[step-update] step=4, removed ${before - sheetContainerMemory.length} container(s) no=${noStr} kid=${kidStr || '-'}`);
     }
 
     console.log(`[step-update] sheet match: ${matched}, no=${noStr}, kid=${kidStr || '-'}`);
