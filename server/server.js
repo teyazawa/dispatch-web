@@ -1001,6 +1001,7 @@ app.post("/api/step-update", (req, res) => {
     // step=4+kintoneId: no:CONTNOを登録しない（通常ドレーが誤って配送完了へ移動するのを防ぐ）
     if (nextDay) {
       stepOverridesMap.set(`nextDay:${noStr}`, override);
+      stepOverridesMap.delete(`no:${noStr}`); // 翌日配送確定後は no: override を削除（翌日カードへの色変化汚染を防ぐ）
     } else if (xray) {
       stepOverridesMap.set(`xray:${noStr}`, override);
     } else if (!(kidStr && stepNum === 4)) {

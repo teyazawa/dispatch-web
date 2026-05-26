@@ -1792,6 +1792,13 @@ function App() {
           }
         }
 
+        // nextDay: パッチがある場合は対応する no: パッチを除外（翌日配送カードへの色変化汚染を防ぐ）
+        for (const p of patches) {
+          if (String(p.id).startsWith("nextDay:")) {
+            patchMap.delete(`no:${String(p.id).slice(8).toUpperCase()}`);
+          }
+        }
+
         const applyPatch = (c: Container): Container => {
           const p = patchMap.get(String(c.id))
             ?? patchMap.get(`no:${String(c.no).toUpperCase()}`);
@@ -2053,6 +2060,13 @@ function App() {
               patchMap.set(`no:${String(p.id).slice(3).toUpperCase()}`, p);
             }
           }
+          // nextDay: パッチがある場合は対応する no: パッチを除外（翌日配送カードへの色変化汚染を防ぐ）
+          for (const p of patches) {
+            if (String(p.id).startsWith("nextDay:")) {
+              patchMap.delete(`no:${String(p.id).slice(8).toUpperCase()}`);
+            }
+          }
+
           const applyPatch = (c: Container): Container => {
             const p = patchMap.get(String(c.id))
               ?? patchMap.get(`no:${String(c.no).toUpperCase()}`);
