@@ -1826,7 +1826,7 @@ function App() {
         for (const p of patches) {
           if (Number(p.step) !== 4) continue;
           const pId = String(p.id);
-          if (pId.startsWith("no:") || pId.startsWith("xray:")) continue;
+          if (pId.startsWith("no:") || pId.startsWith("xray:") || pId.startsWith("nextDay:")) continue;
           const xrayGroup = groupsRef.current.find((g) => g.container?.id === pId);
           const containerNo = xrayGroup?.container?.no?.toUpperCase();
           if (xrayGroup && containerNo) {
@@ -1838,6 +1838,18 @@ function App() {
           const stepNum = Number(p.step);
           if (stepNum !== 4) continue;
           const pId = String(p.id);
+
+          if (pId.startsWith("nextDay:")) {
+            // 翌日配送完了: 当日カードを配送完了へ移動（翌日カードは次回ポーリングで表示）
+            const noKey = pId.slice(8).toUpperCase();
+            const currentCard =
+              groupsRef.current.find((g) => g.container?.no?.toUpperCase() === noKey)?.container ??
+              containersRef.current.find((c) => c.no?.toUpperCase() === noKey) ??
+              tempRef.current.find((c) => c.no?.toUpperCase() === noKey);
+            if (!currentCard) continue;
+            moveContainerToDelivered(currentCard.id, { step: 4 });
+            continue;
+          }
 
           if (pId.startsWith("xray:")) {
             // X線専用処理: destinationでX線カードを識別してdoneへ移動し通常ドレーをswap

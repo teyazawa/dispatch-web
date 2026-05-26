@@ -969,7 +969,7 @@ async function fetchSheetContainers() {
  *  Body: { kintoneId, no?, step, yardIn2? }
  *  ========================= */
 app.post("/api/step-update", (req, res) => {
-  const { kintoneId, no, step, yardIn2, dropoffYard, xray } = req.body ?? {};
+  const { kintoneId, no, step, yardIn2, dropoffYard, xray, nextDay } = req.body ?? {};
   if (step == null || (!kintoneId && !no)) {
     return res.status(400).json({ error: "step and (kintoneId or no) are required" });
   }
@@ -997,8 +997,11 @@ app.post("/api/step-update", (req, res) => {
       return c;
     });
     // xray=true: xray:CONTNOキーを使用（no:CONTNOは通常ドレー用に保持、step=4汚染を防ぐ）
+    // nextDay=true: nextDay:CONTNOキーを使用（翌日配送完了、当日カードを配送完了へ）
     // step=4+kintoneId: no:CONTNOを登録しない（通常ドレーが誤って配送完了へ移動するのを防ぐ）
-    if (xray) {
+    if (nextDay) {
+      stepOverridesMap.set(`nextDay:${noStr}`, override);
+    } else if (xray) {
       stepOverridesMap.set(`xray:${noStr}`, override);
     } else if (!(kidStr && stepNum === 4)) {
       stepOverridesMap.set(`no:${noStr}`, override);
@@ -1007,6 +1010,7 @@ app.post("/api/step-update", (req, res) => {
     // ④配送完了: sheetContainerMemory から除去（GET /api/containers が再度追加しないよう）
     // kintoneId 指定時はIDで除去（同一コンテナ番号の別レコード＝通常ドレーは残す）
     // xray=true 時はdestinationで識別し、通常ドレーは残す
+    // nextDay=true 時は当日分（コンテナ番号一致）を除去
     if (stepNum === 4) {
       const before = sheetContainerMemory.length;
       if (kidStr) {
@@ -1019,7 +1023,7 @@ app.post("/api/step-update", (req, res) => {
       } else {
         sheetContainerMemory = sheetContainerMemory.filter(c => c.no.toUpperCase() !== noStr);
       }
-      console.log(`[step-update] step=4, removed ${before - sheetContainerMemory.length} container(s) no=${noStr} kid=${kidStr || '-'} xray=${!!xray}`);
+      console.log(`[step-update] step=4, removed ${before - sheetContainerMemory.length} container(s) no=${noStr} kid=${kidStr || '-'} xray=${!!xray} nextDay=${!!nextDay}`);
     }
 
     console.log(`[step-update] sheet match: ${matched}, no=${noStr}, kid=${kidStr || '-'}`);
