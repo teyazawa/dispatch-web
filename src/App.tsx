@@ -1800,8 +1800,12 @@ function App() {
         }
 
         const applyPatch = (c: Container): Container => {
+          // no:CONTNOフォールバックはシートコンテナ(sheet_*)のみ適用
+          // kintoneカードは個別IDで識別するため、no:CONTNOは使用しない
+          // （同一コンテナ番号の翌日配送kintoneカードへの色変化汚染を防ぐ）
+          const isSheetContainer = String(c.id).startsWith("sheet_");
           const p = patchMap.get(String(c.id))
-            ?? patchMap.get(`no:${String(c.no).toUpperCase()}`);
+            ?? (isSheetContainer ? patchMap.get(`no:${String(c.no).toUpperCase()}`) : undefined);
           if (!p) return c;
 
           return {
@@ -2068,8 +2072,10 @@ function App() {
           }
 
           const applyPatch = (c: Container): Container => {
+            // no:CONTNOフォールバックはシートコンテナ(sheet_*)のみ適用
+            const isSheetContainer = String(c.id).startsWith("sheet_");
             const p = patchMap.get(String(c.id))
-              ?? patchMap.get(`no:${String(c.no).toUpperCase()}`);
+              ?? (isSheetContainer ? patchMap.get(`no:${String(c.no).toUpperCase()}`) : undefined);
             if (!p) return c;
             return {
               ...c,
