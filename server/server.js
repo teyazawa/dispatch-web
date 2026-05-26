@@ -996,15 +996,17 @@ app.post("/api/step-update", (req, res) => {
       }
       return c;
     });
-    // xray=true: xray:CONTNOキーを使用（no:CONTNOは通常ドレー用に保持、step=4汚染を防ぐ）
+    // xray=true: xray:CONTNOキーを使用
     // nextDay=true: nextDay:CONTNOキーを使用（翌日配送完了、当日カードを配送完了へ）
-    // step=4+kintoneId: no:CONTNOを登録しない（通常ドレーが誤って配送完了へ移動するのを防ぐ）
+    // kintoneId指定あり: no:CONTNOを登録しない（同じコンテナ番号の翌日カードへの色変化汚染を防ぐ）
+    //   kintoneカードは個別のkintoneIdで識別できるので no:CONTNO は不要
+    // kintoneId指定なし(シートコンテナ): no:CONTNOを登録する
     if (nextDay) {
       stepOverridesMap.set(`nextDay:${noStr}`, override);
-      stepOverridesMap.delete(`no:${noStr}`); // 翌日配送確定後は no: override を削除（翌日カードへの色変化汚染を防ぐ）
+      stepOverridesMap.delete(`no:${noStr}`);
     } else if (xray) {
       stepOverridesMap.set(`xray:${noStr}`, override);
-    } else if (!(kidStr && stepNum === 4)) {
+    } else if (!kidStr) {
       stepOverridesMap.set(`no:${noStr}`, override);
     }
 
