@@ -121,8 +121,6 @@ type Container = {
   /** 工程ステップ（サーバーから渡してもらう想定） */
   step?: ContainerStep;
   worker4?: string;
-  /** 翌日配送カード（当日の步進パッチを適用しない） */
-  nextDay?: boolean;
 };
 
 type BoardState = {
@@ -1683,7 +1681,6 @@ function App() {
 
             worker4: (c.worker4 ?? "").toString().trim(),
             step: c.step ?? undefined,
-            nextDay: c.nextDay || undefined,
           };
         });
 
@@ -1803,12 +1800,24 @@ function App() {
         }
 
         const applyPatch = (c: Container): Container => {
-          // no:CONTNOフォールバックはシートコンテナ(sheet_*)のみ適用
-          // kintoneカードは個別IDで識別するため、no:CONTNOは使用しない
-          // nextDay=trueの翌日配送カードは当日の步進パッチをスキップ（step=4のnextDay:キーで別途制御）
+          // kintoneカードは個別IDで識別
+          // sheetコンテナは no:CONTNO フォールバックを使うが、
+          // 同一CONTNOのkintoneカードが存在する場合はそのsheetが翌日カードなのでスキップ
           const isSheetContainer = String(c.id).startsWith("sheet_");
-          const p = patchMap.get(String(c.id))
-            ?? (isSheetContainer && !c.nextDay ? patchMap.get(`no:${String(c.no).toUpperCase()}`) : undefined);
+          let p = patchMap.get(String(c.id));
+          if (!p && isSheetContainer) {
+            const noPatch = patchMap.get(`no:${String(c.no).toUpperCase()}`);
+            if (noPatch) {
+              const noHasKintone = [
+                ...containersRef.current,
+                ...groupsRef.current.map((g) => g.container).filter((x): x is Container => x != null),
+                ...tempRef.current,
+              ].some(
+                (k) => !String(k.id).startsWith("sheet_") && String(k.no).toUpperCase() === String(c.no).toUpperCase()
+              );
+              if (!noHasKintone) p = noPatch;
+            }
+          }
           if (!p) return c;
 
           return {
@@ -1854,12 +1863,15 @@ function App() {
           const pId = String(p.id);
 
           if (pId.startsWith("nextDay:")) {
-            // 翌日配送完了: 当日カード(nextDay!=true)を配送完了へ移動（翌日カードは次回ポーリングで表示）
+            // 翌日配送完了: kintoneカード(当日)を優先して配送完了へ移動（翌日sheetカードは次回ポーリングで表示）
             const noKey = pId.slice(8).toUpperCase();
             const currentCard =
-              groupsRef.current.find((g) => g.container?.no?.toUpperCase() === noKey && !g.container?.nextDay)?.container ??
-              containersRef.current.find((c) => c.no?.toUpperCase() === noKey && !c.nextDay) ??
-              tempRef.current.find((c) => c.no?.toUpperCase() === noKey && !c.nextDay);
+              groupsRef.current.find((g) => g.container?.no?.toUpperCase() === noKey && !String(g.container?.id).startsWith("sheet_"))?.container ??
+              containersRef.current.find((c) => c.no?.toUpperCase() === noKey && !String(c.id).startsWith("sheet_")) ??
+              tempRef.current.find((c) => c.no?.toUpperCase() === noKey && !String(c.id).startsWith("sheet_")) ??
+              groupsRef.current.find((g) => g.container?.no?.toUpperCase() === noKey)?.container ??
+              containersRef.current.find((c) => c.no?.toUpperCase() === noKey) ??
+              tempRef.current.find((c) => c.no?.toUpperCase() === noKey);
             if (!currentCard) continue;
             moveContainerToDelivered(currentCard.id, { step: 4 });
             continue;
@@ -2016,7 +2028,6 @@ function App() {
             dispatchFiles: Array.isArray(c.dispatchFiles) ? c.dispatchFiles : [],
             worker4: (c.worker4 ?? "").toString().trim(),
             step: c.step ?? undefined,
-            nextDay: c.nextDay || undefined,
           };
         });
 
@@ -2076,11 +2087,24 @@ function App() {
           }
 
           const applyPatch = (c: Container): Container => {
-            // no:CONTNOフォールバックはシートコンテナ(sheet_*)のみ適用
-            // nextDay=trueの翌日配送カードは当日の步進パッチをスキップ
+            // kintoneカードは個別IDで識別
+            // sheetコンテナは no:CONTNO フォールバックを使うが、
+            // 同一CONTNOのkintoneカードが存在する場合はそのsheetが翌日カードなのでスキップ
             const isSheetContainer = String(c.id).startsWith("sheet_");
-            const p = patchMap.get(String(c.id))
-              ?? (isSheetContainer && !c.nextDay ? patchMap.get(`no:${String(c.no).toUpperCase()}`) : undefined);
+            let p = patchMap.get(String(c.id));
+            if (!p && isSheetContainer) {
+              const noPatch = patchMap.get(`no:${String(c.no).toUpperCase()}`);
+              if (noPatch) {
+                const noHasKintone = [
+                  ...containersRef.current,
+                  ...groupsRef.current.map((g) => g.container).filter((x): x is Container => x != null),
+                  ...tempRef.current,
+                ].some(
+                  (k) => !String(k.id).startsWith("sheet_") && String(k.no).toUpperCase() === String(c.no).toUpperCase()
+                );
+                if (!noHasKintone) p = noPatch;
+              }
+            }
             if (!p) return c;
             return {
               ...c,

@@ -37,6 +37,9 @@ let sheetContainerMemory = [];
 /** GASアプリからの工程通知（kintoneId → { step, yardIn2? }）*/
 const stepOverridesMap = new Map();
 
+/** /api/containers フェッチ時に更新される kintone コンテナno集合（翌日sheet判定用）*/
+let kintoneNosCache = new Set();
+
 /** =========================
  *  CORS / JSON
  *  ========================= */
@@ -476,6 +479,9 @@ app.get("/api/containers", async (req, res) => {
         console.error("kintone コンテナ取得エラー:", kErr.response?.status, kErr.message);
       }
     }
+
+    // kintone nos をキャッシュ（翌日sheetコンテナ判定に使用）
+    kintoneNosCache = new Set(kintoneContainers.map(c => String(c.no || '').toUpperCase()));
 
     const overriddenKintone = kintoneContainers.map(c => {
       const ov = stepOverridesMap.get(String(c.id));
@@ -992,8 +998,8 @@ app.post("/api/step-update", (req, res) => {
       if (kidStr) {
         if (String(c.id) === kidStr) { matched = true; return { ...c, ...override }; }
       } else {
-        // nextDay=trueの翌日配送カードは当日の步進パッチをスキップ
-        if (c.no.toUpperCase() === noStr && !c.nextDay) { matched = true; return { ...c, ...override }; }
+        // kintoneカードが同一CONTNOで存在する場合、sheetコンテナは翌日カードなのでスキップ
+        if (c.no.toUpperCase() === noStr && !kintoneNosCache.has(noStr)) { matched = true; return { ...c, ...override }; }
       }
       return c;
     });
@@ -1061,15 +1067,7 @@ app.post("/api/load-sheet-containers", async (req, res) => {
       containers = await fetchSheetContainers();
       console.log(`[sheet] fetched ${containers.length} containers from sheet`);
     }
-    // 今日以外の日付のコンテナは翌日配送カードとしてマーク（当日の步進パッチを受け取らない）
-    const _now = new Date();
-    const _todayMonth = _now.getMonth() + 1;
-    const _todayDay = _now.getDate();
-    sheetContainerMemory = containers.map(c => {
-      const m = String(c.date || '').match(/^(\d{1,2})\/(\d{1,2})$/);
-      const isToday = !m || (parseInt(m[1]) === _todayMonth && parseInt(m[2]) === _todayDay);
-      return isToday ? c : { ...c, nextDay: true };
-    });
+    sheetContainerMemory = containers;
     return res.json({ ok: true, loaded: containers.length });
   } catch (err) {
     console.error("load-sheet-containers エラー:", err.message);
