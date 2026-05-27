@@ -1038,18 +1038,30 @@ app.post("/api/step-update", (req, res) => {
       console.log(`[step-update] step=4, removed ${before - sheetContainerMemory.length} container(s) no=${noStr} kid=${kidStr || '-'} xray=${!!xray} nextDay=${!!nextDay}`);
     }
 
-    console.log(`[step-update] sheet match: ${matched}, no=${noStr}, kid=${kidStr || '-'}`);
+    const sheetCount = sheetContainerMemory.filter(c => String(c.no || '').toUpperCase() === noStr).length;
+    console.log(`[step-update] sheet match: ${matched}, firstSheetMatchId: ${firstSheetMatchId || 'null'}, sheetCount: ${sheetCount}, no=${noStr}, kid=${kidStr || '-'}`);
   }
 
-  const id = kintoneId ? String(kintoneId).trim() : `no:${String(no).trim().toUpperCase()}`;
-  console.log(`[step-update] id=${id} step=${stepNum} dropoffYard=${dropoffYard || "-"} yardIn2=${yardIn2 || "-"} map_size=${stepOverridesMap.size}`);
-  return res.json({ ok: true, id, step: stepNum });
+  const mapKeys = Array.from(stepOverridesMap.keys()).join(',');
+  console.log(`[step-update] RESULT: kintoneId=${kintoneId || '-'} no=${no || '-'} step=${stepNum} mapKeys=[${mapKeys}]`);
+  return res.json({ ok: true, step: stepNum });
 });
 
 /** GET /api/step-overrides — デバッグ用：現在のstepOverridesMapを確認 */
 app.get("/api/step-overrides", (_req, res) => {
   const entries = Object.fromEntries(stepOverridesMap);
   res.json({ count: stepOverridesMap.size, entries });
+});
+
+/** GET /api/debug-sheets — デバッグ用：sheetContainerMemoryの内容を確認 */
+app.get("/api/debug-sheets", (_req, res) => {
+  const grouped = {};
+  for (const c of sheetContainerMemory) {
+    const no = String(c.no || '').toUpperCase();
+    if (!grouped[no]) grouped[no] = [];
+    grouped[no].push({ id: c.id, no: c.no, step: c.step, date: c.date, destination: c.destination, nextDay: c.nextDay });
+  }
+  res.json({ count: sheetContainerMemory.length, grouped });
 });
 
 /** =========================
