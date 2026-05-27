@@ -1900,14 +1900,31 @@ function App() {
             setGroups((prev) =>
               prev.map((g) => (g.container?.id === ndId ? { ...g, container: undefined } : g)),
             );
+            // パッチにyardIn2があれば翌日カードに適用（GASがsourceYardIn2を送信した場合）
+            const ndYardIn2 = p.yardIn2 ? String(p.yardIn2).trim() : undefined;
+            const ndDropoffYard = p.dropoffYard ? String(p.dropoffYard).trim() : undefined;
+            const activatedCard = {
+              ...nextDayCard,
+              step: 1,
+              ...(ndYardIn2 ? { yardIn2: ndYardIn2 } : {}),
+              ...(ndDropoffYard ? { dropoffYard: ndDropoffYard } : {}),
+            };
             if (nextDayChassisId) {
               // シャーシに乗せる（moveContainerToDeliveredがシャーシを空にした後に配置）
               setGroups((prev) =>
                 prev.map((g) =>
                   g.id === nextDayChassisId && !g.container
-                    ? { ...g, container: { ...nextDayCard, step: 1 } }
+                    ? { ...g, container: activatedCard }
                     : g,
                 ),
+              );
+            } else {
+              // シャーシなし: containersのstep/yardIn2を更新
+              setContainers((prev) =>
+                prev.map((c) => (c.id === ndId ? activatedCard : c)),
+              );
+              setTempContainers((prev) =>
+                prev.map((c) => (c.id === ndId ? activatedCard : c)),
               );
             }
             continue;
