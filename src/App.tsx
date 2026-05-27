@@ -1695,11 +1695,18 @@ function App() {
           .filter((id) => !ackedContainerIdsRef.current.has(id) && !String(id).startsWith("sheet_"));
 
         // ★ 2) 画面更新（マージ）は今まで通り
+        // グループ・一時保管・配送完了にあるコンテナはスキップ（sheetContainerMemory保持により無限ポップを防ぐ）
         setContainers((prev) => {
+          const skipIds = new Set<string>();
+          for (const g of groupsRef.current) { if (g.container) skipIds.add(String(g.container.id)); }
+          for (const c of tempRef.current) skipIds.add(String(c.id));
+          for (const c of doneRef.current) skipIds.add(String(c.id));
+
           const map = new Map<string, Container>();
           prev.forEach((p) => map.set(p.id, p));
 
           for (const nc of fetched) {
+            if (skipIds.has(String(nc.id))) continue;
             const existing = map.get(nc.id);
             map.set(nc.id, existing ? { ...existing, ...nc } : nc);
           }
@@ -2093,10 +2100,17 @@ function App() {
           .map((c) => c.id)
           .filter((id) => !ackedContainerIdsRef.current.has(id) && !String(id).startsWith("sheet_"));
 
+        // グループ・一時保管・配送完了にあるコンテナはスキップ（sheetContainerMemory保持により無限ポップを防ぐ）
         setContainers((prev) => {
+          const skipIds = new Set<string>();
+          for (const g of groupsRef.current) { if (g.container) skipIds.add(String(g.container.id)); }
+          for (const c of tempRef.current) skipIds.add(String(c.id));
+          for (const c of doneRef.current) skipIds.add(String(c.id));
+
           const map = new Map<string, Container>();
           prev.forEach((p) => map.set(p.id, p));
           for (const nc of fetched) {
+            if (skipIds.has(String(nc.id))) continue;
             const existing = map.get(nc.id);
             map.set(nc.id, existing ? { ...existing, ...nc } : nc);
           }
