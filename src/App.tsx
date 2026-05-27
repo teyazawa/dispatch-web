@@ -1144,6 +1144,8 @@ function App() {
 
   // ★ 追加：この端末が ACK 済みにしたコンテナID（再送防止）
   const ackedContainerIdsRef = useRef<Set<string>>(new Set());
+  // nextDay: パッチをセッション内で一度だけ処理するためのRef
+  const processedNextDayRef = useRef<Set<string>>(new Set());
 
   // ✅ DB復元が完了したか（fetchChassisの初期配置を走らせる/止める判定に使う）
   const [hydrationDone, setHydrationDone] = useState(false);
@@ -1871,16 +1873,19 @@ function App() {
 
           if (pId.startsWith("nextDay:")) {
             // フォールバック（server側でfirstSheetMatchId未取得時のみ到達）
-            // 同一CONTNOのカードを収集し、最も早い日付のカードのみ配送完了へ移動
-            // 翌日カードだけ残っている場合（当日カードが既に完了）はスキップ
+            // セッション内で一度だけ処理（processedNextDayRefで再処理防止）
             const noKey = pId.slice(8).toUpperCase();
+            if (processedNextDayRef.current.has(noKey)) continue; // 既にこのセッションで処理済み
             const allSameNo = [
               ...groupsRef.current.filter((g) => g.container?.no?.toUpperCase() === noKey).map((g) => g.container!),
               ...containersRef.current.filter((c) => c.no?.toUpperCase() === noKey),
               ...tempRef.current.filter((c) => c.no?.toUpperCase() === noKey),
             ].filter((c, i, arr) => arr.findIndex((x) => x.id === c.id) === i);
-            if (allSameNo.length < 2) continue; // 当日カードが既に完了 → スキップ
+            console.log(`[nextDay] ${noKey}: allSameNo=${allSameNo.length} ids=${allSameNo.map(c=>c.id+'/'+c.date).join(',')}`);
+            if (allSameNo.length < 2) { console.log(`[nextDay] skip: only ${allSameNo.length} card`); continue; }
             allSameNo.sort((a, b) => String(a.date || '99/99').localeCompare(String(b.date || '99/99')));
+            processedNextDayRef.current.add(noKey); // 処理済みとしてマーク
+            console.log(`[nextDay] moving to delivered: ${allSameNo[0].id} (date=${allSameNo[0].date})`);
             moveContainerToDelivered(allSameNo[0].id, { step: 4 });
             continue;
           }
