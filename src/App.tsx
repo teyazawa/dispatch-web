@@ -1797,9 +1797,13 @@ function App() {
         }
 
         // nextDay: パッチがある場合は対応する no: パッチを除外（翌日配送カードへの色変化汚染を防ぐ）
+        // ただし既にactivated済み（processedNextDayRef）の場合は除外しない（②③の色変化を許可）
         for (const p of patches) {
           if (String(p.id).startsWith("nextDay:")) {
-            patchMap.delete(`no:${String(p.id).slice(8).toUpperCase()}`);
+            const noKey = String(p.id).slice(8).toUpperCase();
+            if (!processedNextDayRef.current.has(noKey)) {
+              patchMap.delete(`no:${noKey}`);
+            }
           }
         }
 
