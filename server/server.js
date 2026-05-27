@@ -484,7 +484,20 @@ app.get("/api/containers", async (req, res) => {
     kintoneNosCache = new Set(kintoneContainers.map(c => String(c.no || '').toUpperCase()));
 
     const overriddenKintone = kintoneContainers.map(c => {
-      const ov = stepOverridesMap.get(String(c.id));
+      let ov = stepOverridesMap.get(String(c.id));
+      if (!ov) {
+        // no:CONTNO フォールバック: 同一CONTNOで最も早い日付のカードにのみ適用（翌日カード汚染防止）
+        const noPatch = stepOverridesMap.get(`no:${String(c.no || '').toUpperCase()}`);
+        if (noPatch) {
+          const cDate = String(c.date || '');
+          const hasEarlierDate = kintoneContainers.some(
+            (k) => k.id !== c.id &&
+              String(k.no || '').toUpperCase() === String(c.no || '').toUpperCase() &&
+              String(k.date || '') < cDate
+          );
+          if (!hasEarlierDate) ov = noPatch;
+        }
+      }
       return ov ? { ...c, ...ov } : c;
     });
     return res.json({ containers: [...overriddenKintone, ...sheetContainerMemory] });

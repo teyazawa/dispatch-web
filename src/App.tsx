@@ -1801,10 +1801,24 @@ function App() {
 
         const applyPatch = (c: Container): Container => {
           let p = patchMap.get(String(c.id));
-          // no:CONTNO フォールバック: sheetコンテナには適用しない（翌日カード汚染防止）
-          // サーバーは特定シートコンテナIDでstepOverridesMapに登録するため不要
+          // no:CONTNO フォールバック: sheetコンテナには適用しない
+          // 複数カードがある場合は最も早い日付のカードにのみ適用（翌日カード汚染防止）
           if (!p && !String(c.id).startsWith("sheet_")) {
-            p = patchMap.get(`no:${String(c.no).toUpperCase()}`);
+            const noPatch = patchMap.get(`no:${String(c.no).toUpperCase()}`);
+            if (noPatch) {
+              const cDate = String(c.date || '');
+              const allContainers = [
+                ...containersRef.current,
+                ...groupsRef.current.map((g) => g.container).filter((x): x is Container => x != null),
+                ...tempRef.current,
+              ];
+              const hasEarlierDate = allContainers.some(
+                (k) => k.id !== c.id &&
+                  String(k.no).toUpperCase() === String(c.no).toUpperCase() &&
+                  String(k.date || '') < cDate
+              );
+              if (!hasEarlierDate) p = noPatch;
+            }
           }
           if (!p) return c;
 
@@ -2076,9 +2090,24 @@ function App() {
 
           const applyPatch = (c: Container): Container => {
             let p = patchMap.get(String(c.id));
-            // no:CONTNO フォールバック: sheetコンテナには適用しない（翌日カード汚染防止）
+            // no:CONTNO フォールバック: sheetコンテナには適用しない
+            // 複数カードがある場合は最も早い日付のカードにのみ適用（翌日カード汚染防止）
             if (!p && !String(c.id).startsWith("sheet_")) {
-              p = patchMap.get(`no:${String(c.no).toUpperCase()}`);
+              const noPatch = patchMap.get(`no:${String(c.no).toUpperCase()}`);
+              if (noPatch) {
+                const cDate = String(c.date || '');
+                const allContainers = [
+                  ...containersRef.current,
+                  ...groupsRef.current.map((g) => g.container).filter((x): x is Container => x != null),
+                  ...tempRef.current,
+                ];
+                const hasEarlierDate = allContainers.some(
+                  (k) => k.id !== c.id &&
+                    String(k.no).toUpperCase() === String(c.no).toUpperCase() &&
+                    String(k.date || '') < cDate
+                );
+                if (!hasEarlierDate) p = noPatch;
+              }
             }
             if (!p) return c;
             return {
