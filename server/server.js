@@ -1016,10 +1016,30 @@ app.post("/api/step-update", (req, res) => {
     const kidStr = kintoneId ? String(kintoneId).trim() : '';
     let matched = false;
     let firstSheetMatchId = null;
+
+    // nextDay:CONTNO が登録済み（翌日カードactivated）かつ今回がnextDay/xrayでない場合は
+    // 最新日付のシートコンテナを対象にする（当日カードではなく翌日カードへ工程を送る）
+    const isNextDayActivated = !nextDay && !xray && stepOverridesMap.has(`nextDay:${noStr}`);
+    if (isNextDayActivated) {
+      // 最新日付のCONTNOコンテナを事前スキャンで特定
+      let latestDate = '';
+      for (const c of sheetContainerMemory) {
+        if (c.no.toUpperCase() === noStr) {
+          const d = String(c.date || '');
+          if (!latestDate || d > latestDate) { latestDate = d; firstSheetMatchId = String(c.id); }
+        }
+      }
+    }
+
     sheetContainerMemory = sheetContainerMemory.map(c => {
       // kintoneId と一致した場合は優先更新（kintone IDがsheet_XXXと一致することはないが念のため）
       if (kidStr && String(c.id) === kidStr) { matched = true; return { ...c, ...override }; }
-      // CONTNO で最初の1件を更新（翌日配送カードは2件目以降のためスキップ）
+      if (isNextDayActivated) {
+        // activated後: 事前スキャンで特定したIDのみ更新
+        if (String(c.id) === firstSheetMatchId) { matched = true; return { ...c, ...override }; }
+        return c;
+      }
+      // 通常: CONTNO で最初の1件を更新（日付昇順で当日が先頭）
       if (c.no.toUpperCase() === noStr && firstSheetMatchId === null) {
         firstSheetMatchId = String(c.id);
         matched = true;
