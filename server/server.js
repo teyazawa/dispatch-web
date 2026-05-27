@@ -1028,7 +1028,10 @@ app.post("/api/step-update", (req, res) => {
       return c;
     });
     if (nextDay) {
-      stepOverridesMap.set(`nextDay:${noStr}`, override);
+      // firstSheetMatchId が取得できた場合は特定カードIDをキーに使用（翌日カード汚染防止）
+      // フォールバックのみ nextDay:CONTNO を使用
+      const nextDayKey = firstSheetMatchId ?? `nextDay:${noStr}`;
+      stepOverridesMap.set(nextDayKey, override);
       stepOverridesMap.delete(`no:${noStr}`);
     } else if (xray) {
       stepOverridesMap.set(`xray:${noStr}`, override);
@@ -1051,6 +1054,13 @@ app.post("/api/step-update", (req, res) => {
           if (c.no.toUpperCase() !== noStr) return true;
           return !/(X線|税関)/i.test(c.destination || '');
         });
+      } else if (nextDay) {
+        // 翌日配送: 当日分（firstSheetMatchId）のみ除去、翌日カードは残す
+        if (firstSheetMatchId) {
+          sheetContainerMemory = sheetContainerMemory.filter(c => String(c.id) !== firstSheetMatchId);
+        } else {
+          sheetContainerMemory = sheetContainerMemory.filter(c => c.no.toUpperCase() !== noStr);
+        }
       } else {
         sheetContainerMemory = sheetContainerMemory.filter(c => c.no.toUpperCase() !== noStr);
       }

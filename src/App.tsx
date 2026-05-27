@@ -1870,17 +1870,18 @@ function App() {
           const pId = String(p.id);
 
           if (pId.startsWith("nextDay:")) {
-            // 翌日配送完了: kintoneカード(当日)を優先して配送完了へ移動（翌日sheetカードは次回ポーリングで表示）
+            // フォールバック（server側でfirstSheetMatchId未取得時のみ到達）
+            // 同一CONTNOのカードを収集し、最も早い日付のカードのみ配送完了へ移動
+            // 翌日カードだけ残っている場合（当日カードが既に完了）はスキップ
             const noKey = pId.slice(8).toUpperCase();
-            const currentCard =
-              groupsRef.current.find((g) => g.container?.no?.toUpperCase() === noKey && !String(g.container?.id).startsWith("sheet_"))?.container ??
-              containersRef.current.find((c) => c.no?.toUpperCase() === noKey && !String(c.id).startsWith("sheet_")) ??
-              tempRef.current.find((c) => c.no?.toUpperCase() === noKey && !String(c.id).startsWith("sheet_")) ??
-              groupsRef.current.find((g) => g.container?.no?.toUpperCase() === noKey)?.container ??
-              containersRef.current.find((c) => c.no?.toUpperCase() === noKey) ??
-              tempRef.current.find((c) => c.no?.toUpperCase() === noKey);
-            if (!currentCard) continue;
-            moveContainerToDelivered(currentCard.id, { step: 4 });
+            const allSameNo = [
+              ...groupsRef.current.filter((g) => g.container?.no?.toUpperCase() === noKey).map((g) => g.container!),
+              ...containersRef.current.filter((c) => c.no?.toUpperCase() === noKey),
+              ...tempRef.current.filter((c) => c.no?.toUpperCase() === noKey),
+            ].filter((c, i, arr) => arr.findIndex((x) => x.id === c.id) === i);
+            if (allSameNo.length < 2) continue; // 当日カードが既に完了 → スキップ
+            allSameNo.sort((a, b) => String(a.date || '99/99').localeCompare(String(b.date || '99/99')));
+            moveContainerToDelivered(allSameNo[0].id, { step: 4 });
             continue;
           }
 
