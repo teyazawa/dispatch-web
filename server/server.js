@@ -1031,11 +1031,9 @@ app.post("/api/step-update", (req, res) => {
       return c;
     });
     if (nextDay) {
-      // firstSheetMatchId が取得できた場合は特定カードIDをキーに使用（翌日カード汚染防止）
-      // フォールバックのみ nextDay:CONTNO を使用
-      const nextDayKey = firstSheetMatchId ?? `nextDay:${noStr}`;
-      const existing = stepOverridesMap.get(nextDayKey) || {};
-      stepOverridesMap.set(nextDayKey, { ...existing, ...override });
+      // nextDay:CONTNO を常に使用（App.tsx の nextDay: ハンドラが prefix チェックするため）
+      const existing = stepOverridesMap.get(`nextDay:${noStr}`) || {};
+      stepOverridesMap.set(`nextDay:${noStr}`, { ...existing, ...override });
       stepOverridesMap.delete(`no:${noStr}`);
     } else if (xray) {
       const existing = stepOverridesMap.get(`xray:${noStr}`) || {};
@@ -1046,6 +1044,10 @@ app.post("/api/step-update", (req, res) => {
       const mapKey = firstSheetMatchId ?? `no:${noStr}`;
       const existing = stepOverridesMap.get(mapKey) || {};
       stepOverridesMap.set(mapKey, { ...existing, ...override });
+    } else if (firstSheetMatchId) {
+      // kintoneId あり + シートコンテナあり: 10s delta polling で適用できるよう sheet ID にも登録
+      const existingSheet = stepOverridesMap.get(firstSheetMatchId) || {};
+      stepOverridesMap.set(firstSheetMatchId, { ...existingSheet, ...override });
     }
 
     // ④配送完了: sheetContainerMemory から除去（GET /api/containers が再度追加しないよう）
