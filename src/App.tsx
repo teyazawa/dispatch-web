@@ -1778,6 +1778,7 @@ function App() {
           no?: string;
           dropoffYard?: string;
           yardIn2?: string;
+          pickupYard?: string;
           step?: any;
           worker4?: string;
         }> = data.containers ?? [];
@@ -1901,12 +1902,14 @@ function App() {
             setGroups((prev) =>
               prev.map((g) => (g.container?.id === ndId ? { ...g, container: undefined } : g)),
             );
-            // パッチにyardIn2があれば翌日カードに適用（GASがsourceYardIn2を送信した場合）
+            // パッチにyardIn2/pickupYardがあれば翌日カードに適用（GASがsourceYardIn2/yardInAfterを送信した場合）
             const ndYardIn2 = p.yardIn2 ? String(p.yardIn2).trim() : undefined;
             const ndDropoffYard = p.dropoffYard ? String(p.dropoffYard).trim() : undefined;
+            const ndPickupYard = p.pickupYard ? String(p.pickupYard).trim() : undefined;
             const activatedCard: Container = {
               ...nextDayCard,
               step: 1 as ContainerStep,
+              ...(ndPickupYard ? { pickupYard: ndPickupYard } : {}),
               ...(ndYardIn2 ? { yardIn2: ndYardIn2 } : {}),
               ...(ndDropoffYard ? { dropoffYard: ndDropoffYard } : {}),
             };

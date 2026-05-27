@@ -994,7 +994,7 @@ async function fetchSheetContainers() {
  *  Body: { kintoneId, no?, step, yardIn2? }
  *  ========================= */
 app.post("/api/step-update", (req, res) => {
-  const { kintoneId, no, step, yardIn2, dropoffYard, xray, nextDay } = req.body ?? {};
+  const { kintoneId, no, step, yardIn2, dropoffYard, pickupYard, xray, nextDay } = req.body ?? {};
   if (step == null || (!kintoneId && !no)) {
     return res.status(400).json({ error: "step and (kintoneId or no) are required" });
   }
@@ -1002,6 +1002,7 @@ app.post("/api/step-update", (req, res) => {
   const override = { step: stepNum };
   if (yardIn2) override.yardIn2 = String(yardIn2).trim();
   if (dropoffYard) override.dropoffYard = String(dropoffYard).trim();
+  if (pickupYard) override.pickupYard = String(pickupYard).trim();
 
   if (kintoneId) {
     stepOverridesMap.set(String(kintoneId).trim(), override);

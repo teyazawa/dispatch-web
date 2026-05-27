@@ -884,8 +884,10 @@ body.dragging {
 .delivery-scroll {
   width: 100%;
   max-width: 100%;
-  overflow-x: auto; /* ★ ここだけ横スクロール */
+  overflow-x: auto;
   overflow-y: auto;
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 /*配送分の日付のフォントサイズ*/
