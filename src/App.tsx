@@ -1689,9 +1689,10 @@ function App() {
         if (isCancelled) return;
 
         // ★ 1) 既存IDをRefから取って「新規だけ」を判定（setStateの外でやる）
+        // sheet_ コンテナはACK不要（sheetContainerMemoryに残してstep更新ルーティングを維持するため）
         const newIdsToAck = fetched
           .map((c) => c.id)
-          .filter((id) => !ackedContainerIdsRef.current.has(id));
+          .filter((id) => !ackedContainerIdsRef.current.has(id) && !String(id).startsWith("sheet_"));
 
         // ★ 2) 画面更新（マージ）は今まで通り
         setContainers((prev) => {
@@ -2087,9 +2088,10 @@ function App() {
           };
         });
 
+        // sheet_ コンテナはACK不要（sheetContainerMemoryに残してstep更新ルーティングを維持するため）
         const newIdsToAck = fetched
           .map((c) => c.id)
-          .filter((id) => !ackedContainerIdsRef.current.has(id));
+          .filter((id) => !ackedContainerIdsRef.current.has(id) && !String(id).startsWith("sheet_"));
 
         setContainers((prev) => {
           const map = new Map<string, Container>();
