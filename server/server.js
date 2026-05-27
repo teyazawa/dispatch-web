@@ -486,25 +486,21 @@ app.get("/api/containers", async (req, res) => {
     kintoneNosCache = new Set(kintoneContainers.map(c => String(c.no || '').toUpperCase()));
     lastKintoneContainers = kintoneContainers.map(c => ({ id: c.id, no: c.no, date: c.date, step: c.step }));
 
-    // 当日日付（JST） MM/dd 形式
-    const nowJst = new Date(Date.now() + 9 * 3600000);
-    const todayStr = `${String(nowJst.getUTCMonth() + 1).padStart(2, '0')}/${String(nowJst.getUTCDate()).padStart(2, '0')}`;
-
     const overriddenKintone = kintoneContainers.map(c => {
       let ov = stepOverridesMap.get(String(c.id));
       if (!ov) {
-        // no:CONTNO フォールバック: 同一CONTNOの複数カードがある場合は当日カードのみ適用
+        // no:CONTNO フォールバック: 同一CONTNOで最も早い日付のカードのみ適用（翌日カード汚染防止）
         const noPatch = stepOverridesMap.get(`no:${String(c.no || '').toUpperCase()}`);
         if (noPatch) {
-          const cDate = String(c.date || '');
+          const cDate = String(c.date || '99/99');
           const sameNoCards = kintoneContainers.filter(
             (k) => k.id !== c.id && String(k.no || '').toUpperCase() === String(c.no || '').toUpperCase()
           );
           if (sameNoCards.length === 0) {
-            ov = noPatch; // 同一CONTNOが1枚だけ → 適用
+            ov = noPatch; // 同一CONTNOが1枚のみ → 適用
           } else {
-            const hasTodayCard = sameNoCards.some((k) => String(k.date || '') === todayStr);
-            if (hasTodayCard ? cDate === todayStr : true) ov = noPatch;
+            const hasEarlier = sameNoCards.some((k) => String(k.date || '99/99') < cDate);
+            if (!hasEarlier) ov = noPatch; // 最も早い日付のカードにのみ適用
           }
         }
       }
