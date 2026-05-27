@@ -993,28 +993,30 @@ app.post("/api/step-update", (req, res) => {
     const noStr = String(no).trim().toUpperCase();
     const kidStr = kintoneId ? String(kintoneId).trim() : '';
     let matched = false;
+    let firstSheetMatchId = null;
     sheetContainerMemory = sheetContainerMemory.map(c => {
       // kintoneId が指定された場合はIDで一意に特定（noは同一番号が複数存在する可能性があるため）
       if (kidStr) {
         if (String(c.id) === kidStr) { matched = true; return { ...c, ...override }; }
       } else {
-        // kintoneカードが同一CONTNOで存在する場合、sheetコンテナは翌日カードなのでスキップ
-        if (c.no.toUpperCase() === noStr && !kintoneNosCache.has(noStr)) { matched = true; return { ...c, ...override }; }
+        // 最初のCONTNO一致コンテナのみ更新（2番目以降は翌日配送カードとしてスキップ）
+        if (c.no.toUpperCase() === noStr && firstSheetMatchId === null) {
+          firstSheetMatchId = String(c.id);
+          matched = true;
+          return { ...c, ...override };
+        }
       }
       return c;
     });
-    // xray=true: xray:CONTNOキーを使用
-    // nextDay=true: nextDay:CONTNOキーを使用（翌日配送完了、当日カードを配送完了へ）
-    // kintoneId指定あり: no:CONTNOを登録しない（同じコンテナ番号の翌日カードへの色変化汚染を防ぐ）
-    //   kintoneカードは個別のkintoneIdで識別できるので no:CONTNO は不要
-    // kintoneId指定なし(シートコンテナ): no:CONTNOを登録する
     if (nextDay) {
       stepOverridesMap.set(`nextDay:${noStr}`, override);
       stepOverridesMap.delete(`no:${noStr}`);
     } else if (xray) {
       stepOverridesMap.set(`xray:${noStr}`, override);
     } else if (!kidStr) {
-      stepOverridesMap.set(`no:${noStr}`, override);
+      // no:CONTNO ではなく特定シートコンテナIDを使用（翌日カード汚染防止）
+      // シートコンテナが見つからない場合のみ no:CONTNO にフォールバック
+      stepOverridesMap.set(firstSheetMatchId ?? `no:${noStr}`, override);
     }
 
     // ④配送完了: sheetContainerMemory から除去（GET /api/containers が再度追加しないよう）

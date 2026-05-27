@@ -1800,23 +1800,11 @@ function App() {
         }
 
         const applyPatch = (c: Container): Container => {
-          // kintoneカードは個別IDで識別
-          // sheetコンテナは no:CONTNO フォールバックを使うが、
-          // 同一CONTNOのkintoneカードが存在する場合はそのsheetが翌日カードなのでスキップ
-          const isSheetContainer = String(c.id).startsWith("sheet_");
           let p = patchMap.get(String(c.id));
-          if (!p && isSheetContainer) {
-            const noPatch = patchMap.get(`no:${String(c.no).toUpperCase()}`);
-            if (noPatch) {
-              const noHasKintone = [
-                ...containersRef.current,
-                ...groupsRef.current.map((g) => g.container).filter((x): x is Container => x != null),
-                ...tempRef.current,
-              ].some(
-                (k) => !String(k.id).startsWith("sheet_") && String(k.no).toUpperCase() === String(c.no).toUpperCase()
-              );
-              if (!noHasKintone) p = noPatch;
-            }
+          // no:CONTNO フォールバック: sheetコンテナには適用しない（翌日カード汚染防止）
+          // サーバーは特定シートコンテナIDでstepOverridesMapに登録するため不要
+          if (!p && !String(c.id).startsWith("sheet_")) {
+            p = patchMap.get(`no:${String(c.no).toUpperCase()}`);
           }
           if (!p) return c;
 
@@ -2087,23 +2075,10 @@ function App() {
           }
 
           const applyPatch = (c: Container): Container => {
-            // kintoneカードは個別IDで識別
-            // sheetコンテナは no:CONTNO フォールバックを使うが、
-            // 同一CONTNOのkintoneカードが存在する場合はそのsheetが翌日カードなのでスキップ
-            const isSheetContainer = String(c.id).startsWith("sheet_");
             let p = patchMap.get(String(c.id));
-            if (!p && isSheetContainer) {
-              const noPatch = patchMap.get(`no:${String(c.no).toUpperCase()}`);
-              if (noPatch) {
-                const noHasKintone = [
-                  ...containersRef.current,
-                  ...groupsRef.current.map((g) => g.container).filter((x): x is Container => x != null),
-                  ...tempRef.current,
-                ].some(
-                  (k) => !String(k.id).startsWith("sheet_") && String(k.no).toUpperCase() === String(c.no).toUpperCase()
-                );
-                if (!noHasKintone) p = noPatch;
-              }
+            // no:CONTNO フォールバック: sheetコンテナには適用しない（翌日カード汚染防止）
+            if (!p && !String(c.id).startsWith("sheet_")) {
+              p = patchMap.get(`no:${String(c.no).toUpperCase()}`);
             }
             if (!p) return c;
             return {
