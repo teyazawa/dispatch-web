@@ -1802,22 +1802,27 @@ function App() {
         const applyPatch = (c: Container): Container => {
           let p = patchMap.get(String(c.id));
           // no:CONTNO フォールバック: sheetコンテナには適用しない
-          // 複数カードがある場合は最も早い日付のカードにのみ適用（翌日カード汚染防止）
+          // 同一CONTNOで複数カードがある場合は当日（today）のカードのみ適用（翌日カード汚染防止）
           if (!p && !String(c.id).startsWith("sheet_")) {
             const noPatch = patchMap.get(`no:${String(c.no).toUpperCase()}`);
             if (noPatch) {
               const cDate = String(c.date || '');
+              const now = new Date();
+              const todayStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
               const allContainers = [
                 ...containersRef.current,
                 ...groupsRef.current.map((g) => g.container).filter((x): x is Container => x != null),
                 ...tempRef.current,
               ];
-              const hasEarlierDate = allContainers.some(
-                (k) => k.id !== c.id &&
-                  String(k.no).toUpperCase() === String(c.no).toUpperCase() &&
-                  String(k.date || '') < cDate
+              const sameNoOthers = allContainers.filter(
+                (k) => k.id !== c.id && String(k.no).toUpperCase() === String(c.no).toUpperCase()
               );
-              if (!hasEarlierDate) p = noPatch;
+              if (sameNoOthers.length === 0) {
+                p = noPatch; // 同一CONTNOが1枚だけ → 適用
+              } else {
+                const hasTodayCard = sameNoOthers.some((k) => String(k.date || '') === todayStr);
+                if (hasTodayCard ? cDate === todayStr : true) p = noPatch;
+              }
             }
           }
           if (!p) return c;
@@ -2091,22 +2096,27 @@ function App() {
           const applyPatch = (c: Container): Container => {
             let p = patchMap.get(String(c.id));
             // no:CONTNO フォールバック: sheetコンテナには適用しない
-            // 複数カードがある場合は最も早い日付のカードにのみ適用（翌日カード汚染防止）
+            // 同一CONTNOで複数カードがある場合は当日（today）のカードのみ適用（翌日カード汚染防止）
             if (!p && !String(c.id).startsWith("sheet_")) {
               const noPatch = patchMap.get(`no:${String(c.no).toUpperCase()}`);
               if (noPatch) {
                 const cDate = String(c.date || '');
+                const now = new Date();
+                const todayStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
                 const allContainers = [
                   ...containersRef.current,
                   ...groupsRef.current.map((g) => g.container).filter((x): x is Container => x != null),
                   ...tempRef.current,
                 ];
-                const hasEarlierDate = allContainers.some(
-                  (k) => k.id !== c.id &&
-                    String(k.no).toUpperCase() === String(c.no).toUpperCase() &&
-                    String(k.date || '') < cDate
+                const sameNoOthers = allContainers.filter(
+                  (k) => k.id !== c.id && String(k.no).toUpperCase() === String(c.no).toUpperCase()
                 );
-                if (!hasEarlierDate) p = noPatch;
+                if (sameNoOthers.length === 0) {
+                  p = noPatch; // 同一CONTNOが1枚だけ → 適用
+                } else {
+                  const hasTodayCard = sameNoOthers.some((k) => String(k.date || '') === todayStr);
+                  if (hasTodayCard ? cDate === todayStr : true) p = noPatch;
+                }
               }
             }
             if (!p) return c;

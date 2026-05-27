@@ -39,6 +39,8 @@ const stepOverridesMap = new Map();
 
 /** /api/containers フェッチ時に更新される kintone コンテナno集合（翌日sheet判定用）*/
 let kintoneNosCache = new Set();
+/** デバッグ用：最後に取得したkintoneコンテナ一覧 */
+let lastKintoneContainers = [];
 
 /** =========================
  *  CORS / JSON
@@ -482,20 +484,28 @@ app.get("/api/containers", async (req, res) => {
 
     // kintone nos をキャッシュ（翌日sheetコンテナ判定に使用）
     kintoneNosCache = new Set(kintoneContainers.map(c => String(c.no || '').toUpperCase()));
+    lastKintoneContainers = kintoneContainers.map(c => ({ id: c.id, no: c.no, date: c.date, step: c.step }));
+
+    // 当日日付（JST） MM/dd 形式
+    const nowJst = new Date(Date.now() + 9 * 3600000);
+    const todayStr = `${String(nowJst.getUTCMonth() + 1).padStart(2, '0')}/${String(nowJst.getUTCDate()).padStart(2, '0')}`;
 
     const overriddenKintone = kintoneContainers.map(c => {
       let ov = stepOverridesMap.get(String(c.id));
       if (!ov) {
-        // no:CONTNO フォールバック: 同一CONTNOで最も早い日付のカードにのみ適用（翌日カード汚染防止）
+        // no:CONTNO フォールバック: 同一CONTNOの複数カードがある場合は当日カードのみ適用
         const noPatch = stepOverridesMap.get(`no:${String(c.no || '').toUpperCase()}`);
         if (noPatch) {
           const cDate = String(c.date || '');
-          const hasEarlierDate = kintoneContainers.some(
-            (k) => k.id !== c.id &&
-              String(k.no || '').toUpperCase() === String(c.no || '').toUpperCase() &&
-              String(k.date || '') < cDate
+          const sameNoCards = kintoneContainers.filter(
+            (k) => k.id !== c.id && String(k.no || '').toUpperCase() === String(c.no || '').toUpperCase()
           );
-          if (!hasEarlierDate) ov = noPatch;
+          if (sameNoCards.length === 0) {
+            ov = noPatch; // 同一CONTNOが1枚だけ → 適用
+          } else {
+            const hasTodayCard = sameNoCards.some((k) => String(k.date || '') === todayStr);
+            if (hasTodayCard ? cDate === todayStr : true) ov = noPatch;
+          }
         }
       }
       return ov ? { ...c, ...ov } : c;
@@ -1064,6 +1074,17 @@ app.post("/api/step-update", (req, res) => {
 app.get("/api/step-overrides", (_req, res) => {
   const entries = Object.fromEntries(stepOverridesMap);
   res.json({ count: stepOverridesMap.size, entries });
+});
+
+/** GET /api/debug-kintone — デバッグ用：最後に取得したkintoneコンテナの日付確認 */
+app.get("/api/debug-kintone", (_req, res) => {
+  const grouped = {};
+  for (const c of lastKintoneContainers) {
+    const no = String(c.no || '').toUpperCase();
+    if (!grouped[no]) grouped[no] = [];
+    grouped[no].push({ id: c.id, no: c.no, date: c.date, step: c.step });
+  }
+  res.json({ count: lastKintoneContainers.length, grouped });
 });
 
 /** GET /api/debug-sheets — デバッグ用：sheetContainerMemoryの内容を確認 */
