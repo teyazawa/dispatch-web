@@ -1683,6 +1683,7 @@ function App() {
 
             worker4: (c.worker4 ?? "").toString().trim(),
             step: c.step ?? undefined,
+            nextDay: c.nextDay || undefined,
           };
         });
 
@@ -2015,6 +2016,7 @@ function App() {
             dispatchFiles: Array.isArray(c.dispatchFiles) ? c.dispatchFiles : [],
             worker4: (c.worker4 ?? "").toString().trim(),
             step: c.step ?? undefined,
+            nextDay: c.nextDay || undefined,
           };
         });
 
