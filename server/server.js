@@ -1020,18 +1020,15 @@ app.post("/api/step-update", (req, res) => {
     let matched = false;
     let firstSheetMatchId = null;
 
-    // nextDay:CONTNO が登録済み（翌日カードactivated）かつ今回がnextDay/xrayでない場合は
-    // 最新日付のシートコンテナを対象にする（当日カードではなく翌日カードへ工程を送る）
-    const isNextDayActivated = !nextDay && !xray && stepOverridesMap.has(`nextDay:${noStr}`);
+    // nextDay:CONTNO が登録済みでも、ACKされていないコンテナが2件以上ある場合は
+    // 当日配送の工程送信中なので通常フロー（最古日付=当日）を使う。
+    // ACKされていない1件のみ＝当日が配送完了済みで翌日カードだけ残っている場合のみ翌日優先。
+    const activeForNo = sheetContainerMemory.filter(c => c.no.toUpperCase() === noStr && !c.acked);
+    const isNextDayActivated = !nextDay && !xray
+      && stepOverridesMap.has(`nextDay:${noStr}`)
+      && activeForNo.length === 1; // 1件のみ=翌日カードだけ残っている
     if (isNextDayActivated) {
-      // 最新日付のCONTNOコンテナを事前スキャンで特定
-      let latestDate = '';
-      for (const c of sheetContainerMemory) {
-        if (c.no.toUpperCase() === noStr) {
-          const d = String(c.date || '');
-          if (!latestDate || d > latestDate) { latestDate = d; firstSheetMatchId = String(c.id); }
-        }
-      }
+      firstSheetMatchId = String(activeForNo[0].id);
     }
 
     sheetContainerMemory = sheetContainerMemory.map(c => {
