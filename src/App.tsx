@@ -1884,9 +1884,32 @@ function App() {
             console.log(`[nextDay] ${noKey}: allSameNo=${allSameNo.length} ids=${allSameNo.map(c=>c.id+'/'+c.date).join(',')}`);
             if (allSameNo.length < 2) { console.log(`[nextDay] skip: only ${allSameNo.length} card`); continue; }
             allSameNo.sort((a, b) => String(a.date || '99/99').localeCompare(String(b.date || '99/99')));
-            processedNextDayRef.current.add(noKey); // 処理済みとしてマーク
-            console.log(`[nextDay] moving to delivered: ${allSameNo[0].id} (date=${allSameNo[0].date})`);
-            moveContainerToDelivered(allSameNo[0].id, { step: 4 });
+            const currentDayCard = allSameNo[0];
+            const nextDayCard = allSameNo[1];
+            processedNextDayRef.current.add(noKey);
+            console.log(`[nextDay] moving to delivered: ${currentDayCard.id} (date=${currentDayCard.date}), activating: ${nextDayCard.id} (date=${nextDayCard.date})`);
+            // 当日カードが乗っているシャーシを特定
+            const nextDayChassis = groupsRef.current.find((g) => g.container?.id === currentDayCard.id);
+            const nextDayChassisId = nextDayChassis?.id;
+            // 当日カードを配送完了へ移動
+            moveContainerToDelivered(currentDayCard.id, { step: 4 });
+            // 翌日カードをシャーシに乗せて step=1 でアクティブ化
+            const ndId = nextDayCard.id;
+            setContainers((prev) => prev.filter((c) => c.id !== ndId));
+            setTempContainers((prev) => prev.filter((c) => c.id !== ndId));
+            setGroups((prev) =>
+              prev.map((g) => (g.container?.id === ndId ? { ...g, container: undefined } : g)),
+            );
+            if (nextDayChassisId) {
+              // シャーシに乗せる（moveContainerToDeliveredがシャーシを空にした後に配置）
+              setGroups((prev) =>
+                prev.map((g) =>
+                  g.id === nextDayChassisId && !g.container
+                    ? { ...g, container: { ...nextDayCard, step: 1 } }
+                    : g,
+                ),
+              );
+            }
             continue;
           }
 
