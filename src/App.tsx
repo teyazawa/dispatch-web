@@ -1689,24 +1689,16 @@ function App() {
         if (isCancelled) return;
 
         // ★ 1) 既存IDをRefから取って「新規だけ」を判定（setStateの外でやる）
-        // sheet_ コンテナはACK不要（sheetContainerMemoryに残してstep更新ルーティングを維持するため）
         const newIdsToAck = fetched
           .map((c) => c.id)
-          .filter((id) => !ackedContainerIdsRef.current.has(id) && !String(id).startsWith("sheet_"));
+          .filter((id) => !ackedContainerIdsRef.current.has(id));
 
         // ★ 2) 画面更新（マージ）は今まで通り
-        // グループ・一時保管・配送完了にあるコンテナはスキップ（sheetContainerMemory保持により無限ポップを防ぐ）
         setContainers((prev) => {
-          const skipIds = new Set<string>();
-          for (const g of groupsRef.current) { if (g.container) skipIds.add(String(g.container.id)); }
-          for (const c of tempRef.current) skipIds.add(String(c.id));
-          for (const c of doneRef.current) skipIds.add(String(c.id));
-
           const map = new Map<string, Container>();
           prev.forEach((p) => map.set(p.id, p));
 
           for (const nc of fetched) {
-            if (skipIds.has(String(nc.id))) continue;
             const existing = map.get(nc.id);
             map.set(nc.id, existing ? { ...existing, ...nc } : nc);
           }
@@ -1892,8 +1884,10 @@ function App() {
               ...containersRef.current.filter((c) => c.no?.toUpperCase() === noKey),
               ...tempRef.current.filter((c) => c.no?.toUpperCase() === noKey),
             ].filter((c, i, arr) => arr.findIndex((x) => x.id === c.id) === i);
-            console.log(`[nextDay] ${noKey}: allSameNo=${allSameNo.length} ids=${allSameNo.map(c=>c.id+'/'+c.date).join(',')}`);
-            if (allSameNo.length < 2) { console.log(`[nextDay] skip: only ${allSameNo.length} card`); continue; }
+            if (allSameNo.length < 2) {
+              processedNextDayRef.current.add(noKey); // 再試行しない（activation済みまたは当日カードなし）
+              continue;
+            }
             allSameNo.sort((a, b) => String(a.date || '99/99').localeCompare(String(b.date || '99/99')));
             const currentDayCard = allSameNo[0];
             const nextDayCard = allSameNo[1];
@@ -2095,22 +2089,14 @@ function App() {
           };
         });
 
-        // sheet_ コンテナはACK不要（sheetContainerMemoryに残してstep更新ルーティングを維持するため）
         const newIdsToAck = fetched
           .map((c) => c.id)
-          .filter((id) => !ackedContainerIdsRef.current.has(id) && !String(id).startsWith("sheet_"));
+          .filter((id) => !ackedContainerIdsRef.current.has(id));
 
-        // グループ・一時保管・配送完了にあるコンテナはスキップ（sheetContainerMemory保持により無限ポップを防ぐ）
         setContainers((prev) => {
-          const skipIds = new Set<string>();
-          for (const g of groupsRef.current) { if (g.container) skipIds.add(String(g.container.id)); }
-          for (const c of tempRef.current) skipIds.add(String(c.id));
-          for (const c of doneRef.current) skipIds.add(String(c.id));
-
           const map = new Map<string, Container>();
           prev.forEach((p) => map.set(p.id, p));
           for (const nc of fetched) {
-            if (skipIds.has(String(nc.id))) continue;
             const existing = map.get(nc.id);
             map.set(nc.id, existing ? { ...existing, ...nc } : nc);
           }

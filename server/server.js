@@ -506,7 +506,8 @@ app.get("/api/containers", async (req, res) => {
       }
       return ov ? { ...c, ...ov } : c;
     });
-    return res.json({ containers: [...overriddenKintone, ...sheetContainerMemory] });
+    // acked済みシートコンテナはUIに返さない（step routing用にメモリは保持）
+    return res.json({ containers: [...overriddenKintone, ...sheetContainerMemory.filter(c => !c.acked)] });
   } catch (err) {
     console.error("===== /api/containers エラー =====");
     console.error("msg:", err.message);
@@ -524,11 +525,13 @@ app.post("/api/containers/mark-board-done", async (req, res) => {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
     const allIds = ids.map((v) => String(v || "").trim()).filter(Boolean);
 
-    // sheet_ IDをメモリから削除
+    // sheet_ IDをackedフラグ付与（削除せずstep routing用に保持、/api/containers では除外）
     const sheetIds = allIds.filter((v) => v.startsWith("sheet_"));
     if (sheetIds.length) {
-      sheetContainerMemory = sheetContainerMemory.filter((c) => !sheetIds.includes(c.id));
-      console.log(`[sheet] removed ${sheetIds.length} containers from memory`);
+      sheetContainerMemory = sheetContainerMemory.map(c =>
+        sheetIds.includes(c.id) ? { ...c, acked: true } : c
+      );
+      console.log(`[sheet] acked ${sheetIds.length} containers (kept in memory for step routing)`);
     }
 
     // kintone更新対象（sheet_ 以外）
