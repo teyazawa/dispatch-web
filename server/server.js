@@ -1005,7 +1005,9 @@ app.post("/api/step-update", (req, res) => {
   if (pickupYard) override.pickupYard = String(pickupYard).trim();
 
   if (kintoneId) {
-    stepOverridesMap.set(String(kintoneId).trim(), override);
+    const kid = String(kintoneId).trim();
+    const existing = stepOverridesMap.get(kid) || {};
+    stepOverridesMap.set(kid, { ...existing, ...override });
   }
 
   // sheet containers に同じコンテナ番号があれば直接更新
@@ -1032,14 +1034,18 @@ app.post("/api/step-update", (req, res) => {
       // firstSheetMatchId が取得できた場合は特定カードIDをキーに使用（翌日カード汚染防止）
       // フォールバックのみ nextDay:CONTNO を使用
       const nextDayKey = firstSheetMatchId ?? `nextDay:${noStr}`;
-      stepOverridesMap.set(nextDayKey, override);
+      const existing = stepOverridesMap.get(nextDayKey) || {};
+      stepOverridesMap.set(nextDayKey, { ...existing, ...override });
       stepOverridesMap.delete(`no:${noStr}`);
     } else if (xray) {
-      stepOverridesMap.set(`xray:${noStr}`, override);
+      const existing = stepOverridesMap.get(`xray:${noStr}`) || {};
+      stepOverridesMap.set(`xray:${noStr}`, { ...existing, ...override });
     } else if (!kidStr) {
       // no:CONTNO ではなく特定シートコンテナIDを使用（翌日カード汚染防止）
       // シートコンテナが見つからない場合のみ no:CONTNO にフォールバック
-      stepOverridesMap.set(firstSheetMatchId ?? `no:${noStr}`, override);
+      const mapKey = firstSheetMatchId ?? `no:${noStr}`;
+      const existing = stepOverridesMap.get(mapKey) || {};
+      stepOverridesMap.set(mapKey, { ...existing, ...override });
     }
 
     // ④配送完了: sheetContainerMemory から除去（GET /api/containers が再度追加しないよう）
