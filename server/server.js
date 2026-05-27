@@ -992,7 +992,8 @@ app.post("/api/step-update", (req, res) => {
       if (kidStr) {
         if (String(c.id) === kidStr) { matched = true; return { ...c, ...override }; }
       } else {
-        if (c.no.toUpperCase() === noStr) { matched = true; return { ...c, ...override }; }
+        // nextDay=trueの翌日配送カードは当日の步進パッチをスキップ
+        if (c.no.toUpperCase() === noStr && !c.nextDay) { matched = true; return { ...c, ...override }; }
       }
       return c;
     });
@@ -1060,7 +1061,15 @@ app.post("/api/load-sheet-containers", async (req, res) => {
       containers = await fetchSheetContainers();
       console.log(`[sheet] fetched ${containers.length} containers from sheet`);
     }
-    sheetContainerMemory = containers;
+    // 今日以外の日付のコンテナは翌日配送カードとしてマーク（当日の步進パッチを受け取らない）
+    const _now = new Date();
+    const _todayMonth = _now.getMonth() + 1;
+    const _todayDay = _now.getDate();
+    sheetContainerMemory = containers.map(c => {
+      const m = String(c.date || '').match(/^(\d{1,2})\/(\d{1,2})$/);
+      const isToday = !m || (parseInt(m[1]) === _todayMonth && parseInt(m[2]) === _todayDay);
+      return isToday ? c : { ...c, nextDay: true };
+    });
     return res.json({ ok: true, loaded: containers.length });
   } catch (err) {
     console.error("load-sheet-containers エラー:", err.message);

@@ -121,6 +121,8 @@ type Container = {
   /** 工程ステップ（サーバーから渡してもらう想定） */
   step?: ContainerStep;
   worker4?: string;
+  /** 翌日配送カード（当日の步進パッチを適用しない） */
+  nextDay?: boolean;
 };
 
 type BoardState = {
@@ -1802,10 +1804,10 @@ function App() {
         const applyPatch = (c: Container): Container => {
           // no:CONTNOフォールバックはシートコンテナ(sheet_*)のみ適用
           // kintoneカードは個別IDで識別するため、no:CONTNOは使用しない
-          // （同一コンテナ番号の翌日配送kintoneカードへの色変化汚染を防ぐ）
+          // nextDay=trueの翌日配送カードは当日の步進パッチをスキップ（step=4のnextDay:キーで別途制御）
           const isSheetContainer = String(c.id).startsWith("sheet_");
           const p = patchMap.get(String(c.id))
-            ?? (isSheetContainer ? patchMap.get(`no:${String(c.no).toUpperCase()}`) : undefined);
+            ?? (isSheetContainer && !c.nextDay ? patchMap.get(`no:${String(c.no).toUpperCase()}`) : undefined);
           if (!p) return c;
 
           return {
@@ -1851,12 +1853,12 @@ function App() {
           const pId = String(p.id);
 
           if (pId.startsWith("nextDay:")) {
-            // 翌日配送完了: 当日カードを配送完了へ移動（翌日カードは次回ポーリングで表示）
+            // 翌日配送完了: 当日カード(nextDay!=true)を配送完了へ移動（翌日カードは次回ポーリングで表示）
             const noKey = pId.slice(8).toUpperCase();
             const currentCard =
-              groupsRef.current.find((g) => g.container?.no?.toUpperCase() === noKey)?.container ??
-              containersRef.current.find((c) => c.no?.toUpperCase() === noKey) ??
-              tempRef.current.find((c) => c.no?.toUpperCase() === noKey);
+              groupsRef.current.find((g) => g.container?.no?.toUpperCase() === noKey && !g.container?.nextDay)?.container ??
+              containersRef.current.find((c) => c.no?.toUpperCase() === noKey && !c.nextDay) ??
+              tempRef.current.find((c) => c.no?.toUpperCase() === noKey && !c.nextDay);
             if (!currentCard) continue;
             moveContainerToDelivered(currentCard.id, { step: 4 });
             continue;
@@ -2073,9 +2075,10 @@ function App() {
 
           const applyPatch = (c: Container): Container => {
             // no:CONTNOフォールバックはシートコンテナ(sheet_*)のみ適用
+            // nextDay=trueの翌日配送カードは当日の步進パッチをスキップ
             const isSheetContainer = String(c.id).startsWith("sheet_");
             const p = patchMap.get(String(c.id))
-              ?? (isSheetContainer ? patchMap.get(`no:${String(c.no).toUpperCase()}`) : undefined);
+              ?? (isSheetContainer && !c.nextDay ? patchMap.get(`no:${String(c.no).toUpperCase()}`) : undefined);
             if (!p) return c;
             return {
               ...c,
