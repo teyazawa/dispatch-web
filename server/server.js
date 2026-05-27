@@ -1017,16 +1017,13 @@ app.post("/api/step-update", (req, res) => {
     let matched = false;
     let firstSheetMatchId = null;
     sheetContainerMemory = sheetContainerMemory.map(c => {
-      // kintoneId が指定された場合はIDで一意に特定（noは同一番号が複数存在する可能性があるため）
-      if (kidStr) {
-        if (String(c.id) === kidStr) { matched = true; return { ...c, ...override }; }
-      } else {
-        // 最初のCONTNO一致コンテナのみ更新（2番目以降は翌日配送カードとしてスキップ）
-        if (c.no.toUpperCase() === noStr && firstSheetMatchId === null) {
-          firstSheetMatchId = String(c.id);
-          matched = true;
-          return { ...c, ...override };
-        }
+      // kintoneId と一致した場合は優先更新（kintone IDがsheet_XXXと一致することはないが念のため）
+      if (kidStr && String(c.id) === kidStr) { matched = true; return { ...c, ...override }; }
+      // CONTNO で最初の1件を更新（翌日配送カードは2件目以降のためスキップ）
+      if (c.no.toUpperCase() === noStr && firstSheetMatchId === null) {
+        firstSheetMatchId = String(c.id);
+        matched = true;
+        return { ...c, ...override };
       }
       return c;
     });
@@ -1057,7 +1054,11 @@ app.post("/api/step-update", (req, res) => {
     if (stepNum === 4) {
       const before = sheetContainerMemory.length;
       if (kidStr) {
-        sheetContainerMemory = sheetContainerMemory.filter(c => String(c.id) !== kidStr);
+        // kintoneId と firstSheetMatchId (CONTNO一致シートコンテナ) の両方を除去
+        sheetContainerMemory = sheetContainerMemory.filter(c =>
+          String(c.id) !== kidStr &&
+          (firstSheetMatchId === null || String(c.id) !== firstSheetMatchId)
+        );
       } else if (xray) {
         sheetContainerMemory = sheetContainerMemory.filter(c => {
           if (c.no.toUpperCase() !== noStr) return true;
