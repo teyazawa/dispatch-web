@@ -1115,8 +1115,17 @@ app.post("/api/load-sheet-containers", async (req, res) => {
       containers = await fetchSheetContainers();
       console.log(`[sheet] fetched ${containers.length} containers from sheet`);
     }
-    sheetContainerMemory = containers;
-    return res.json({ ok: true, loaded: containers.length });
+    // マージ: 同一(no, date)は上書き更新、日付が違う同一CONTNOは共存（当日・翌日両立）
+    const newKeys = new Set(containers.map(c => `${String(c.no || '').toUpperCase()}|${c.date || ''}`));
+    const kept = sheetContainerMemory.filter(c => !newKeys.has(`${String(c.no || '').toUpperCase()}|${c.date || ''}`));
+    // 日付昇順ソート（当日=早い日付が先頭→firstSheetMatchIdで正しく当日を選択）
+    sheetContainerMemory = [...kept, ...containers].sort((a, b) => {
+      const da = String(a.date || '99/99');
+      const db = String(b.date || '99/99');
+      return da < db ? -1 : da > db ? 1 : 0;
+    });
+    console.log(`[sheet] merged: kept=${kept.length} new=${containers.length} total=${sheetContainerMemory.length}`);
+    return res.json({ ok: true, loaded: sheetContainerMemory.length });
   } catch (err) {
     console.error("load-sheet-containers エラー:", err.message);
     res.status(500).json({ error: "シートコンテナ読み込み失敗", detail: err.message });
