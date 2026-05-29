@@ -1041,6 +1041,8 @@ app.post("/api/step-update", (req, res) => {
       }
       // 通常: CONTNO で最初の1件を更新（日付昇順で当日が先頭）
       if (c.no.toUpperCase() === noStr && firstSheetMatchId === null) {
+        // 非xrayの通知でX線検査カードを誤更新しないようスキップ
+        if (!xray && /(X線|税関)/i.test(c.destination || '')) return c;
         firstSheetMatchId = String(c.id);
         matched = true;
         return { ...c, ...override };
