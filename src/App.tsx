@@ -1954,7 +1954,7 @@ function App() {
               worker4: (p.worker4 ?? "").toString().trim(),
             });
 
-            const normalCard =
+            const rawNormalCard =
               containersRef.current.find(
                 (c) => c.no?.toUpperCase() === noKey && c.id !== xrayId,
               ) ??
@@ -1965,7 +1965,11 @@ function App() {
                 (g) =>
                   g.container?.no?.toUpperCase() === noKey && g.container?.id !== xrayId,
               )?.container;
-            if (!normalCard) continue;
+            if (!rawNormalCard) continue;
+            // *Ref.current は useEffect 経由で更新されるため、同期 callback 内では
+            // applyPatch 後の最新 state を反映していない。最新パッチを通して
+            // dropoffYard/yardIn2 を取り直す（GAS が normal step=1 で送信した値）。
+            const normalCard = applyPatch(rawNormalCard);
 
             const normalId = normalCard.id;
             setContainers((prev) => prev.filter((c) => c.id !== normalId));
@@ -1996,7 +2000,7 @@ function App() {
           if (!xrayInfo) continue;
           const { chassisId, containerNo, xrayId } = xrayInfo;
 
-          const normalCard =
+          const rawNormalCard =
             containersRef.current.find(
               (c) => c.no?.toUpperCase() === containerNo && c.id !== xrayId,
             ) ??
@@ -2007,7 +2011,9 @@ function App() {
               (g) =>
                 g.container?.no?.toUpperCase() === containerNo && g.container?.id !== xrayId,
             )?.container;
-          if (!normalCard) continue;
+          if (!rawNormalCard) continue;
+          // 上記 xray: 分岐と同様、stale な ref を最新パッチで更新する
+          const normalCard = applyPatch(rawNormalCard);
 
           const normalId = normalCard.id;
           setContainers((prev) => prev.filter((c) => c.id !== normalId));
