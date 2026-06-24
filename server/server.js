@@ -1006,6 +1006,9 @@ app.post("/api/step-update", (req, res) => {
   if (yardIn2) override.yardIn2 = String(yardIn2).trim();
   if (dropoffYard) override.dropoffYard = String(dropoffYard).trim();
   if (pickupYard) override.pickupYard = String(pickupYard).trim();
+  // kintoneId 指定 + no があれば、no も override に含める
+  // 貼付シート由来でコンテナ番号空欄(no="")だったオブジェクトを、②マッチで埋まったコンテナ番号で更新するため
+  if (kintoneId && no) override.no = String(no).trim().toUpperCase();
 
   if (kintoneId) {
     const kid = String(kintoneId).trim();
