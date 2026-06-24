@@ -1032,8 +1032,12 @@ app.post("/api/step-update", (req, res) => {
     }
 
     sheetContainerMemory = sheetContainerMemory.map(c => {
-      // kintoneId と一致した場合は優先更新（kintone IDがsheet_XXXと一致することはないが念のため）
-      if (kidStr && String(c.id) === kidStr) { matched = true; return { ...c, ...override }; }
+      // kintoneId と一致した場合は優先更新
+      // kintone版: c.id == kintoneレコードID(数値文字列)
+      // 貼付シート版: c.id = 'sheet_...', c.kintoneId = 'SHEET_MMDD_NNNN'
+      if (kidStr && (String(c.id) === kidStr || String(c.kintoneId || '') === kidStr)) {
+        matched = true; return { ...c, ...override };
+      }
       if (isNextDayActivated) {
         // activated後: 事前スキャンで特定したIDのみ更新
         if (String(c.id) === firstSheetMatchId) { matched = true; return { ...c, ...override }; }
@@ -1077,8 +1081,10 @@ app.post("/api/step-update", (req, res) => {
       const before = sheetContainerMemory.length;
       if (kidStr) {
         // kintoneId と firstSheetMatchId (CONTNO一致シートコンテナ) の両方を除去
+        // 貼付シート版: c.kintoneId === kidStr で SHEET_MMDD_NNNN も除去対象に
         sheetContainerMemory = sheetContainerMemory.filter(c =>
           String(c.id) !== kidStr &&
+          String(c.kintoneId || '') !== kidStr &&
           (firstSheetMatchId === null || String(c.id) !== firstSheetMatchId)
         );
       } else if (xray) {
