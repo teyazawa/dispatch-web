@@ -1137,7 +1137,18 @@ app.get("/api/debug-sheets", (_req, res) => {
   for (const c of sheetContainerMemory) {
     const no = String(c.no || '').toUpperCase();
     if (!grouped[no]) grouped[no] = [];
-    grouped[no].push({ id: c.id, no: c.no, step: c.step, date: c.date, destination: c.destination, nextDay: c.nextDay });
+    grouped[no].push({
+      id: c.id,
+      kintoneId: c.kintoneId || '',
+      no: c.no,
+      step: c.step,
+      date: c.date,
+      destination: c.destination,
+      pickupYard: c.pickupYard,
+      dropoffYard: c.dropoffYard,
+      acked: c.acked,
+      nextDay: c.nextDay,
+    });
   }
   res.json({ count: sheetContainerMemory.length, grouped });
 });
