@@ -1159,16 +1159,56 @@ app.post("/api/load-sheet-containers", async (req, res) => {
       containers = await fetchSheetContainers();
       console.log(`[sheet] fetched ${containers.length} containers from sheet`);
     }
-    // マージ: 同一(no, date)は上書き更新、日付が違う同一CONTNOは共存（当日・翌日両立）
-    const newKeys = new Set(containers.map(c => `${String(c.no || '').toUpperCase()}|${c.date || ''}`));
-    const kept = sheetContainerMemory.filter(c => !newKeys.has(`${String(c.no || '').toUpperCase()}|${c.date || ''}`));
+    // マージ: kintoneId(SHEET_MMDD_NNNN) 一致なら既存の id/step/acked/no を維持してメタ情報のみ更新
+    // 同じ貼付シートの再ボタン押下で進捗(step=2 等)が消えたり、新しい id で重複生成されるのを防ぐ
+    // kintoneId 無しの古い形式は従来通り (no, date) キーで処理（後方互換）
+    const newByKid = new Map();
+    const newWithoutKid = [];
+    for (const c of containers) {
+      const kid = String(c.kintoneId || '').trim();
+      if (kid) newByKid.set(kid, c);
+      else newWithoutKid.push(c);
+    }
+    const newKeysNoKid = new Set(newWithoutKid.map(c => `${String(c.no || '').toUpperCase()}|${c.date || ''}`));
+
+    const kept = [];
+    const updatedKids = new Set();
+    for (const c of sheetContainerMemory) {
+      const ckid = String(c.kintoneId || '').trim();
+      if (ckid && newByKid.has(ckid)) {
+        // kintoneId 一致: 既存の進捗(step/acked)と id を維持しつつメタ情報(ヤード等)を更新
+        // no は既存が非空ならそれを優先（アプリ②送信で埋まったコンテナ番号を尊重）
+        const fresh = newByKid.get(ckid);
+        kept.push({
+          ...fresh,
+          id: c.id,
+          step: c.step,
+          acked: c.acked,
+          no: c.no || fresh.no,
+        });
+        updatedKids.add(ckid);
+      } else if (!ckid) {
+        // 旧形式(kintoneIdなし): no|date ベース除外（従来動作）
+        const oldKey = `${String(c.no || '').toUpperCase()}|${c.date || ''}`;
+        if (!newKeysNoKid.has(oldKey)) kept.push(c);
+      } else {
+        // kintoneId あるが新規データに含まれない既存はそのまま維持（過去日案件など）
+        kept.push(c);
+      }
+    }
+
+    const newcomers = [
+      ...Array.from(newByKid.values()).filter(c => !updatedKids.has(String(c.kintoneId).trim())),
+      ...newWithoutKid,
+    ];
+
     // 日付昇順ソート（当日=早い日付が先頭→firstSheetMatchIdで正しく当日を選択）
-    sheetContainerMemory = [...kept, ...containers].sort((a, b) => {
+    sheetContainerMemory = [...kept, ...newcomers].sort((a, b) => {
       const da = String(a.date || '99/99');
       const db = String(b.date || '99/99');
       return da < db ? -1 : da > db ? 1 : 0;
     });
-    console.log(`[sheet] merged: kept=${kept.length} new=${containers.length} total=${sheetContainerMemory.length}`);
+    console.log(`[sheet] merged: kept=${kept.length} updatedKids=${updatedKids.size} newcomers=${newcomers.length} total=${sheetContainerMemory.length}`);
     return res.json({ ok: true, loaded: sheetContainerMemory.length });
   } catch (err) {
     console.error("load-sheet-containers エラー:", err.message);
