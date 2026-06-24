@@ -1039,7 +1039,11 @@ app.post("/api/step-update", (req, res) => {
       // kintone版: c.id == kintoneレコードID(数値文字列)
       // 貼付シート版: c.id = 'sheet_...', c.kintoneId = 'SHEET_MMDD_NNNN'
       if (kidStr && (String(c.id) === kidStr || String(c.kintoneId || '') === kidStr)) {
-        matched = true; return { ...c, ...override };
+        matched = true;
+        // firstSheetMatchId を設定 → 後段で stepOverridesMap に sheet_ID キーで登録 →
+        // frontend の delta polling が拾って既存オブジェクトに override 適用（ack済みでも反映）
+        if (firstSheetMatchId === null) firstSheetMatchId = String(c.id);
+        return { ...c, ...override };
       }
       if (isNextDayActivated) {
         // activated後: 事前スキャンで特定したIDのみ更新
