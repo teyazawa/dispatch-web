@@ -1078,6 +1078,11 @@ app.post("/api/step-update", (req, res) => {
       // kintoneId あり + シートコンテナあり: 10s delta polling で適用できるよう sheet ID にも登録
       const existingSheet = stepOverridesMap.get(firstSheetMatchId) || {};
       stepOverridesMap.set(firstSheetMatchId, { ...existingSheet, ...override });
+    } else {
+      // kintoneId 指定だがシートコンテナにマッチなし → no:CONTNO にフォールバック
+      // 古い（kintoneId未付与）カードや kintone由来カードを CONTNO 経由で更新するため
+      const existing = stepOverridesMap.get(`no:${noStr}`) || {};
+      stepOverridesMap.set(`no:${noStr}`, { ...existing, ...override });
     }
 
     // ④配送完了: sheetContainerMemory から除去（GET /api/containers が再度追加しないよう）
