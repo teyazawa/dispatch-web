@@ -19,6 +19,15 @@ import {
   openVoiceWindow,
 } from "./utils/voiceWindow";
 import { openDispatchTable } from "./utils/dispatchTableWindow";
+// PRACTICE MODE (temporary) — 削除時はこの2行と関連呼び出しも消す
+import { usePracticeMode } from "./lib/practiceMode";
+import {
+  PracticeSettingsButton,
+  PracticeColorPickerModal,
+} from "./components/PracticeModeButton";
+// ドライバー並び順 (常設)
+import { useDriverOrder, sortDriversByOrder } from "./lib/driverOrder";
+import { DriverOrderSettings } from "./components/DriverOrderSettings";
 
 /** 表示モード */
 type DisplayMode = "pc" | "tablet" | "phone";
@@ -491,6 +500,8 @@ type DraggableGroupCardProps = {
   kindColors?: Record<string, string>;
   sizeColors?: Record<string, string>; // 追加（size-20 / size-40 など）
   onTap?: (group: ChassisGroup) => void;
+  // PRACTICE MODE (temporary) — containerId -> "#rrggbb"
+  practiceColorMap?: Record<string, string>;
 };
 
 function DraggableGroupCard({
@@ -500,6 +511,7 @@ function DraggableGroupCard({
   kindColors,
   sizeColors,
   onTap,
+  practiceColorMap, // PRACTICE MODE
 }: DraggableGroupCardProps & { onTap?: (group: ChassisGroup) => void }) {
   const displayMode = React.useContext(DisplayModeContext);
   // ✅ isDragging を追加で取得
@@ -584,6 +596,12 @@ function DraggableGroupCard({
   const kindLabel = group.extra?.kindLabel ?? "";
   const kindColor = kindLabel ? kindColors?.[kindLabel] : undefined;
 
+  // PRACTICE MODE (temporary) — コンテナ手動色 override
+  const practiceOverrideColor =
+    group.container && practiceColorMap
+      ? practiceColorMap[group.container.id]
+      : undefined;
+
   const style: React.CSSProperties = {
     // DragOverlay使用時は元カードを動かさず非表示にする
     opacity: isDragging ? 0 : undefined,
@@ -591,6 +609,10 @@ function DraggableGroupCard({
 
     ...(axleColor ? { borderTop: `6px solid ${axleColor}` } : {}),
     ...(sizeColor ? { borderLeft: `5px solid ${sizeColor}` } : {}),
+    // PRACTICE MODE — chassis-step-N のCSSより優先させるためinline指定
+    ...(practiceOverrideColor
+      ? { backgroundColor: practiceOverrideColor }
+      : {}),
   };
 
   const isAC = !!group.container;
@@ -1239,6 +1261,30 @@ function App() {
   // 画面表示用の並び順
   const OWNED_GROUP_ORDER = driverGroups.owned;
   const OUTSOURCED_GROUP_ORDER = driverGroups.outsourced;
+
+  // PRACTICE MODE (temporary) — 練習用: 手動色設定 + グループ非表示
+  const {
+    state: practiceState,
+    setContainerColor: setPracticeContainerColor,
+    setHiddenGroups: setPracticeHiddenGroups,
+    resetAll: resetPracticeAll,
+  } = usePracticeMode();
+  const [practiceColorPicker, setPracticeColorPicker] = useState<{
+    visible: boolean;
+    containerId: string;
+    containerLabel: string;
+  }>({ visible: false, containerId: "", containerLabel: "" });
+  const VISIBLE_OWNED_GROUP_ORDER = OWNED_GROUP_ORDER.filter(
+    (g) => !practiceState.hiddenGroups.owned.includes(g.key),
+  );
+  const VISIBLE_OUTSOURCED_GROUP_ORDER = OUTSOURCED_GROUP_ORDER.filter(
+    (g) => !practiceState.hiddenGroups.outsourced.includes(g.key),
+  );
+
+  // ドライバー並び順 (常設)
+  const { state: driverOrderState, setGroupOrder: setDriverGroupOrder } =
+    useDriverOrder();
+  const [driverOrderModalOpen, setDriverOrderModalOpen] = useState(false);
 
   // 設定が変わったときに保存
   useEffect(() => {
@@ -2683,6 +2729,7 @@ function App() {
           axleColors={axleColors}
           sizeColors={sizeColors}
           onTap={handleCardTap}
+          practiceColorMap={practiceState.colors}
         />
       );
     }
@@ -4112,6 +4159,7 @@ function App() {
                                 axleColors={axleColors}
                                 sizeColors={sizeColors}
                                 onTap={handleCardTap}
+                                practiceColorMap={practiceState.colors}
                               />
                             ))}
                         </DroppableArea>
@@ -4156,6 +4204,7 @@ function App() {
                                         sizeColors={sizeColors}
                                         kindColors={kindColors}
                                         onTap={handleCardTap}
+                                        practiceColorMap={practiceState.colors}
                                       />
                                     )}
                                   </DroppableArea>
@@ -4200,16 +4249,35 @@ function App() {
                 className="driver-panel"
                 style={displayMode === "pc" ? { width: middleWidth, flex: "0 0 auto" } : undefined}
               >
-                <h2>ドライバー</h2>
+                <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span>ドライバー</span>
+                  <button
+                    type="button"
+                    onClick={() => setDriverOrderModalOpen(true)}
+                    title="ドライバー並び順を編集"
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: 11,
+                      background: "#f5f5f5",
+                      border: "1px solid #ccc",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                      fontWeight: "normal",
+                    }}
+                  >
+                    ⇅ 並び順
+                  </button>
+                </h2>
 
                 <div className="driver-groups-grid">
                   {/* 左：自車 */}
                   <section className="driver-group-column">
                     <h3 className="driver-group-column-title">自車</h3>
 
-                    {OWNED_GROUP_ORDER.map(({ key, label }) => {
-                      const groupDrivers = ownedDrivers.filter(
-                        (d) => (d.groupName || "") === key,
+                    {VISIBLE_OWNED_GROUP_ORDER.map(({ key, label }) => {
+                      const groupDrivers = sortDriversByOrder(
+                        ownedDrivers.filter((d) => (d.groupName || "") === key),
+                        driverOrderState.order[key],
                       );
                       if (groupDrivers.length === 0) return null;
 
@@ -4252,6 +4320,7 @@ function App() {
                                           onContextMenuGroup={(e, g) =>
                                             openMailMenu(e, g, d)
                                           }
+                                          practiceColorMap={practiceState.colors}
                                         />
                                       )}
                                     </DroppableArea>
@@ -4269,9 +4338,12 @@ function App() {
                   <section className="driver-group-column">
                     <h3 className="driver-group-column-title">傭車</h3>
 
-                    {OUTSOURCED_GROUP_ORDER.map(({ key, label }) => {
-                      const groupDrivers = outsourcedDrivers.filter(
-                        (d) => (d.groupName || "") === key,
+                    {VISIBLE_OUTSOURCED_GROUP_ORDER.map(({ key, label }) => {
+                      const groupDrivers = sortDriversByOrder(
+                        outsourcedDrivers.filter(
+                          (d) => (d.groupName || "") === key,
+                        ),
+                        driverOrderState.order[key],
                       );
                       if (groupDrivers.length === 0) return null;
 
@@ -4314,6 +4386,7 @@ function App() {
                                           onContextMenuGroup={(e, g) =>
                                             openMailMenu(e, g, d)
                                           }
+                                          practiceColorMap={practiceState.colors}
                                         />
                                       )}
                                     </DroppableArea>
@@ -4510,8 +4583,70 @@ function App() {
               <button onClick={() => handleSendMail("delivery")}>
                 配送の送信
               </button>
+              {/* PRACTICE MODE (temporary) */}
+              <button
+                onClick={() => {
+                  const c = mailMenu.group?.container;
+                  if (!c) return;
+                  setPracticeColorPicker({
+                    visible: true,
+                    containerId: c.id,
+                    containerLabel: `${c.no || "(no番号)"} ${c.destination || ""}`.trim(),
+                  });
+                  setMailMenu((s) => ({ ...s, visible: false }));
+                }}
+              >
+                🎨 色を変更…
+              </button>
+              <button
+                onClick={() => {
+                  const c = mailMenu.group?.container;
+                  if (!c) return;
+                  setPracticeContainerColor(c.id, null);
+                  setMailMenu((s) => ({ ...s, visible: false }));
+                }}
+              >
+                🚫 色をリセット
+              </button>
             </div>
           )}
+          {/* PRACTICE MODE (temporary) */}
+          <PracticeSettingsButton
+            ownedGroups={OWNED_GROUP_ORDER}
+            outsourcedGroups={OUTSOURCED_GROUP_ORDER}
+            hiddenGroups={practiceState.hiddenGroups}
+            onChange={(owned, outsourced) =>
+              setPracticeHiddenGroups(owned, outsourced)
+            }
+            onResetAll={resetPracticeAll}
+          />
+          <PracticeColorPickerModal
+            visible={practiceColorPicker.visible}
+            initialColor={
+              practiceState.colors[practiceColorPicker.containerId] ?? null
+            }
+            containerLabel={practiceColorPicker.containerLabel}
+            onApply={(color) =>
+              setPracticeContainerColor(practiceColorPicker.containerId, color)
+            }
+            onReset={() =>
+              setPracticeContainerColor(practiceColorPicker.containerId, null)
+            }
+            onClose={() =>
+              setPracticeColorPicker((s) => ({ ...s, visible: false }))
+            }
+          />
+          {/* ドライバー並び順 (常設) */}
+          <DriverOrderSettings
+            visible={driverOrderModalOpen}
+            onClose={() => setDriverOrderModalOpen(false)}
+            ownedGroups={OWNED_GROUP_ORDER}
+            outsourcedGroups={OUTSOURCED_GROUP_ORDER}
+            ownedDrivers={ownedDrivers}
+            outsourcedDrivers={outsourcedDrivers}
+            orderMap={driverOrderState.order}
+            onGroupOrderChange={setDriverGroupOrder}
+          />
           {detailModal.visible && (
             <div
               className="detail-modal-backdrop"

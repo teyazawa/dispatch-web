@@ -4,6 +4,8 @@ const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 
@@ -1292,6 +1294,170 @@ function parseCSV(text) {
 
   return rows;
 }
+
+/** =========================
+ *  DRIVER ORDER (permanent)
+ *  グループ毎のドライバー表示順を保存する。
+ *  ストレージ: server/data/driver-order.json (単純JSONファイル、Render再起動で消える点は要注意)
+ *  データ構造: { order: { [groupKey]: string[] (driverIds) }, updatedAt: iso }
+ *  ========================= */
+const DRIVER_ORDER_FILE = path.join(__dirname, "data", "driver-order.json");
+let driverOrderMap = {}; // groupKey -> string[] (driverIds)
+let driverOrderVersion = 1;
+
+function _loadDriverOrder_() {
+  try {
+    if (fs.existsSync(DRIVER_ORDER_FILE)) {
+      const raw = fs.readFileSync(DRIVER_ORDER_FILE, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.order === "object" && parsed.order) {
+        const cleaned = {};
+        for (const [k, v] of Object.entries(parsed.order)) {
+          if (Array.isArray(v)) cleaned[String(k)] = v.map(String);
+        }
+        driverOrderMap = cleaned;
+        console.log(
+          `[driver-order] loaded ${Object.keys(driverOrderMap).length} groups from disk`,
+        );
+      }
+    }
+  } catch (e) {
+    console.warn("[driver-order] failed to load:", e && e.message);
+  }
+}
+
+function _saveDriverOrder_() {
+  try {
+    const dir = path.dirname(DRIVER_ORDER_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const payload = {
+      order: driverOrderMap,
+      updatedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(
+      DRIVER_ORDER_FILE,
+      JSON.stringify(payload, null, 2),
+      "utf8",
+    );
+  } catch (e) {
+    console.warn("[driver-order] failed to save:", e && e.message);
+  }
+}
+
+_loadDriverOrder_();
+
+app.get("/api/driver-order", (_req, res) => {
+  res.json({ version: driverOrderVersion, order: driverOrderMap });
+});
+
+// 単一グループの並びを更新
+app.post("/api/driver-order", (req, res) => {
+  try {
+    const groupKey = String(req.body?.groupKey ?? "").trim();
+    const driverIds = Array.isArray(req.body?.driverIds)
+      ? req.body.driverIds.map(String)
+      : null;
+    if (!groupKey) return res.status(400).json({ ok: false, error: "groupKey required" });
+    if (!driverIds) return res.status(400).json({ ok: false, error: "driverIds must be array" });
+    driverOrderMap[groupKey] = driverIds;
+    driverOrderVersion++;
+    _saveDriverOrder_();
+    res.json({ ok: true, version: driverOrderVersion, order: driverOrderMap });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e && e.message || e) });
+  }
+});
+
+// 全マップを一括置換 (管理用)
+app.post("/api/driver-order/replace", (req, res) => {
+  try {
+    const src = req.body?.order;
+    if (!src || typeof src !== "object") {
+      return res.status(400).json({ ok: false, error: "order object required" });
+    }
+    const cleaned = {};
+    for (const [k, v] of Object.entries(src)) {
+      if (Array.isArray(v)) cleaned[String(k)] = v.map(String);
+    }
+    driverOrderMap = cleaned;
+    driverOrderVersion++;
+    _saveDriverOrder_();
+    res.json({ ok: true, version: driverOrderVersion, order: driverOrderMap });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e && e.message || e) });
+  }
+});
+
+/** =========================
+ *  PRACTICE MODE (temporary) START
+ *  配車マン練習用の一時機能。削除時はこのブロック全体を切除してよい。
+ *  - コンテナ(A+C)の背景色を右クリックで手動変更 (全端末で共有)
+ *  - ドライバーグループを指定して丸ごと非表示 (全端末で共有)
+ *  データは in-memory のみ。Render 再起動で消える (練習用途なので許容)。
+ *  ========================= */
+const practiceContainerColors = new Map(); // containerId(string) -> "#rrggbb"
+let practiceHiddenGroups = { owned: [], outsourced: [] };
+let practiceStateVersion = 1; // 変更ごとに ++。フロントは差分不要でも軽量ポーリング可
+
+function _practiceSnapshot_() {
+  const colors = {};
+  for (const [k, v] of practiceContainerColors.entries()) colors[k] = v;
+  return {
+    version: practiceStateVersion,
+    colors,
+    hiddenGroups: {
+      owned: [...practiceHiddenGroups.owned],
+      outsourced: [...practiceHiddenGroups.outsourced],
+    },
+  };
+}
+
+app.get("/api/practice/state", (_req, res) => {
+  res.json(_practiceSnapshot_());
+});
+
+app.post("/api/practice/color", (req, res) => {
+  try {
+    const containerId = String(req.body?.containerId ?? "").trim();
+    if (!containerId) return res.status(400).json({ ok: false, error: "containerId required" });
+    const raw = req.body?.color;
+    if (raw === null || raw === undefined || raw === "") {
+      practiceContainerColors.delete(containerId);
+    } else {
+      const color = String(raw).trim();
+      if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
+        return res.status(400).json({ ok: false, error: "color must be #rrggbb" });
+      }
+      practiceContainerColors.set(containerId, color.toLowerCase());
+    }
+    practiceStateVersion++;
+    res.json({ ok: true, ...(_practiceSnapshot_()) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e && e.message || e) });
+  }
+});
+
+app.post("/api/practice/hidden-groups", (req, res) => {
+  try {
+    const owned = Array.isArray(req.body?.owned) ? req.body.owned.map(String) : [];
+    const outsourced = Array.isArray(req.body?.outsourced) ? req.body.outsourced.map(String) : [];
+    practiceHiddenGroups = { owned, outsourced };
+    practiceStateVersion++;
+    res.json({ ok: true, ...(_practiceSnapshot_()) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e && e.message || e) });
+  }
+});
+
+app.post("/api/practice/reset", (_req, res) => {
+  practiceContainerColors.clear();
+  practiceHiddenGroups = { owned: [], outsourced: [] };
+  practiceStateVersion++;
+  res.json({ ok: true, ...(_practiceSnapshot_()) });
+});
+/** =========================
+ *  PRACTICE MODE (temporary) END
+ *  ========================= */
 
 /** =========================
  *  Start
