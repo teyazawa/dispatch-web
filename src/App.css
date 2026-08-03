@@ -761,6 +761,12 @@ body.dragging {
   color: #374151 !important;
 }
 
+/* PRACTICE MODE (temporary) — chassis-step-N / container-step-N の !important を上書きするため */
+.chassis-card[data-practice-color],
+.container-card[data-practice-color] {
+  background: var(--practice-color) !important;
+}
+
 /* シャーシプールの枠を 56px に拡大（3行対応） */
 .card-container.slot-pool {
   height: 60px;

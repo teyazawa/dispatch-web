@@ -241,6 +241,8 @@ type MailMenuState = {
   y: number;
   group: ChassisGroup | null;
   driver: Driver | null;
+  // PRACTICE MODE — 色メニュー対象のコンテナ (group から派生 or 単体コンテナから直接指定)
+  containerForColor: { id: string; label: string } | null;
 };
 
 /** シャーシプール定義 */
@@ -609,9 +611,10 @@ function DraggableGroupCard({
 
     ...(axleColor ? { borderTop: `6px solid ${axleColor}` } : {}),
     ...(sizeColor ? { borderLeft: `5px solid ${sizeColor}` } : {}),
-    // PRACTICE MODE — chassis-step-N のCSSより優先させるためinline指定
+    // PRACTICE MODE — chassis-step-N の !important を上書きするため
+    //   CSS変数 + data属性でCSS側のセレクタと合わせる
     ...(practiceOverrideColor
-      ? { backgroundColor: practiceOverrideColor }
+      ? ({ ["--practice-color" as any]: practiceOverrideColor } as React.CSSProperties)
       : {}),
   };
 
@@ -735,6 +738,8 @@ function DraggableGroupCard({
       onTouchEnd={handleTouchEnd} // ✅ 追加
       onTouchCancel={handleTouchEnd}
       onClick={() => onTap?.(group)}
+      // PRACTICE MODE — CSS `.chassis-card[data-practice-color]` と一致させる
+      data-practice-color={practiceOverrideColor ? "1" : undefined}
     >
       {displayMode === "phone" && (
         <div className="drag-handle" {...listeners}>{"\u2630"}</div>
@@ -834,11 +839,18 @@ function DraggableContainerCard({
   isCompleted,
   sizeColors,
   onTap,
+  practiceColorMap, // PRACTICE MODE
+  onContextMenuContainer, // PRACTICE MODE
 }: {
   container: Container;
   isCompleted?: boolean;
   sizeColors?: Record<string, string>;
   onTap?: (container: Container) => void;
+  practiceColorMap?: Record<string, string>;
+  onContextMenuContainer?: (
+    e: React.MouseEvent<HTMLDivElement>,
+    container: Container,
+  ) => void;
 }) {
   const displayMode = React.useContext(DisplayModeContext);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -848,11 +860,19 @@ function DraggableContainerCard({
   const sizeKey = `size-${container.size}`;
   const sizeColor = sizeColors?.[sizeKey];
 
+  // PRACTICE MODE — 手動色 override
+  const practiceOverrideColor = practiceColorMap
+    ? practiceColorMap[container.id]
+    : undefined;
+
   const style: React.CSSProperties = {
     // DragOverlay使用時は元カードを動かさず非表示にする
     opacity: isDragging ? 0 : undefined,
     pointerEvents: isDragging ? "none" : undefined,
     ...(sizeColor ? { borderLeft: `5px solid ${sizeColor}` } : {}),
+    ...(practiceOverrideColor
+      ? ({ ["--practice-color" as any]: practiceOverrideColor } as React.CSSProperties)
+      : {}),
   };
 
   const full = formatContainerSummary(container);
@@ -905,6 +925,13 @@ function DraggableContainerCard({
       {...attributes}
       title={full}
       onClick={() => onTap?.(container)}
+      // PRACTICE MODE
+      data-practice-color={practiceOverrideColor ? "1" : undefined}
+      onContextMenu={(e) => {
+        if (!onContextMenuContainer) return;
+        e.preventDefault();
+        onContextMenuContainer(e, container);
+      }}
     >
       {displayMode === "phone" && (
         <div className="drag-handle" {...listeners}>{"\u2630"}</div>
@@ -1361,6 +1388,7 @@ function App() {
     y: 0,
     group: null,
     driver: null,
+    containerForColor: null,
   });
 
   // どこかクリックしたらメニューを閉じる
@@ -1373,14 +1401,40 @@ function App() {
   const openMailMenu = (
     e: React.MouseEvent<HTMLDivElement>,
     group: ChassisGroup,
-    driver: Driver,
+    driver: Driver | null,
   ) => {
+    const c = group.container;
     setMailMenu({
       visible: true,
       x: e.clientX,
       y: e.clientY,
       group,
       driver,
+      containerForColor: c
+        ? {
+            id: c.id,
+            label: `${c.no || "(no番号)"} ${c.destination || ""}`.trim(),
+          }
+        : null,
+    });
+  };
+
+  // PRACTICE MODE — 単体コンテナ (配送分/一時保管/配送完了 等) 用の右クリックメニュー
+  const openContainerContextMenu = (
+    e: React.MouseEvent<HTMLDivElement>,
+    container: Container,
+  ) => {
+    e.preventDefault();
+    setMailMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      group: null,
+      driver: null,
+      containerForColor: {
+        id: container.id,
+        label: `${container.no || "(no番号)"} ${container.destination || ""}`.trim(),
+      },
     });
   };
 
@@ -2751,6 +2805,7 @@ function App() {
         <DraggableContainerCard
           container={found.container}
           sizeColors={sizeColors}
+          practiceColorMap={practiceState.colors}
         />
       );
     }
@@ -4160,6 +4215,9 @@ function App() {
                                 sizeColors={sizeColors}
                                 onTap={handleCardTap}
                                 practiceColorMap={practiceState.colors}
+                                onContextMenuGroup={(e, gg) =>
+                                  openMailMenu(e, gg, null)
+                                }
                               />
                             ))}
                         </DroppableArea>
@@ -4205,6 +4263,9 @@ function App() {
                                         kindColors={kindColors}
                                         onTap={handleCardTap}
                                         practiceColorMap={practiceState.colors}
+                                        onContextMenuGroup={(e, gg) =>
+                                          openMailMenu(e, gg, null)
+                                        }
                                       />
                                     )}
                                   </DroppableArea>
@@ -4465,6 +4526,10 @@ function App() {
                                         key={c.id}
                                         container={c}
                                         sizeColors={sizeColors}
+                                        practiceColorMap={practiceState.colors}
+                                        onContextMenuContainer={
+                                          openContainerContextMenu
+                                        }
                                       />
                                     ))}
                                 </DroppableArea>
@@ -4499,6 +4564,8 @@ function App() {
                           container={c}
                           sizeColors={sizeColors}
                           isCompleted
+                          practiceColorMap={practiceState.colors}
+                          onContextMenuContainer={openContainerContextMenu}
                         />
                       ))}
                     </DroppableArea>
@@ -4572,42 +4639,50 @@ function App() {
             )}
           </DndContext>
 
-          {mailMenu.visible && mailMenu.group && mailMenu.driver && (
+          {mailMenu.visible && (mailMenu.group || mailMenu.containerForColor) && (
             <div
               className="mail-context-menu"
               style={{ top: mailMenu.y, left: mailMenu.x }}
             >
-              <button onClick={() => handleSendMail("pickup")}>
-                取りの送信
-              </button>
-              <button onClick={() => handleSendMail("delivery")}>
-                配送の送信
-              </button>
+              {mailMenu.driver && mailMenu.group && (
+                <>
+                  <button onClick={() => handleSendMail("pickup")}>
+                    取りの送信
+                  </button>
+                  <button onClick={() => handleSendMail("delivery")}>
+                    配送の送信
+                  </button>
+                </>
+              )}
               {/* PRACTICE MODE (temporary) */}
-              <button
-                onClick={() => {
-                  const c = mailMenu.group?.container;
-                  if (!c) return;
-                  setPracticeColorPicker({
-                    visible: true,
-                    containerId: c.id,
-                    containerLabel: `${c.no || "(no番号)"} ${c.destination || ""}`.trim(),
-                  });
-                  setMailMenu((s) => ({ ...s, visible: false }));
-                }}
-              >
-                🎨 色を変更…
-              </button>
-              <button
-                onClick={() => {
-                  const c = mailMenu.group?.container;
-                  if (!c) return;
-                  setPracticeContainerColor(c.id, null);
-                  setMailMenu((s) => ({ ...s, visible: false }));
-                }}
-              >
-                🚫 色をリセット
-              </button>
+              {mailMenu.containerForColor && (
+                <>
+                  <button
+                    onClick={() => {
+                      const cfc = mailMenu.containerForColor;
+                      if (!cfc) return;
+                      setPracticeColorPicker({
+                        visible: true,
+                        containerId: cfc.id,
+                        containerLabel: cfc.label,
+                      });
+                      setMailMenu((s) => ({ ...s, visible: false }));
+                    }}
+                  >
+                    🎨 色を変更…
+                  </button>
+                  <button
+                    onClick={() => {
+                      const cfc = mailMenu.containerForColor;
+                      if (!cfc) return;
+                      setPracticeContainerColor(cfc.id, null);
+                      setMailMenu((s) => ({ ...s, visible: false }));
+                    }}
+                  >
+                    🚫 色をリセット
+                  </button>
+                </>
+              )}
             </div>
           )}
           {/* PRACTICE MODE (temporary) */}
