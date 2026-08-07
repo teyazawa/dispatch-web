@@ -146,6 +146,7 @@ type BoardState = {
   sizeColors?: Record<string, string>;
 
   theme?: ThemeSettings;
+  extraMailRecipients?: Record<string, string>;
   version: number;
   updatedAt: string;
   updatedBy: string;
@@ -3566,6 +3567,8 @@ function App() {
       if (s.axleColors) setAxleColors(s.axleColors);
       if (s.sizeColors) setSizeColors(s.sizeColors);
       if (s.theme) setTheme({ ...DEFAULT_THEME, ...s.theme });
+      if (s.extraMailRecipients)
+        setExtraMailRecipients(s.extraMailRecipients);
 
       // ✅ version も合わせる（Realtimeの古い更新を弾くため）
       if (typeof s.version === "number") {
@@ -3625,6 +3628,8 @@ function App() {
             if (next.axleColors) setAxleColors(next.axleColors);
             if (next.sizeColors) setSizeColors(next.sizeColors);
             if (next.theme) setTheme({ ...DEFAULT_THEME, ...next.theme });
+            if (next.extraMailRecipients)
+              setExtraMailRecipients(next.extraMailRecipients);
 
             versionRef.current = incomingVersion;
           } finally {
@@ -3665,6 +3670,7 @@ function App() {
         axleColors,
         sizeColors,
         theme,
+        extraMailRecipients,
 
         version: nextVersion,
         updatedAt: new Date().toISOString(),
@@ -3699,6 +3705,7 @@ function App() {
     axleColors,
     sizeColors,
     theme,
+    extraMailRecipients,
     hydrationDone,
   ]);
 
