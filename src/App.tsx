@@ -1715,6 +1715,79 @@ function App() {
     }
   }, [API_BASE]);
 
+  // ★ 指定したシャーシ番号を川口車庫プール(single/front)へ強制救済
+  //    - chassisLabel 一致で検索（$id ずれにも耐性）
+  //    - 見つかれば location だけをリセット（container/id/extra は保持）
+  //    - 見つからなければ新規追加
+  const rescueChassisByNumber = useCallback(async () => {
+    const input = window.prompt(
+      "復旧するシャーシ番号を入力してください（例: 675）",
+    );
+    if (!input) return;
+    const targetLabel = input.trim();
+    if (!targetLabel) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/chassis`);
+      if (!res.ok) {
+        console.error("シャーシAPIエラー", await res.text());
+        alert("kintoneからのシャーシ取得に失敗しました");
+        return;
+      }
+      const data = await res.json();
+      const apiChassis: ApiChassis[] = data.chassis ?? [];
+      const target = apiChassis.find((c) => c.displayNo === targetLabel);
+      if (!target) {
+        alert(
+          `kintoneに「${targetLabel}」というシャーシが見つかりません。\nシャーシ_状態が「稼働」または「修理」になっているか確認してください。`,
+        );
+        return;
+      }
+
+      const kawaguchiLoc: PoolLocation = {
+        type: "pool",
+        yardId: "kawaguchi",
+        laneId: "single",
+        pos: "front",
+      };
+
+      const existing = groupsRef.current.find(
+        (g) => g.chassisLabel === targetLabel,
+      );
+
+      if (existing) {
+        setGroups((prev) =>
+          prev.map((g) =>
+            g.chassisLabel === targetLabel
+              ? { ...g, location: kawaguchiLoc }
+              : g,
+          ),
+        );
+        alert(`シャーシ ${targetLabel} を川口車庫に復旧しました`);
+      } else {
+        const newGroup: ChassisGroup = {
+          id: target.id,
+          chassisLabel: target.displayNo,
+          size: target.size,
+          axle: target.axle,
+          container: undefined,
+          location: kawaguchiLoc,
+          extra: {
+            carNo: target.carNo,
+            sizeLabel: target.sizeLabel,
+            kindLabel: target.kindLabel,
+            note: target.note,
+          },
+        };
+        setGroups((prev) => [...prev, newGroup]);
+        alert(`シャーシ ${targetLabel} を川口車庫に追加しました`);
+      }
+    } catch (err) {
+      console.error("シャーシ復旧に失敗", err);
+      alert("シャーシ復旧に失敗しました");
+    }
+  }, [API_BASE]);
+
   const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
     const findBase = (): Container | null => {
       const gid = String(id);
@@ -4142,6 +4215,17 @@ function App() {
                   </button>
                   <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
                     kintoneで追加されたシャーシを配車ボードに反映します（川口車庫に配置）。既存のシャーシ・積載状態は変更されません。
+                  </div>
+
+                  <button
+                    className="btn-small btn-add"
+                    style={{ marginTop: 12 }}
+                    onClick={rescueChassisByNumber}
+                  >
+                    シャーシ番号を指定して救済
+                  </button>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
+                    シャーシ番号を指定して川口車庫に強制復帰させます。画面から消えてしまったシャーシの復旧用（コンテナは維持されます）。
                   </div>
                 </div>
 
