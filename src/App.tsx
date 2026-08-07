@@ -1187,6 +1187,29 @@ function App() {
     }
   });
 
+  // ★ シャーシプール ヤード別 折りたたみ状態 (yardId → true = 隠す)
+  const [hiddenPoolYards, setHiddenPoolYards] = useState<
+    Record<string, boolean>
+  >(() => {
+    try {
+      const cached = localStorage.getItem("dispatch-hidden-pool-yards");
+      return cached ? JSON.parse(cached) : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "dispatch-hidden-pool-yards",
+        JSON.stringify(hiddenPoolYards),
+      );
+    } catch {}
+  }, [hiddenPoolYards]);
+  const togglePoolYard = useCallback((yardId: string) => {
+    setHiddenPoolYards((prev) => ({ ...prev, [yardId]: !prev[yardId] }));
+  }, []);
+
   const [groups, setGroups] = useState<ChassisGroup[]>([]);
   // 一時保管枠
   const [tempContainers, setTempContainers] = useState<Container[]>([]);
@@ -1980,6 +2003,84 @@ function App() {
     setContainers((prev) => [...prev, newC]);
     setNewContainerModal((s) => ({ ...s, visible: false }));
   }, [newContainerModal]);
+
+  // ★ ドライバーグループ一斉メール配信
+  //   groupKey: driverGroup の key ("ドレー" 等)
+  //   対象: そのグループ内でシャーシ+コンテナが載っているドライバー全員
+  //   subject: 【N日配送分】 (先頭コンテナの date から)
+  //   body:  ドライバーごとに 時間/コンテナ/サイズ/配送先/住所/受領書/備考 のブロック
+  const sendGroupBatchMail = useCallback(
+    (groupKey: string, groupLabel: string) => {
+      const groupDrivers = drivers.filter(
+        (d) => (d.groupName || "") === groupKey,
+      );
+      if (groupDrivers.length === 0) {
+        alert(`${groupLabel}: ドライバーがいません`);
+        return;
+      }
+      // 各ドライバーが積んでいる container (最新の groups から拾う)
+      const rows = groupDrivers
+        .map((d) => {
+          const g = groupsRef.current.find(
+            (gg) =>
+              gg.location.type === "driver" && gg.location.driverId === d.id,
+          );
+          const c = g?.container;
+          return { driver: d, container: c };
+        })
+        .filter((r) => r.container);
+
+      if (rows.length === 0) {
+        alert(`${groupLabel}: コンテナが載っているドライバーがいません`);
+        return;
+      }
+
+      const emails = groupDrivers
+        .filter((d) => d.email)
+        .map((d) => d.email!)
+        .join(",");
+      if (!emails) {
+        alert(`${groupLabel}: メールアドレスが設定されているドライバーがいません`);
+        return;
+      }
+
+      const firstDate = rows[0].container!.date;
+      const dayLabel = buildDayLabel(firstDate) || "本日";
+      const subject = `【${dayLabel}配送分】`;
+
+      const blocks = rows.map(({ driver, container }) => {
+        const c = container!;
+        const sizeRaw = containerMetaRef.current.get(c.id)?.sizeRaw;
+        const bodySize = mailBodySizeLabel(c, sizeRaw);
+        const receiptBlock = fileLinksText(
+          "受領書",
+          c.receiptFiles,
+          API_BASE,
+          "なし",
+        );
+        const lines = [
+          `${driver.name}さん`,
+          `時間：${c.eta}`,
+          `コンテナ：${c.no}`,
+          `サイズ：${bodySize}／${c.kindCode}`,
+          `配送先：${c.destination}`,
+          c.destadd ? `住所：${c.destadd}` : "",
+          receiptBlock,
+          "備考：",
+        ].filter(Boolean);
+        return lines.join("\n");
+      });
+
+      const body = blocks.join("\n\n") + "\n\nよろしくお願いします。\n";
+
+      const mailto = `mailto:${encodeURIComponent(
+        emails,
+      )}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+      window.location.href = mailto;
+    },
+    [drivers, API_BASE],
+  );
 
   const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
     const findBase = (): Container | null => {
@@ -4538,9 +4639,41 @@ function App() {
                               },
                             ];
 
+                  const isHidden = !!hiddenPoolYards[yard.id];
                   return (
                     <div key={yard.id} className="yard-section">
-                      <div className="yard-title">{yard.name}</div>
+                      <div
+                        className="yard-title"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          cursor: "pointer",
+                          userSelect: "none",
+                        }}
+                        onClick={() => togglePoolYard(yard.id)}
+                        title={isHidden ? "展開" : "折りたたむ"}
+                      >
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: 22,
+                            height: 22,
+                            lineHeight: "20px",
+                            textAlign: "center",
+                            border: "1px solid #9ca3af",
+                            borderRadius: 4,
+                            fontWeight: "bold",
+                            background: "#fff",
+                          }}
+                        >
+                          {isHidden ? "＋" : "－"}
+                        </span>
+                        <span>{yard.name}</span>
+                      </div>
+
+                      {isHidden ? null : (
+                        <>
 
                       {/* ★ 1マス（フリー）モード：川口車庫と同じ横並び */}
                       {slotMode === "single" ? (
@@ -4624,6 +4757,8 @@ function App() {
                           ))}
                         </div>
                       )}
+                        </>
+                      )}
                     </div>
                   );
                 })}
@@ -4693,7 +4828,25 @@ function App() {
 
                       return (
                         <div key={key} className="driver-group">
-                          <div className="driver-group-name">・{label}</div>
+                          <div
+                            className="driver-group-name"
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 8,
+                            }}
+                          >
+                            <span>・{label}</span>
+                            <button
+                              className="btn-small btn-primary"
+                              style={{ fontSize: 11, padding: "2px 8px" }}
+                              onClick={() => sendGroupBatchMail(key, label)}
+                              title="このグループの全ドライバーに一斉メール"
+                            >
+                              📧 一斉配信
+                            </button>
+                          </div>
                           <div className="driver-list">
                             {groupDrivers.map((d) => {
                               const truck = getTruckForDriver(d.id);
@@ -4759,7 +4912,25 @@ function App() {
 
                       return (
                         <div key={key} className="driver-group">
-                          <div className="driver-group-name">・{label}</div>
+                          <div
+                            className="driver-group-name"
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 8,
+                            }}
+                          >
+                            <span>・{label}</span>
+                            <button
+                              className="btn-small btn-primary"
+                              style={{ fontSize: 11, padding: "2px 8px" }}
+                              onClick={() => sendGroupBatchMail(key, label)}
+                              title="このグループの全ドライバーに一斉メール"
+                            >
+                              📧 一斉配信
+                            </button>
+                          </div>
                           <div className="driver-list">
                             {groupDrivers.map((d) => {
                               const truck = getTruckForDriver(d.id);
