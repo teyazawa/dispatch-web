@@ -2106,12 +2106,19 @@ function App() {
 
       // 件名の日付: A+C コンテナの date から最頻値を採用
       // 複数の日付が混在していれば confirm で警告(キャンセル可)
+      // 選定された日付が「当日」だった場合も、翌日配送前提と食い違うので警告
       const dateCounts = new Map<string, number>();
       for (const r of rows) {
         const d = r.container?.date?.trim();
         if (!d) continue;
         dateCounts.set(d, (dateCounts.get(d) ?? 0) + 1);
       }
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(now.getDate() + 1);
+      const tomorrowLabel = `${tomorrow.getDate()}日`;
+      const todayLabel = `${now.getDate()}日`;
+
       let chosenDate = "";
       if (dateCounts.size > 0) {
         // 最頻値(同数は先勝ち = 挿入順)
@@ -2132,7 +2139,15 @@ function App() {
           if (!ok) return;
         }
       }
-      const dayLabel = buildDayLabel(chosenDate) || "本日";
+      const dayLabel = buildDayLabel(chosenDate) || tomorrowLabel;
+
+      // 当日日付ケースの追加警告 (通常は翌日配送用)
+      if (dayLabel === todayLabel) {
+        const ok = window.confirm(
+          `${groupLabel}: 選定日付「${dayLabel}」は当日です。\n通常は翌日配送用のメールです。続行しますか?`,
+        );
+        if (!ok) return;
+      }
       const subject = `【${dayLabel}配送分】`;
 
       const blocks = rows.map(({ driver, container }) => {
