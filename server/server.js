@@ -33,6 +33,15 @@ const CONTAINER_API_TOKEN = process.env.KINTONE_CONTAINER_API_TOKEN;
 // Kintone write switch（安全装置）
 const ALLOW_KINTONE_WRITE = process.env.ALLOW_KINTONE_WRITE === "true";
 
+// GAS(手塚)- yard-map など読み取り専用の参照用
+const GAS_TEZUKA_URL =
+  process.env.GAS_TEZUKA_URL ||
+  "https://script.google.com/macros/s/AKfycbzayBEyGuZxBassP67tx8JCsr7dMsx5V0NoNFL4h7Cgz5LUwdugsHIvXVj4pbUoAtvX2Q/exec";
+
+// yard-map 用メモリキャッシュ(GAS コールドスタート対策)
+let yardMapCache = { yards: null, ts: 0 };
+const YARD_MAP_TTL_MS = 10 * 60 * 1000; // 10分
+
 /** GASボタン経由でシートから読み込んだコンテナをメモリに保持 */
 let sheetContainerMemory = [];
 
@@ -393,6 +402,46 @@ app.get("/api/chassis", async (req, res) => {
       status: err.response?.status,
       detail: err.response?.data || err.message,
     });
+  }
+});
+
+/** =========================
+ *  GET /api/yard-map
+ *  GAS ?mode=list の yards を proxy (10分メモリキャッシュ)
+ *  Response: { yards: { 地域: [ヤード, ...], ... } }
+ *  ========================= */
+app.get("/api/yard-map", async (req, res) => {
+  try {
+    const now = Date.now();
+    const force = req.query.force === "1";
+    if (
+      !force &&
+      yardMapCache.yards &&
+      now - yardMapCache.ts < YARD_MAP_TTL_MS
+    ) {
+      return res.json({ yards: yardMapCache.yards, cached: true });
+    }
+    const url = `${GAS_TEZUKA_URL}?mode=list`;
+    const r = await axios.get(url, { timeout: 25000 });
+    const data = r.data;
+    if (!data || typeof data !== "object" || !data.yards) {
+      return res.status(502).json({ error: "GAS response invalid" });
+    }
+    yardMapCache = { yards: data.yards, ts: now };
+    return res.json({ yards: data.yards, cached: false });
+  } catch (err) {
+    console.error("yard-map fetch failed", err.message);
+    // フォールバック: キャッシュがあれば古くても返す
+    if (yardMapCache.yards) {
+      return res.json({
+        yards: yardMapCache.yards,
+        cached: true,
+        stale: true,
+      });
+    }
+    res
+      .status(500)
+      .json({ error: "yard-map fetch failed", detail: err.message });
   }
 });
 

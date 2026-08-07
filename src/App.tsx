@@ -1176,6 +1176,17 @@ function App() {
   }, [theme]);
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
+
+  // ★ 地域 → ヤード[] マップ (GAS「ヤード」シート由来)
+  const [yardMap, setYardMap] = useState<Record<string, string[]>>(() => {
+    try {
+      const cached = localStorage.getItem("dispatch-yard-map");
+      return cached ? JSON.parse(cached) : {};
+    } catch {
+      return {};
+    }
+  });
+
   const [groups, setGroups] = useState<ChassisGroup[]>([]);
   // 一時保管枠
   const [tempContainers, setTempContainers] = useState<Container[]>([]);
@@ -1324,6 +1335,41 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const [settingsSnapshot, setSettingsSnapshot] = useState<any | null>(null);
+
+  // ★ 搬入ヤード書込みモーダル (右クリック → 搬入ヤード)
+  const [dropoffYardEditor, setDropoffYardEditor] = useState<{
+    visible: boolean;
+    containerId: string | null;
+    region: string;
+    yard: string;
+  }>({ visible: false, containerId: null, region: "", yard: "" });
+
+  // ★ 新規コンテナ作成モーダル (ヘッダーボタン)
+  const [newContainerModal, setNewContainerModal] = useState<{
+    visible: boolean;
+    no: string;
+    size: Size;
+    pickupRegion: string;
+    pickupYard: string;
+    dropoffRegion: string;
+    dropoffYard: string;
+    destination: string;
+    eta: string;
+    booking: string;
+    date: string;
+  }>({
+    visible: false,
+    no: "",
+    size: "20",
+    pickupRegion: "",
+    pickupYard: "",
+    dropoffRegion: "",
+    dropoffYard: "",
+    destination: "",
+    eta: "",
+    booking: "",
+    date: "",
+  });
 
   const [yards, setYards] = useState<YardConfig[]>(() => {
     const applyDefaults = (list: any[]): YardConfig[] =>
@@ -1508,6 +1554,31 @@ function App() {
 
     fetchDrivers();
   }, []);
+
+  // ★ 初回マウント時に GAS(手塚) から 地域→ヤード マップを取得(server proxy 経由)
+  useEffect(() => {
+    async function fetchYardMap() {
+      try {
+        const res = await fetch(`${API_BASE}/api/yard-map`);
+        if (!res.ok) {
+          console.error("yard-map API エラー", await res.text());
+          return;
+        }
+        const data = await res.json();
+        if (!data.yards) return;
+        setYardMap(data.yards);
+        try {
+          localStorage.setItem(
+            "dispatch-yard-map",
+            JSON.stringify(data.yards),
+          );
+        } catch {}
+      } catch (err) {
+        console.error("yard-map 取得に失敗", err);
+      }
+    }
+    fetchYardMap();
+  }, [API_BASE]);
 
   const [trucks, setTrucks] = useState<Truck[]>([]);
 
@@ -1787,6 +1858,128 @@ function App() {
       alert("シャーシ復旧に失敗しました");
     }
   }, [API_BASE]);
+
+  // ★ 搬入ヤード書込みモーダルを開く
+  const openDropoffYardEditor = useCallback(
+    (containerId: string) => {
+      // 現在の値からデフォルト地域/ヤードを推定
+      const findCurrent = (): {
+        dropoffYard: string;
+      } | null => {
+        const fromGroup = groupsRef.current.find(
+          (g) => g.container?.id === containerId,
+        )?.container;
+        if (fromGroup) return { dropoffYard: fromGroup.dropoffYard ?? "" };
+        const fromC = containersRef.current.find((c) => c.id === containerId);
+        if (fromC) return { dropoffYard: fromC.dropoffYard ?? "" };
+        const fromT = tempRef.current.find((c) => c.id === containerId);
+        if (fromT) return { dropoffYard: fromT.dropoffYard ?? "" };
+        const fromD = doneRef.current.find((c) => c.id === containerId);
+        if (fromD) return { dropoffYard: fromD.dropoffYard ?? "" };
+        return null;
+      };
+      const cur = findCurrent();
+      let initRegion = "";
+      let initYard = cur?.dropoffYard ?? "";
+      if (initYard) {
+        for (const [reg, list] of Object.entries(yardMap)) {
+          if (list.includes(initYard)) {
+            initRegion = reg;
+            break;
+          }
+        }
+      }
+      setDropoffYardEditor({
+        visible: true,
+        containerId,
+        region: initRegion,
+        yard: initYard,
+      });
+    },
+    [yardMap],
+  );
+
+  // ★ 搬入ヤードの変更を保存 (container が居るすべての箇所に反映)
+  const saveDropoffYard = useCallback(() => {
+    const { containerId, yard } = dropoffYardEditor;
+    if (!containerId) return;
+    const newYard = yard.trim();
+
+    setGroups((prev) =>
+      prev.map((g) =>
+        g.container?.id === containerId
+          ? { ...g, container: { ...g.container, dropoffYard: newYard } }
+          : g,
+      ),
+    );
+    setContainers((prev) =>
+      prev.map((c) =>
+        c.id === containerId ? { ...c, dropoffYard: newYard } : c,
+      ),
+    );
+    setTempContainers((prev) =>
+      prev.map((c) =>
+        c.id === containerId ? { ...c, dropoffYard: newYard } : c,
+      ),
+    );
+    setCompletedContainers((prev) =>
+      prev.map((c) =>
+        c.id === containerId ? { ...c, dropoffYard: newYard } : c,
+      ),
+    );
+
+    setDropoffYardEditor((s) => ({ ...s, visible: false }));
+  }, [dropoffYardEditor]);
+
+  // ★ 新規コンテナ作成モーダルを開く
+  const openNewContainerModal = useCallback(() => {
+    // 日付は今日 (MM/DD)
+    const d = new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    setNewContainerModal({
+      visible: true,
+      no: "",
+      size: "20",
+      pickupRegion: "",
+      pickupYard: "",
+      dropoffRegion: "",
+      dropoffYard: "",
+      destination: "",
+      eta: "",
+      booking: "",
+      date: `${mm}/${dd}`,
+    });
+  }, []);
+
+  // ★ 新規コンテナを保存 (配送分レーンに追加)
+  const saveNewContainer = useCallback(() => {
+    const m = newContainerModal;
+    if (!m.no.trim()) {
+      alert("コンテナ番号を入力してください");
+      return;
+    }
+    const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const newC: Container = {
+      id: localId,
+      size: m.size,
+      date: m.date || "",
+      eta: m.eta.trim(),
+      pickupYardGroup: m.pickupRegion,
+      pickupYard: m.pickupYard,
+      no: m.no.trim().toUpperCase(),
+      ship: "",
+      booking: m.booking.trim(),
+      destadd: "",
+      desttel: "",
+      kindCode: "",
+      destination: m.destination.trim(),
+      dropoffYard: m.dropoffYard,
+      step: 0,
+    };
+    setContainers((prev) => [...prev, newC]);
+    setNewContainerModal((s) => ({ ...s, visible: false }));
+  }, [newContainerModal]);
 
   const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
     const findBase = (): Container | null => {
@@ -3560,6 +3753,14 @@ function App() {
                   </div>
                 </div>
               </div>
+              {/* TEST FEATURE (temporary) — 新規コンテナ作成 */}
+              <button
+                className="settings-button btn-primary"
+                style={{ marginRight: 8 }}
+                onClick={openNewContainerModal}
+              >
+                ＋新規コンテナ
+              </button>
               <button
                 className="settings-button btn-primary"
                 onClick={openSettings}
@@ -4787,6 +4988,306 @@ function App() {
             )}
           </DndContext>
 
+          {/* TEST FEATURE (temporary) — 搬入ヤード書込みモーダル */}
+          {dropoffYardEditor.visible && (
+            <div className="modal-backdrop">
+              <div
+                className="modal"
+                onClick={(e) => e.stopPropagation()}
+                style={{ maxWidth: 480 }}
+              >
+                <h2>搬入ヤード書込み</h2>
+                <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 100 }}>地域</div>
+                    <select
+                      value={dropoffYardEditor.region}
+                      onChange={(e) =>
+                        setDropoffYardEditor((s) => ({
+                          ...s,
+                          region: e.target.value,
+                          yard: "",
+                        }))
+                      }
+                      style={{ flex: 1, padding: "6px 8px" }}
+                    >
+                      <option value="">-- 選択 --</option>
+                      {Object.keys(yardMap).map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 100 }}>ヤード</div>
+                    <select
+                      value={dropoffYardEditor.yard}
+                      onChange={(e) =>
+                        setDropoffYardEditor((s) => ({
+                          ...s,
+                          yard: e.target.value,
+                        }))
+                      }
+                      disabled={!dropoffYardEditor.region}
+                      style={{ flex: 1, padding: "6px 8px" }}
+                    >
+                      <option value="">-- 選択 --</option>
+                      {(yardMap[dropoffYardEditor.region] ?? []).map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button
+                    className="btn-delete"
+                    onClick={() =>
+                      setDropoffYardEditor((s) => ({ ...s, visible: false }))
+                    }
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    className="btn-primary"
+                    disabled={!dropoffYardEditor.yard}
+                    onClick={saveDropoffYard}
+                  >
+                    保存
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TEST FEATURE (temporary) — 新規コンテナ作成モーダル */}
+          {newContainerModal.visible && (
+            <div className="modal-backdrop">
+              <div
+                className="modal"
+                onClick={(e) => e.stopPropagation()}
+                style={{ maxWidth: 560 }}
+              >
+                <h2>新規コンテナ作成</h2>
+                <div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 110 }}>コンテナ番号 *</div>
+                    <input
+                      type="text"
+                      value={newContainerModal.no}
+                      onChange={(e) =>
+                        setNewContainerModal((s) => ({
+                          ...s,
+                          no: e.target.value,
+                        }))
+                      }
+                      placeholder="例: TCNU1234567"
+                      style={{ flex: 1, padding: "6px 8px" }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 110 }}>サイズ</div>
+                    <label style={{ marginRight: 12 }}>
+                      <input
+                        type="radio"
+                        checked={newContainerModal.size === "20"}
+                        onChange={() =>
+                          setNewContainerModal((s) => ({ ...s, size: "20" }))
+                        }
+                      />
+                      20F
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        checked={newContainerModal.size === "40"}
+                        onChange={() =>
+                          setNewContainerModal((s) => ({ ...s, size: "40" }))
+                        }
+                      />
+                      40F
+                    </label>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 110 }}>日付 (MM/DD)</div>
+                    <input
+                      type="text"
+                      value={newContainerModal.date}
+                      onChange={(e) =>
+                        setNewContainerModal((s) => ({
+                          ...s,
+                          date: e.target.value,
+                        }))
+                      }
+                      placeholder="例: 08/07"
+                      style={{ width: 120, padding: "6px 8px" }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 110 }}>eta (着時間)</div>
+                    <input
+                      type="text"
+                      value={newContainerModal.eta}
+                      onChange={(e) =>
+                        setNewContainerModal((s) => ({
+                          ...s,
+                          eta: e.target.value,
+                        }))
+                      }
+                      placeholder="例: 9:00"
+                      style={{ width: 120, padding: "6px 8px" }}
+                    />
+                  </div>
+
+                  <hr style={{ margin: "8px 0", opacity: 0.3 }} />
+                  <div style={{ fontWeight: "bold" }}>搬出ヤード</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 110 }}>地域</div>
+                    <select
+                      value={newContainerModal.pickupRegion}
+                      onChange={(e) =>
+                        setNewContainerModal((s) => ({
+                          ...s,
+                          pickupRegion: e.target.value,
+                          pickupYard: "",
+                        }))
+                      }
+                      style={{ flex: 1, padding: "6px 8px" }}
+                    >
+                      <option value="">-- 選択 --</option>
+                      {Object.keys(yardMap).map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 110 }}>ヤード</div>
+                    <select
+                      value={newContainerModal.pickupYard}
+                      onChange={(e) =>
+                        setNewContainerModal((s) => ({
+                          ...s,
+                          pickupYard: e.target.value,
+                        }))
+                      }
+                      disabled={!newContainerModal.pickupRegion}
+                      style={{ flex: 1, padding: "6px 8px" }}
+                    >
+                      <option value="">-- 選択 --</option>
+                      {(yardMap[newContainerModal.pickupRegion] ?? []).map(
+                        (y) => (
+                          <option key={y} value={y}>
+                            {y}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </div>
+
+                  <hr style={{ margin: "8px 0", opacity: 0.3 }} />
+                  <div style={{ fontWeight: "bold" }}>搬入ヤード</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 110 }}>地域</div>
+                    <select
+                      value={newContainerModal.dropoffRegion}
+                      onChange={(e) =>
+                        setNewContainerModal((s) => ({
+                          ...s,
+                          dropoffRegion: e.target.value,
+                          dropoffYard: "",
+                        }))
+                      }
+                      style={{ flex: 1, padding: "6px 8px" }}
+                    >
+                      <option value="">-- 選択 --</option>
+                      {Object.keys(yardMap).map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 110 }}>ヤード</div>
+                    <select
+                      value={newContainerModal.dropoffYard}
+                      onChange={(e) =>
+                        setNewContainerModal((s) => ({
+                          ...s,
+                          dropoffYard: e.target.value,
+                        }))
+                      }
+                      disabled={!newContainerModal.dropoffRegion}
+                      style={{ flex: 1, padding: "6px 8px" }}
+                    >
+                      <option value="">-- 選択 --</option>
+                      {(yardMap[newContainerModal.dropoffRegion] ?? []).map(
+                        (y) => (
+                          <option key={y} value={y}>
+                            {y}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </div>
+
+                  <hr style={{ margin: "8px 0", opacity: 0.3 }} />
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 110 }}>配送先</div>
+                    <input
+                      type="text"
+                      value={newContainerModal.destination}
+                      onChange={(e) =>
+                        setNewContainerModal((s) => ({
+                          ...s,
+                          destination: e.target.value,
+                        }))
+                      }
+                      placeholder="例: 千葉RDC"
+                      style={{ flex: 1, padding: "6px 8px" }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ width: 110 }}>受注番号</div>
+                    <input
+                      type="text"
+                      value={newContainerModal.booking}
+                      onChange={(e) =>
+                        setNewContainerModal((s) => ({
+                          ...s,
+                          booking: e.target.value,
+                        }))
+                      }
+                      placeholder="任意"
+                      style={{ flex: 1, padding: "6px 8px" }}
+                    />
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button
+                    className="btn-delete"
+                    onClick={() =>
+                      setNewContainerModal((s) => ({ ...s, visible: false }))
+                    }
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    className="btn-primary"
+                    disabled={!newContainerModal.no.trim()}
+                    onClick={saveNewContainer}
+                  >
+                    作成
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {mailMenu.visible && (mailMenu.group || mailMenu.containerForColor) && (
             <div
               className="mail-context-menu"
@@ -4828,6 +5329,17 @@ function App() {
                     }}
                   >
                     🚫 色をリセット
+                  </button>
+                  {/* TEST FEATURE (temporary) — 搬入ヤード書込み */}
+                  <button
+                    onClick={() => {
+                      const cfc = mailMenu.containerForColor;
+                      if (!cfc) return;
+                      openDropoffYardEditor(cfc.id);
+                      setMailMenu((s) => ({ ...s, visible: false }));
+                    }}
+                  >
+                    🚚 搬入ヤード…
                   </button>
                 </>
               )}
