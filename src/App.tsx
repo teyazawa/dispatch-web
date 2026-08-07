@@ -2104,10 +2104,35 @@ function App() {
       }
       const emails = allEmails.join(",");
 
-      // 件名の日付: コンテナがあるドライバーの先頭 date
-      const firstWithContainer = rows.find((r) => r.container);
-      const firstDate = firstWithContainer?.container?.date ?? "";
-      const dayLabel = buildDayLabel(firstDate) || "本日";
+      // 件名の日付: A+C コンテナの date から最頻値を採用
+      // 複数の日付が混在していれば confirm で警告(キャンセル可)
+      const dateCounts = new Map<string, number>();
+      for (const r of rows) {
+        const d = r.container?.date?.trim();
+        if (!d) continue;
+        dateCounts.set(d, (dateCounts.get(d) ?? 0) + 1);
+      }
+      let chosenDate = "";
+      if (dateCounts.size > 0) {
+        // 最頻値(同数は先勝ち = 挿入順)
+        let best: [string, number] | null = null;
+        for (const [k, v] of dateCounts) {
+          if (!best || v > best[1]) best = [k, v];
+        }
+        chosenDate = best![0];
+
+        if (dateCounts.size > 1) {
+          const breakdown = Array.from(dateCounts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(([d, n]) => `${d}: ${n}件`)
+            .join(" / ");
+          const ok = window.confirm(
+            `${groupLabel}: コンテナに複数の日付が含まれています。\n${breakdown}\n\n最多の「${buildDayLabel(chosenDate)}」で件名を作成します。続行しますか?`,
+          );
+          if (!ok) return;
+        }
+      }
+      const dayLabel = buildDayLabel(chosenDate) || "本日";
       const subject = `【${dayLabel}配送分】`;
 
       const blocks = rows.map(({ driver, container }) => {
