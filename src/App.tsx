@@ -2034,10 +2034,14 @@ function App() {
   //   body:  ドライバーごとに 時間/コンテナ/サイズ/配送先/住所/受領書/備考 のブロック
   const sendGroupBatchMail = useCallback(
     (groupKey: string, groupLabel: string) => {
-      // グループ内の非除外ドライバー
-      const groupDrivers = drivers.filter(
-        (d) =>
-          (d.groupName || "") === groupKey && !excludedDrivers[d.id],
+      // グループ内ドライバーを画面表示順(driverOrderState.order[key]) に並び替え
+      // → 除外ドライバーをフィルタ
+      const orderedInGroup = sortDriversByOrder(
+        drivers.filter((d) => (d.groupName || "") === groupKey),
+        driverOrderState.order[groupKey],
+      );
+      const groupDrivers = orderedInGroup.filter(
+        (d) => !excludedDrivers[d.id],
       );
       if (groupDrivers.length === 0) {
         alert(`${groupLabel}: 対象ドライバーがいません(全員除外中の可能性)`);
@@ -2111,7 +2115,7 @@ function App() {
 
       window.location.href = mailto;
     },
-    [drivers, excludedDrivers, API_BASE],
+    [drivers, excludedDrivers, driverOrderState, API_BASE],
   );
 
   const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
