@@ -1664,6 +1664,57 @@ function App() {
     };
   }, [boardId, hydrationDone, API_BASE]);
 
+  // ★ kintoneシャーシを手動で差分同期（追加のみ・川口車庫 single/front へ）
+  const syncChassisFromKintone = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/chassis`);
+      if (!res.ok) {
+        console.error("シャーシAPIエラー", await res.text());
+        alert("kintoneからのシャーシ取得に失敗しました");
+        return;
+      }
+      const data = await res.json();
+      const apiChassis: ApiChassis[] = data.chassis ?? [];
+
+      const existingIds = new Set(groupsRef.current.map((g) => g.id));
+      const newGroups: ChassisGroup[] = apiChassis
+        .filter((c) => !existingIds.has(c.id))
+        .map((c) => ({
+          id: c.id,
+          chassisLabel: c.displayNo,
+          size: c.size,
+          axle: c.axle,
+          container: undefined,
+          location: {
+            type: "pool",
+            yardId: "kawaguchi",
+            laneId: "single",
+            pos: "front",
+          },
+          extra: {
+            carNo: c.carNo,
+            sizeLabel: c.sizeLabel,
+            kindLabel: c.kindLabel,
+            note: c.note,
+          },
+        }));
+
+      if (newGroups.length === 0) {
+        alert("追加されたシャーシはありませんでした");
+        return;
+      }
+
+      setGroups((prev) => [...prev, ...newGroups]);
+      const labels = newGroups.map((g) => g.chassisLabel).join(", ");
+      alert(
+        `${newGroups.length}台のシャーシを追加しました（川口車庫）\n${labels}`,
+      );
+    } catch (err) {
+      console.error("シャーシ同期に失敗", err);
+      alert("シャーシ同期に失敗しました");
+    }
+  }, [API_BASE]);
+
   const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
     const findBase = (): Container | null => {
       const gid = String(id);
@@ -4079,6 +4130,19 @@ function App() {
                   <button className="btn-small btn-add" onClick={addSpareZone}>
                     エリア追加
                   </button>
+                </div>
+
+                <h3>kintone連携</h3>
+                <div style={{ marginBottom: 16 }}>
+                  <button
+                    className="btn-small btn-add"
+                    onClick={syncChassisFromKintone}
+                  >
+                    kintoneシャーシを再同期
+                  </button>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
+                    kintoneで追加されたシャーシを配車ボードに反映します（川口車庫に配置）。既存のシャーシ・積載状態は変更されません。
+                  </div>
                 </div>
 
                 <div className="modal-footer">
