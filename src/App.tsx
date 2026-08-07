@@ -1198,6 +1198,29 @@ function App() {
       return {};
     }
   });
+
+  // ★ 一斉配信 除外ドライバー (driverId → true = 除外)
+  const [excludedDrivers, setExcludedDrivers] = useState<
+    Record<string, boolean>
+  >(() => {
+    try {
+      const cached = localStorage.getItem("dispatch-mail-excluded-drivers");
+      return cached ? JSON.parse(cached) : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "dispatch-mail-excluded-drivers",
+        JSON.stringify(excludedDrivers),
+      );
+    } catch {}
+  }, [excludedDrivers]);
+  const toggleExcludedDriver = useCallback((driverId: string) => {
+    setExcludedDrivers((prev) => ({ ...prev, [driverId]: !prev[driverId] }));
+  }, []);
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -2011,29 +2034,24 @@ function App() {
   //   body:  ドライバーごとに 時間/コンテナ/サイズ/配送先/住所/受領書/備考 のブロック
   const sendGroupBatchMail = useCallback(
     (groupKey: string, groupLabel: string) => {
+      // グループ内の非除外ドライバー
       const groupDrivers = drivers.filter(
-        (d) => (d.groupName || "") === groupKey,
+        (d) =>
+          (d.groupName || "") === groupKey && !excludedDrivers[d.id],
       );
       if (groupDrivers.length === 0) {
-        alert(`${groupLabel}: ドライバーがいません`);
+        alert(`${groupLabel}: 対象ドライバーがいません(全員除外中の可能性)`);
         return;
       }
-      // 各ドライバーが積んでいる container (最新の groups から拾う)
-      const rows = groupDrivers
-        .map((d) => {
-          const g = groupsRef.current.find(
-            (gg) =>
-              gg.location.type === "driver" && gg.location.driverId === d.id,
-          );
-          const c = g?.container;
-          return { driver: d, container: c };
-        })
-        .filter((r) => r.container);
 
-      if (rows.length === 0) {
-        alert(`${groupLabel}: コンテナが載っているドライバーがいません`);
-        return;
-      }
+      // 各ドライバーの container (無い場合は undefined のまま本文に空欄で入れる)
+      const rows = groupDrivers.map((d) => {
+        const g = groupsRef.current.find(
+          (gg) =>
+            gg.location.type === "driver" && gg.location.driverId === d.id,
+        );
+        return { driver: d, container: g?.container };
+      });
 
       const emails = groupDrivers
         .filter((d) => d.email)
@@ -2044,12 +2062,27 @@ function App() {
         return;
       }
 
-      const firstDate = rows[0].container!.date;
+      // 件名の日付: コンテナがあるドライバーの先頭 date
+      const firstWithContainer = rows.find((r) => r.container);
+      const firstDate = firstWithContainer?.container?.date ?? "";
       const dayLabel = buildDayLabel(firstDate) || "本日";
       const subject = `【${dayLabel}配送分】`;
 
       const blocks = rows.map(({ driver, container }) => {
-        const c = container!;
+        if (!container) {
+          // A+C なしのドライバーは項目だけ空欄で並べる
+          return [
+            `${driver.name}さん`,
+            "時間：",
+            "コンテナ：",
+            "サイズ：",
+            "配送先：",
+            "住所：",
+            "受領書：",
+            "備考：",
+          ].join("\n");
+        }
+        const c = container;
         const sizeRaw = containerMetaRef.current.get(c.id)?.sizeRaw;
         const bodySize = mailBodySizeLabel(c, sizeRaw);
         const receiptBlock = fileLinksText(
@@ -2058,17 +2091,16 @@ function App() {
           API_BASE,
           "なし",
         );
-        const lines = [
+        return [
           `${driver.name}さん`,
           `時間：${c.eta}`,
           `コンテナ：${c.no}`,
           `サイズ：${bodySize}／${c.kindCode}`,
           `配送先：${c.destination}`,
-          c.destadd ? `住所：${c.destadd}` : "",
-          receiptBlock,
+          `住所：${c.destadd ?? ""}`,
+          receiptBlock || "受領書：",
           "備考：",
-        ].filter(Boolean);
-        return lines.join("\n");
+        ].join("\n");
       });
 
       const body = blocks.join("\n\n") + "\n\nよろしくお願いします。\n";
@@ -2079,7 +2111,7 @@ function App() {
 
       window.location.href = mailto;
     },
-    [drivers, API_BASE],
+    [drivers, excludedDrivers, API_BASE],
   );
 
   const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
@@ -4855,7 +4887,36 @@ function App() {
                               return (
                                 <section key={d.id} className="driver-row">
                                   <div className="driver-col">
-                                    <div className="driver-name">{d.name}</div>
+                                    <div
+                                      className="driver-name"
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 4,
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={!excludedDrivers[d.id]}
+                                        onChange={() =>
+                                          toggleExcludedDriver(d.id)
+                                        }
+                                        title="一斉メール対象"
+                                        style={{ cursor: "pointer" }}
+                                      />
+                                      <span
+                                        style={{
+                                          textDecoration: excludedDrivers[d.id]
+                                            ? "line-through"
+                                            : undefined,
+                                          opacity: excludedDrivers[d.id]
+                                            ? 0.5
+                                            : 1,
+                                        }}
+                                      >
+                                        {d.name}
+                                      </span>
+                                    </div>
                                     <DroppableArea
                                       id={`driver-${d.id}-truck`}
                                       className="slot-driver-truck"
@@ -4939,7 +5000,36 @@ function App() {
                               return (
                                 <section key={d.id} className="driver-row">
                                   <div className="driver-col">
-                                    <div className="driver-name">{d.name}</div>
+                                    <div
+                                      className="driver-name"
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 4,
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={!excludedDrivers[d.id]}
+                                        onChange={() =>
+                                          toggleExcludedDriver(d.id)
+                                        }
+                                        title="一斉メール対象"
+                                        style={{ cursor: "pointer" }}
+                                      />
+                                      <span
+                                        style={{
+                                          textDecoration: excludedDrivers[d.id]
+                                            ? "line-through"
+                                            : undefined,
+                                          opacity: excludedDrivers[d.id]
+                                            ? 0.5
+                                            : 1,
+                                        }}
+                                      >
+                                        {d.name}
+                                      </span>
+                                    </div>
                                     <DroppableArea
                                       id={`driver-${d.id}-truck`}
                                       className="slot-driver-truck"
