@@ -468,7 +468,7 @@ function buildDeliveryMail(
     "受領書",
     container.receiptFiles,
     apiBase,
-    "なし",
+    "あり",
   );
 
   const subject = `【${dayLabel}配送分】 ${container.eta} ${container.destination} ${subjectSize} ${container.no}`;
@@ -1221,6 +1221,26 @@ function App() {
   const toggleExcludedDriver = useCallback((driverId: string) => {
     setExcludedDrivers((prev) => ({ ...prev, [driverId]: !prev[driverId] }));
   }, []);
+
+  // ★ 一斉配信 グループ別 追加宛先 (groupKey → "a@x.com, b@y.com" のカンマ区切り文字列)
+  const [extraMailRecipients, setExtraMailRecipients] = useState<
+    Record<string, string>
+  >(() => {
+    try {
+      const cached = localStorage.getItem("dispatch-mail-extra-recipients");
+      return cached ? JSON.parse(cached) : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "dispatch-mail-extra-recipients",
+        JSON.stringify(extraMailRecipients),
+      );
+    } catch {}
+  }, [extraMailRecipients]);
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -2057,14 +2077,31 @@ function App() {
         return { driver: d, container: g?.container };
       });
 
-      const emails = groupDrivers
+      const driverEmails = groupDrivers
         .filter((d) => d.email)
-        .map((d) => d.email!)
-        .join(",");
-      if (!emails) {
-        alert(`${groupLabel}: メールアドレスが設定されているドライバーがいません`);
+        .map((d) => d.email!);
+      const extraStr = extraMailRecipients[groupKey] ?? "";
+      const extraList = extraStr
+        .split(/[,、\s]+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0 && /@/.test(s));
+      // 重複除去(順序保持)
+      const seen = new Set<string>();
+      const allEmails: string[] = [];
+      for (const e of [...driverEmails, ...extraList]) {
+        const k = e.toLowerCase();
+        if (!seen.has(k)) {
+          seen.add(k);
+          allEmails.push(e);
+        }
+      }
+      if (allEmails.length === 0) {
+        alert(
+          `${groupLabel}: メールアドレスが設定されているドライバー・追加宛先がいません`,
+        );
         return;
       }
+      const emails = allEmails.join(",");
 
       // 件名の日付: コンテナがあるドライバーの先頭 date
       const firstWithContainer = rows.find((r) => r.container);
@@ -2093,7 +2130,7 @@ function App() {
           "受領書",
           c.receiptFiles,
           API_BASE,
-          "なし",
+          "あり",
         );
         return [
           `${driver.name}さん`,
@@ -2115,7 +2152,13 @@ function App() {
 
       window.location.href = mailto;
     },
-    [drivers, excludedDrivers, driverOrderState, API_BASE],
+    [
+      drivers,
+      excludedDrivers,
+      driverOrderState,
+      extraMailRecipients,
+      API_BASE,
+    ],
   );
 
   const moveContainerToDelivered = (id: string, patch?: Partial<Container>) => {
@@ -4541,6 +4584,41 @@ function App() {
                   <button className="btn-small btn-add" onClick={addSpareZone}>
                     エリア追加
                   </button>
+                </div>
+
+                <h3>一斉メール 追加宛先(グループ別)</h3>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
+                  各グループの一斉メールに常時追加する宛先(カンマ区切り)。ドライバーの宛先に加えて to: に含まれます。
+                </div>
+                <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+                  {[...driverGroups.owned, ...driverGroups.outsourced].map(
+                    (g) => (
+                      <div
+                        key={g.key}
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
+                        <div style={{ width: 100, fontSize: 13 }}>
+                          {g.label}
+                        </div>
+                        <input
+                          type="text"
+                          value={extraMailRecipients[g.key] ?? ""}
+                          onChange={(e) =>
+                            setExtraMailRecipients((prev) => ({
+                              ...prev,
+                              [g.key]: e.target.value,
+                            }))
+                          }
+                          placeholder="a@example.com, b@example.com"
+                          style={{ flex: 1, padding: "6px 8px" }}
+                        />
+                      </div>
+                    ),
+                  )}
                 </div>
 
                 <h3>kintone連携</h3>
