@@ -28,6 +28,7 @@ import {
 // ドライバー並び順 (常設)
 import { useDriverOrder, sortDriversByOrder } from "./lib/driverOrder";
 import { DriverOrderSettings } from "./components/DriverOrderSettings";
+import { useMailExtraRecipients } from "./lib/mailExtraRecipients";
 
 /** 表示モード */
 type DisplayMode = "pc" | "tablet" | "phone";
@@ -146,7 +147,8 @@ type BoardState = {
   sizeColors?: Record<string, string>;
 
   theme?: ThemeSettings;
-  extraMailRecipients?: Record<string, string>;
+  // extraMailRecipients は独立ストレージ (server/data/mail-extra-recipients.json) に移動済み。
+  // 旧データ互換のため型上は残さない (この型は保存/読み込みの schema)
   version: number;
   updatedAt: string;
   updatedBy: string;
@@ -1255,24 +1257,14 @@ function App() {
   }, []);
 
   // ★ 一斉配信 グループ別 追加宛先 (groupKey → "a@x.com, b@y.com" のカンマ区切り文字列)
-  const [extraMailRecipients, setExtraMailRecipients] = useState<
-    Record<string, string>
-  >(() => {
-    try {
-      const cached = localStorage.getItem("dispatch-mail-extra-recipients");
-      return cached ? JSON.parse(cached) : {};
-    } catch {
-      return {};
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        "dispatch-mail-extra-recipients",
-        JSON.stringify(extraMailRecipients),
-      );
-    } catch {}
-  }, [extraMailRecipients]);
+  //    サーバー独立ストレージ (/api/mail-extra-recipients) に移動 (2026-08-08)
+  //    以前は board_state 相乗り保存だったが、カード操作の stale-state 保存で
+  //    clobber される事故があったため driver-order と同型の独立ストレージへ。
+  const {
+    state: mailExtraState,
+    setGroupRecipients: setGroupMailRecipients,
+  } = useMailExtraRecipients();
+  const extraMailRecipients = mailExtraState.recipients;
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -3637,78 +3629,120 @@ function App() {
   // ✅ Realtimeの古い更新を捨てる用（あなたのversion方式を使うなら）
   const versionRef = useRef<number>(0);
 
-  // ✅ boardId が確定したら DB から復元
-  useEffect(() => {
-    if (!boardId) return;
-
-    let cancelled = false;
-    hydratingRef.current = true;
-
-    // いったん初期化
-    setHydrationDone(false);
-    hasSavedStateRef.current = false;
-
-    (async () => {
+  // ★ Supabase board_state を fetch して現行 state に適用するヘルパ
+  //   - 初回 hydration (mode='initial') と、focus/再接続時 refetch (mode='refetch') で共有
+  //   - refetch は現行 versionRef を上回る場合のみ適用 (stale-state 掴みっぱなしを防止)
+  const applyBoardStateFromDb = useCallback(
+    async (mode: "initial" | "refetch") => {
+      if (!boardId) return;
       const { data, error } = await supabase
         .from("dispatch_board_state")
         .select("state")
         .eq("board_id", boardId)
         .maybeSingle();
 
-      if (cancelled) return;
-
       if (error) {
-        console.error("load board state error", error);
-        hydratingRef.current = false;
-        setHydrationDone(true); // 失敗でも初期配置へ進める
+        console.error(`[board-state] ${mode} load error`, error);
+        if (mode === "initial") {
+          hydratingRef.current = false;
+          setHydrationDone(true);
+        }
         return;
       }
 
       const s = (data?.state ?? {}) as any;
 
-      // 保存が無い場合：初期配置へ進める
       if (!s || Object.keys(s).length === 0) {
-        hydratingRef.current = false;
-        setHydrationDone(true);
+        if (mode === "initial") {
+          hydratingRef.current = false;
+          setHydrationDone(true);
+        }
         return;
       }
 
-      // ✅ 保存済みstateあり
-      hasSavedStateRef.current = true;
+      const dbVersion = typeof s.version === "number" ? s.version : 0;
 
-      // ✅ groups が保存されていたら true（fetchChassisの初期配置を止める）
-      const storedGroups = Array.isArray(s.groups) && s.groups.length > 0;
-      hasStoredGroupsRef.current = storedGroups;
-
-      // state反映
-      if (s.groups) setGroups(s.groups);
-      if (s.trucks) setTrucks(s.trucks);
-      if (s.containers) setContainers(s.containers);
-      if (s.tempContainers) setTempContainers(s.tempContainers);
-      if (s.completedContainers) setCompletedContainers(s.completedContainers);
-      if (s.driverGroups) setDriverGroups(s.driverGroups);
-      if (s.yards) setYards(s.yards);
-      if (s.spareZones) setSpareZones(s.spareZones); // ← 追加
-      if (s.kindColors) setKindColors(s.kindColors);
-      if (s.axleColors) setAxleColors(s.axleColors);
-      if (s.sizeColors) setSizeColors(s.sizeColors);
-      if (s.theme) setTheme({ ...DEFAULT_THEME, ...s.theme });
-      if (s.extraMailRecipients)
-        setExtraMailRecipients(s.extraMailRecipients);
-
-      // ✅ version も合わせる（Realtimeの古い更新を弾くため）
-      if (typeof s.version === "number") {
-        versionRef.current = s.version;
+      // refetch: 自分の versionRef を上回るときだけ適用 (同じ or 古いなら何もしない)
+      if (mode === "refetch" && dbVersion <= versionRef.current) {
+        return;
       }
 
-      hydratingRef.current = false;
-      setHydrationDone(true);
-    })();
+      // 反映中は保存を止める
+      hydratingRef.current = true;
+      try {
+        hasSavedStateRef.current = true;
+        const storedGroups = Array.isArray(s.groups) && s.groups.length > 0;
+        hasStoredGroupsRef.current = storedGroups;
 
+        if (s.groups) setGroups(s.groups);
+        if (s.trucks) setTrucks(s.trucks);
+        if (s.containers) setContainers(s.containers);
+        if (s.tempContainers) setTempContainers(s.tempContainers);
+        if (s.completedContainers)
+          setCompletedContainers(s.completedContainers);
+        if (s.driverGroups) setDriverGroups(s.driverGroups);
+        if (s.yards) setYards(s.yards);
+        if (s.spareZones) setSpareZones(s.spareZones);
+        if (s.kindColors) setKindColors(s.kindColors);
+        if (s.axleColors) setAxleColors(s.axleColors);
+        if (s.sizeColors) setSizeColors(s.sizeColors);
+        if (s.theme) setTheme({ ...DEFAULT_THEME, ...s.theme });
+        // extraMailRecipients は /api/mail-extra-recipients に移動済み
+
+        versionRef.current = dbVersion;
+      } finally {
+        if (mode === "initial") {
+          hydratingRef.current = false;
+          setHydrationDone(true);
+        } else {
+          // state反映後の useEffect 暴発を避けて少し遅延解除
+          setTimeout(() => {
+            hydratingRef.current = false;
+          }, 50);
+        }
+      }
+    },
+    [boardId],
+  );
+
+  // ✅ boardId が確定したら DB から復元 (初回)
+  useEffect(() => {
+    if (!boardId) return;
+    let cancelled = false;
+    hydratingRef.current = true;
+    setHydrationDone(false);
+    hasSavedStateRef.current = false;
+    (async () => {
+      if (cancelled) return;
+      await applyBoardStateFromDb("initial");
+    })();
     return () => {
       cancelled = true;
     };
-  }, [boardId]);
+  }, [boardId, applyBoardStateFromDb]);
+
+  // ✅ window focus 時に強制再fetch (stale-state 対策)
+  //    タブがバックグラウンドで Realtime が throttled/切断されている間の変更を拾う。
+  useEffect(() => {
+    if (!boardId) return;
+    if (!hydrationDone) return;
+
+    const onFocus = () => {
+      applyBoardStateFromDb("refetch");
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        applyBoardStateFromDb("refetch");
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [boardId, hydrationDone, applyBoardStateFromDb]);
 
   // ✅ 他PCの変更を Realtime で反映
   useEffect(() => {
@@ -3754,8 +3788,7 @@ function App() {
             if (next.axleColors) setAxleColors(next.axleColors);
             if (next.sizeColors) setSizeColors(next.sizeColors);
             if (next.theme) setTheme({ ...DEFAULT_THEME, ...next.theme });
-            if (next.extraMailRecipients)
-              setExtraMailRecipients(next.extraMailRecipients);
+            // extraMailRecipients は独立フックで管理
 
             versionRef.current = incomingVersion;
           } finally {
@@ -3766,12 +3799,20 @@ function App() {
           }
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        // ✅ Realtime 再接続時に強制再fetch (切断中の変更を拾う)
+        //    'SUBSCRIBED' はチャンネルが購読された瞬間。初回接続とresubscribe両方に発火する。
+        //    hydration 中 (初回 fetch 済み前) は versionRef=0 のため refetch は必ず適用されるので、
+        //    hydrationDone を待たず applyBoardStateFromDb('refetch') を呼んでよい (内部で version 比較)。
+        if (status === "SUBSCRIBED") {
+          applyBoardStateFromDb("refetch");
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [boardId]);
+  }, [boardId, applyBoardStateFromDb]);
 
   // ✅ state が変わったら DB に保存（デバウンス）
   // ※ロード中は保存しない
@@ -3796,7 +3837,7 @@ function App() {
         axleColors,
         sizeColors,
         theme,
-        extraMailRecipients,
+        // extraMailRecipients は /api/mail-extra-recipients に移動済み
 
         version: nextVersion,
         updatedAt: new Date().toISOString(),
@@ -3831,7 +3872,6 @@ function App() {
     axleColors,
     sizeColors,
     theme,
-    extraMailRecipients,
     hydrationDone,
   ]);
 
@@ -4753,10 +4793,7 @@ function App() {
                           type="text"
                           value={extraMailRecipients[g.key] ?? ""}
                           onChange={(e) =>
-                            setExtraMailRecipients((prev) => ({
-                              ...prev,
-                              [g.key]: e.target.value,
-                            }))
+                            setGroupMailRecipients(g.key, e.target.value)
                           }
                           placeholder="a@example.com, b@example.com"
                           style={{ flex: 1, padding: "6px 8px" }}

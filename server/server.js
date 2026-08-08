@@ -1445,15 +1445,193 @@ app.post("/api/driver-order/replace", (req, res) => {
 });
 
 /** =========================
+ *  MAIL EXTRA RECIPIENTS (permanent)
+ *  一斉メールの追加宛先 (グループ別)
+ *  以前は Supabase board_state に相乗り保存していたが、
+ *  カード操作の stale-state 保存で clobber される事故が起きたため
+ *  driver-order と同型で独立ストレージへ移動。
+ *  データ構造: { recipients: { [groupKey]: string } } (カンマ区切り文字列)
+ *  ========================= */
+const MAIL_EXTRA_RECIPIENTS_FILE = path.join(
+  __dirname,
+  "data",
+  "mail-extra-recipients.json",
+);
+let mailExtraRecipients = {}; // groupKey -> "a@x.com, b@y.com"
+let mailExtraRecipientsVersion = 1;
+
+function _loadMailExtraRecipients_() {
+  try {
+    if (fs.existsSync(MAIL_EXTRA_RECIPIENTS_FILE)) {
+      const raw = fs.readFileSync(MAIL_EXTRA_RECIPIENTS_FILE, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.recipients === "object" && parsed.recipients) {
+        const cleaned = {};
+        for (const [k, v] of Object.entries(parsed.recipients)) {
+          if (typeof v === "string") cleaned[String(k)] = v;
+        }
+        mailExtraRecipients = cleaned;
+        console.log(
+          `[mail-extra-recipients] loaded ${Object.keys(mailExtraRecipients).length} groups from disk`,
+        );
+      }
+    }
+  } catch (e) {
+    console.warn(
+      "[mail-extra-recipients] failed to load:",
+      e && e.message,
+    );
+  }
+}
+
+function _saveMailExtraRecipients_() {
+  try {
+    const dir = path.dirname(MAIL_EXTRA_RECIPIENTS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const payload = {
+      recipients: mailExtraRecipients,
+      updatedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(
+      MAIL_EXTRA_RECIPIENTS_FILE,
+      JSON.stringify(payload, null, 2),
+      "utf8",
+    );
+  } catch (e) {
+    console.warn(
+      "[mail-extra-recipients] failed to save:",
+      e && e.message,
+    );
+  }
+}
+
+_loadMailExtraRecipients_();
+
+app.get("/api/mail-extra-recipients", (_req, res) => {
+  res.json({
+    version: mailExtraRecipientsVersion,
+    recipients: mailExtraRecipients,
+  });
+});
+
+// 単一グループの追加宛先を更新 (空文字/null なら削除)
+app.post("/api/mail-extra-recipients", (req, res) => {
+  try {
+    const groupKey = String(req.body?.groupKey ?? "").trim();
+    if (!groupKey) {
+      return res.status(400).json({ ok: false, error: "groupKey required" });
+    }
+    const raw = req.body?.value;
+    if (raw === null || raw === undefined || raw === "") {
+      delete mailExtraRecipients[groupKey];
+    } else {
+      mailExtraRecipients[groupKey] = String(raw);
+    }
+    mailExtraRecipientsVersion++;
+    _saveMailExtraRecipients_();
+    res.json({
+      ok: true,
+      version: mailExtraRecipientsVersion,
+      recipients: mailExtraRecipients,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String((e && e.message) || e) });
+  }
+});
+
+// 全マップを一括置換 (管理用)
+app.post("/api/mail-extra-recipients/replace", (req, res) => {
+  try {
+    const src = req.body?.recipients;
+    if (!src || typeof src !== "object") {
+      return res
+        .status(400)
+        .json({ ok: false, error: "recipients object required" });
+    }
+    const cleaned = {};
+    for (const [k, v] of Object.entries(src)) {
+      if (typeof v === "string") cleaned[String(k)] = v;
+    }
+    mailExtraRecipients = cleaned;
+    mailExtraRecipientsVersion++;
+    _saveMailExtraRecipients_();
+    res.json({
+      ok: true,
+      version: mailExtraRecipientsVersion,
+      recipients: mailExtraRecipients,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String((e && e.message) || e) });
+  }
+});
+
+/** =========================
  *  PRACTICE MODE (temporary) START
  *  配車マン練習用の一時機能。削除時はこのブロック全体を切除してよい。
  *  - コンテナ(A+C)の背景色を右クリックで手動変更 (全端末で共有)
  *  - ドライバーグループを指定して丸ごと非表示 (全端末で共有)
- *  データは in-memory のみ。Render 再起動で消える (練習用途なので許容)。
+ *  データは disk 永続化 (Render 再起動でもリセットされない)
  *  ========================= */
+const PRACTICE_STATE_FILE = path.join(__dirname, "data", "practice-state.json");
 const practiceContainerColors = new Map(); // containerId(string) -> "#rrggbb"
 let practiceHiddenGroups = { owned: [], outsourced: [] };
 let practiceStateVersion = 1; // 変更ごとに ++。フロントは差分不要でも軽量ポーリング可
+
+function _loadPracticeState_() {
+  try {
+    if (fs.existsSync(PRACTICE_STATE_FILE)) {
+      const raw = fs.readFileSync(PRACTICE_STATE_FILE, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.colors === "object" && parsed.colors) {
+        for (const [k, v] of Object.entries(parsed.colors)) {
+          if (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)) {
+            practiceContainerColors.set(String(k), v.toLowerCase());
+          }
+        }
+      }
+      if (parsed && parsed.hiddenGroups && typeof parsed.hiddenGroups === "object") {
+        const owned = Array.isArray(parsed.hiddenGroups.owned)
+          ? parsed.hiddenGroups.owned.map(String)
+          : [];
+        const outsourced = Array.isArray(parsed.hiddenGroups.outsourced)
+          ? parsed.hiddenGroups.outsourced.map(String)
+          : [];
+        practiceHiddenGroups = { owned, outsourced };
+      }
+      console.log(
+        `[practice-state] loaded colors=${practiceContainerColors.size} hidden=(${practiceHiddenGroups.owned.length}+${practiceHiddenGroups.outsourced.length}) from disk`,
+      );
+    }
+  } catch (e) {
+    console.warn("[practice-state] failed to load:", e && e.message);
+  }
+}
+
+function _savePracticeState_() {
+  try {
+    const dir = path.dirname(PRACTICE_STATE_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const colors = {};
+    for (const [k, v] of practiceContainerColors.entries()) colors[k] = v;
+    const payload = {
+      colors,
+      hiddenGroups: {
+        owned: [...practiceHiddenGroups.owned],
+        outsourced: [...practiceHiddenGroups.outsourced],
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(
+      PRACTICE_STATE_FILE,
+      JSON.stringify(payload, null, 2),
+      "utf8",
+    );
+  } catch (e) {
+    console.warn("[practice-state] failed to save:", e && e.message);
+  }
+}
+
+_loadPracticeState_();
 
 function _practiceSnapshot_() {
   const colors = {};
@@ -1487,6 +1665,7 @@ app.post("/api/practice/color", (req, res) => {
       practiceContainerColors.set(containerId, color.toLowerCase());
     }
     practiceStateVersion++;
+    _savePracticeState_();
     res.json({ ok: true, ...(_practiceSnapshot_()) });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e && e.message || e) });
@@ -1499,6 +1678,7 @@ app.post("/api/practice/hidden-groups", (req, res) => {
     const outsourced = Array.isArray(req.body?.outsourced) ? req.body.outsourced.map(String) : [];
     practiceHiddenGroups = { owned, outsourced };
     practiceStateVersion++;
+    _savePracticeState_();
     res.json({ ok: true, ...(_practiceSnapshot_()) });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e && e.message || e) });
@@ -1509,6 +1689,7 @@ app.post("/api/practice/reset", (_req, res) => {
   practiceContainerColors.clear();
   practiceHiddenGroups = { owned: [], outsourced: [] };
   practiceStateVersion++;
+  _savePracticeState_();
   res.json({ ok: true, ...(_practiceSnapshot_()) });
 });
 /** =========================
