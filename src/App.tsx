@@ -218,6 +218,7 @@ type ApiChassis = {
   axle: AxleKind;
   kindLabel: string; // "3軸" など
   note?: string;
+  hasAirSuspension?: boolean; // ★ エアサス (kintone チェックボックス)
   status: string;
 };
 
@@ -233,6 +234,7 @@ type ChassisGroup = {
     sizeLabel?: string; // "20F" / "40F"
     kindLabel?: string; // "3軸" など
     note?: string; // シャーシ_備考
+    hasAirSuspension?: boolean; // ★ エアサス
   };
 };
 
@@ -592,12 +594,28 @@ function DraggableGroupCard({
 
   const axleKey = `axle-${group.axle}`; // axle-1 / axle-2 ...
   const axleColor = axleColors?.[axleKey]; // 未設定なら undefined
+  const asColor = axleColors?.["axle-AS"]; // ★ エアサス独立色
 
   const sizeKey = `size-${group.size}`; // size-20 / size-40
   const sizeColor = sizeColors?.[sizeKey]; // 未設定なら undefined
 
   const kindLabel = group.extra?.kindLabel ?? "";
   const kindColor = kindLabel ? kindColors?.[kindLabel] : undefined;
+  const hasAS_forStrip = group.extra?.hasAirSuspension ?? false;
+
+  // ★ 上部帯の背景:
+  //   ・エアサス有 且つ 両色設定 → 左=軸色 / 右=AS色 の gradient
+  //   ・エアサス有 且つ AS色のみ設定 → AS色ソリッド
+  //   ・軸色のみ → 軸色ソリッド
+  //   ・どちらも未設定 → undefined (帯非表示)
+  let stripBackground: string | undefined;
+  if (hasAS_forStrip && axleColor && asColor) {
+    stripBackground = `linear-gradient(to right, ${axleColor} 0 50%, ${asColor} 50% 100%)`;
+  } else if (hasAS_forStrip && asColor) {
+    stripBackground = asColor;
+  } else if (axleColor) {
+    stripBackground = axleColor;
+  }
 
   // PRACTICE MODE (temporary) — コンテナ手動色 override
   const practiceOverrideColor =
@@ -610,7 +628,7 @@ function DraggableGroupCard({
     opacity: isDragging ? 0 : undefined,
     pointerEvents: isDragging ? "none" : undefined,
 
-    ...(axleColor ? { borderTop: `6px solid ${axleColor}` } : {}),
+    // ★ 上部は border-top を廃止し、下部の .chassis-kind-strip で描画（gradient対応）
     ...(sizeColor ? { borderLeft: `5px solid ${sizeColor}` } : {}),
     // PRACTICE MODE — chassis-step-N の !important を上書きするため
     //   CSS変数 + data属性でCSS側のセレクタと合わせる
@@ -627,6 +645,11 @@ function DraggableGroupCard({
   const carNo = group.extra?.carNo ?? "";
   const sizeLabel = group.extra?.sizeLabel ?? `${group.size}F`;
   const note = group.extra?.note?.trim();
+  const hasAS = group.extra?.hasAirSuspension ?? false;
+  // "3軸" と "エアサス" を1つのラベルにまとめた版（表示・ツールチップ共通）
+  const kindLabelWithAS = hasAS
+    ? (kindLabel ? `${kindLabel} AS` : "AS")
+    : kindLabel;
 
   // ===============================
   //  ホバー時のツールチップ文字列
@@ -646,11 +669,11 @@ function DraggableGroupCard({
       : c.dropoffYard;
     const line1 = `${dayLabel} ${c.eta} ${c.destination} ${c.pickupYard} ${c.no} ${dropoffDisplay}`;
 
-    // ▼ 2行目：車番 / サイズ / 種別 / 備考
+    // ▼ 2行目：車番 / サイズ / 種別(+AS) / 備考
     const parts: string[] = [
       carNo || `シャーシ ${group.chassisLabel}`,
       sizeLabel,
-      kindLabel,
+      kindLabelWithAS,
     ];
     if (note) parts.push(note);
     const line2 = parts.join(" / ");
@@ -661,7 +684,7 @@ function DraggableGroupCard({
     const parts: string[] = [
       carNo || `シャーシ ${group.chassisLabel}`,
       sizeLabel,
-      kindLabel,
+      kindLabelWithAS,
     ];
     if (note) parts.push(note);
     tooltip = parts.join(" / ");
@@ -745,8 +768,16 @@ function DraggableGroupCard({
       {displayMode === "phone" && (
         <div className="drag-handle" {...listeners}>{"\u2630"}</div>
       )}
-      {/* ✅ 追加：上部の色帯（色が設定されている時だけ表示） */}
-      {kindColor ? (
+      {/* ✅ 上部の色帯:
+          優先順位: (1) 軸色+AS色 gradient / 軸色ソリッド (axleColors)
+                    (2) kindColor (旧設定・kindColors) — 後方互換フォールバック
+          いずれも未設定なら非表示 */}
+      {stripBackground ? (
+        <div
+          className="chassis-kind-strip"
+          style={{ background: stripBackground }}
+        />
+      ) : kindColor ? (
         <div
           className="chassis-kind-strip"
           style={{ backgroundColor: kindColor }}
@@ -781,7 +812,7 @@ function DraggableGroupCard({
           <div className="chassis-only-row">
             <span className="chassis-only-label">{group.chassisLabel}</span>
             <span className="chassis-only-meta">
-              {sizeLabel} {kindLabel}
+              {sizeLabel} {kindLabelWithAS}
             </span>
           </div>
         )}
@@ -1784,6 +1815,7 @@ function App() {
               sizeLabel: c.sizeLabel,
               kindLabel: c.kindLabel,
               note: c.note,
+              hasAirSuspension: c.hasAirSuspension ?? false,
             },
           }),
         );
@@ -1802,7 +1834,9 @@ function App() {
     };
   }, [boardId, hydrationDone, API_BASE]);
 
-  // ★ kintoneシャーシを手動で差分同期（追加のみ・川口車庫 single/front へ）
+  // ★ kintoneシャーシを手動で差分同期（追加 + 既存の名前/種別/エアサス等を上書き）
+  //    - 既存 id は container / location を維持したまま chassisLabel/size/axle/extra を最新化
+  //    - 新規 id は川口車庫 single/front に追加
   const syncChassisFromKintone = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/chassis`);
@@ -1814,7 +1848,10 @@ function App() {
       const data = await res.json();
       const apiChassis: ApiChassis[] = data.chassis ?? [];
 
+      const apiById = new Map(apiChassis.map((c) => [c.id, c]));
       const existingIds = new Set(groupsRef.current.map((g) => g.id));
+
+      // --- 追加分 ---
       const newGroups: ChassisGroup[] = apiChassis
         .filter((c) => !existingIds.has(c.id))
         .map((c) => ({
@@ -1834,19 +1871,67 @@ function App() {
             sizeLabel: c.sizeLabel,
             kindLabel: c.kindLabel,
             note: c.note,
+            hasAirSuspension: c.hasAirSuspension ?? false,
           },
         }));
 
-      if (newGroups.length === 0) {
-        alert("追加されたシャーシはありませんでした");
+      // --- 更新分の検出 (差分ある既存のみ) ---
+      const updatedLabels: string[] = [];
+      const nextGroups = groupsRef.current.map((g) => {
+        const c = apiById.get(g.id);
+        if (!c) return g; // kintone 側に居ないものは触らない (状態=稼働/修理外へ移動した等)
+
+        const nextExtra = {
+          carNo: c.carNo,
+          sizeLabel: c.sizeLabel,
+          kindLabel: c.kindLabel,
+          note: c.note,
+          hasAirSuspension: c.hasAirSuspension ?? false,
+        };
+
+        const changed =
+          g.chassisLabel !== c.displayNo ||
+          g.size !== c.size ||
+          g.axle !== c.axle ||
+          (g.extra?.carNo ?? "") !== nextExtra.carNo ||
+          (g.extra?.sizeLabel ?? "") !== nextExtra.sizeLabel ||
+          (g.extra?.kindLabel ?? "") !== nextExtra.kindLabel ||
+          (g.extra?.note ?? "") !== (nextExtra.note ?? "") ||
+          (g.extra?.hasAirSuspension ?? false) !== nextExtra.hasAirSuspension;
+
+        if (!changed) return g;
+
+        // container / location / id は維持
+        updatedLabels.push(c.displayNo);
+        return {
+          ...g,
+          chassisLabel: c.displayNo,
+          size: c.size,
+          axle: c.axle,
+          extra: { ...g.extra, ...nextExtra },
+        };
+      });
+
+      if (newGroups.length === 0 && updatedLabels.length === 0) {
+        alert("追加・更新されたシャーシはありませんでした");
         return;
       }
 
-      setGroups((prev) => [...prev, ...newGroups]);
-      const labels = newGroups.map((g) => g.chassisLabel).join(", ");
-      alert(
-        `${newGroups.length}台のシャーシを追加しました（川口車庫）\n${labels}`,
-      );
+      setGroups(() => [...nextGroups, ...newGroups]);
+
+      const msgs: string[] = [];
+      if (newGroups.length > 0) {
+        const addedLabels = newGroups.map((g) => g.chassisLabel).join(", ");
+        msgs.push(
+          `追加 ${newGroups.length}台（川口車庫）: ${addedLabels}`,
+        );
+      }
+      if (updatedLabels.length > 0) {
+        msgs.push(
+          `更新 ${updatedLabels.length}台: ${updatedLabels.join(", ")}`,
+        );
+      }
+      alert(msgs.join("\n"));
     } catch (err) {
       console.error("シャーシ同期に失敗", err);
       alert("シャーシ同期に失敗しました");
@@ -1915,6 +2000,7 @@ function App() {
             sizeLabel: target.sizeLabel,
             kindLabel: target.kindLabel,
             note: target.note,
+            hasAirSuspension: target.hasAirSuspension ?? false,
           },
         };
         setGroups((prev) => [...prev, newGroup]);
@@ -3976,6 +4062,17 @@ function App() {
                         />
                         兼用
                       </span>
+
+                      <span className="legend-item">
+                        <span
+                          className="legend-color"
+                          style={{
+                            backgroundColor:
+                              axleColors["axle-AS"] ?? "transparent",
+                          }}
+                        />
+                        エアサス
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -4247,6 +4344,7 @@ function App() {
                   { key: "axle-MG", label: "MG" },
                   { key: "axle-2stack", label: "2個積" },
                   { key: "axle-both", label: "兼用" },
+                  { key: "axle-AS", label: "エアサス" },
                 ].map((x) => {
                   const current = axleColors[x.key];
                   return (
@@ -4677,7 +4775,7 @@ function App() {
                     kintoneシャーシを再同期
                   </button>
                   <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
-                    kintoneで追加されたシャーシを配車ボードに反映します（川口車庫に配置）。既存のシャーシ・積載状態は変更されません。
+                    kintoneでの追加・名前変更・種別変更・エアサス変更を配車ボードに反映します。積載中コンテナと配置は維持されます。新規は川口車庫に配置。
                   </div>
 
                   <button
@@ -5881,6 +5979,12 @@ function App() {
                           <strong>軸種別:</strong>{" "}
                           {detailModal.group.extra?.kindLabel || "-"}
                         </p>
+                        <p>
+                          <strong>エアサス:</strong>{" "}
+                          {detailModal.group.extra?.hasAirSuspension
+                            ? "あり"
+                            : "なし"}
+                        </p>
                         {detailModal.group.extra?.note && (
                           <p>
                             <strong>備考:</strong>{" "}
@@ -5909,6 +6013,12 @@ function App() {
                         <p>
                           <strong>軸種別:</strong>{" "}
                           {detailModal.group.extra?.kindLabel || "-"}
+                        </p>
+                        <p>
+                          <strong>エアサス:</strong>{" "}
+                          {detailModal.group.extra?.hasAirSuspension
+                            ? "あり"
+                            : "なし"}
                         </p>
                         {detailModal.group.extra?.note && (
                           <p>

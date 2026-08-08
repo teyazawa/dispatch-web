@@ -351,6 +351,12 @@ app.get("/api/chassis", async (req, res) => {
       const kindRaw = r["シャーシ_種別"].value;
       const noteRaw = r["シャーシ_備考"]?.value ?? "";
 
+      // ★ エアサス: kintone チェックボックス(値="あり")→ boolean
+      const airVal = r["エアサス"]?.value;
+      const hasAirSuspension = Array.isArray(airVal)
+        ? airVal.includes("あり")
+        : false;
+
       const size = sizeRaw === "40F" ? "40" : "20";
 
       let axle;
@@ -386,6 +392,7 @@ app.get("/api/chassis", async (req, res) => {
         axle,
         kindLabel: kindRaw,
         note: noteRaw,
+        hasAirSuspension,
         status: r["シャーシ_状態"].value,
       };
     });

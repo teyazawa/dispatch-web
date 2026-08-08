@@ -1170,9 +1170,9 @@ body.dragging {
   top: 0;
   left: 0;
   right: 0;
-  height: 4px; /* 帯の太さ（好みで 4〜8px） */
-  z-index: 0; /* 本文より下に */
-  opacity: 0.9;
+  height: 6px; /* 旧 border-top と同じ太さ */
+  z-index: 2; /* card-body / step 背景より上に載せて色を確実に見せる */
+  opacity: 1;
   pointer-events: none; /* DnD やクリックを邪魔しない */
 }
 
