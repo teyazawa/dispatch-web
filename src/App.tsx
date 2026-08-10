@@ -137,6 +137,91 @@ type Container = {
 type SectionKey = "chassis" | "drivers" | "delivery";
 const DEFAULT_SECTION_ORDER: SectionKey[] = ["chassis", "drivers", "delivery"];
 
+// Phase2f: 配送地域 2D matrix ヘルパー (matrix を直接保存)
+//   matrix[row][col] = 地域名 or null (空セル)
+//   空セルは残す (列アライン保持) — 全行空の列のみ詰める
+type YardMatrix = (string | null)[][];
+
+function buildYardMatrix(
+  layout: { row: Record<string, number>; col?: Record<string, number> },
+  visibleYards: string[],
+): YardMatrix {
+  const rowMap = layout.row ?? {};
+  const colMap = layout.col ?? {};
+  const positions: { name: string; row: number; col: number }[] = visibleYards.map((n, i) => ({
+    name: n,
+    row: rowMap[n] ?? 1,
+    col: colMap[n] ?? i + 1,
+  }));
+  if (positions.length === 0) return [[]];
+  const maxRow = Math.max(...positions.map((p) => p.row));
+  const maxCol = Math.max(...positions.map((p) => p.col));
+  const matrix: YardMatrix = Array.from({ length: maxRow }, () =>
+    Array.from({ length: maxCol }, () => null as string | null),
+  );
+  positions.forEach((p) => {
+    while (matrix.length < p.row) matrix.push(Array(maxCol).fill(null));
+    while (matrix[p.row - 1].length < maxCol) matrix[p.row - 1].push(null);
+    matrix[p.row - 1][p.col - 1] = p.name;
+  });
+  return matrix;
+}
+
+// 全行空の列を除去 (列アラインは保持) + 全列空の先頭/末尾行を除去。
+function trimYardMatrix(m: YardMatrix): YardMatrix {
+  if (m.length === 0) return m;
+  const maxCols = Math.max(...m.map((r) => r.length), 0);
+  const usedCols: number[] = [];
+  for (let c = 0; c < maxCols; c++) {
+    if (m.some((r) => r[c])) usedCols.push(c);
+  }
+  let compacted = m.map((r) => usedCols.map((c) => r[c] ?? null));
+  // 末尾の空行を削除
+  while (compacted.length > 0 && compacted[compacted.length - 1].every((x) => !x)) {
+    compacted.pop();
+  }
+  // 先頭の空行を削除
+  while (compacted.length > 0 && compacted[0].every((x) => !x)) {
+    compacted.shift();
+  }
+  return compacted.length === 0 ? [[]] : compacted;
+}
+
+// matrix から row/col Record を生成 (位置保持)。
+//   行間の col アラインを保持するため、null セルは詰めない (=trim 済み matrix の位置を維持)。
+function matrixToRowCol(matrix: YardMatrix): {
+  row: Record<string, number>;
+  col: Record<string, number>;
+} {
+  const row: Record<string, number> = {};
+  const col: Record<string, number> = {};
+  matrix.forEach((r, ri) => {
+    r.forEach((name, ci) => {
+      if (name) {
+        row[name] = ri + 1;
+        col[name] = ci + 1;
+      }
+    });
+  });
+  return { row, col };
+}
+
+// A を (targetR, targetC) に挿入。既存 name があれば下方向に再帰的に押し出し。
+function insertYardAt(
+  matrix: YardMatrix,
+  targetR: number,
+  targetC: number,
+  name: string,
+): void {
+  while (matrix.length <= targetR) matrix.push([]);
+  while (matrix[targetR].length <= targetC) matrix[targetR].push(null);
+  const existing = matrix[targetR][targetC];
+  matrix[targetR][targetC] = name;
+  if (existing && existing !== name) {
+    insertYardAt(matrix, targetR + 1, targetC, existing);
+  }
+}
+
 // Phase2: レイアウトモード。
 //   linear = 従来の 3列並び(左中右)。sectionOrder/PiP 動作。
 //   l-shape = 左=シャーシ全高、右上=ドライバー、右下=配送分 の 2×2(左マージ)
@@ -3102,6 +3187,33 @@ function App() {
     const wk = ["日", "月", "火", "水", "木", "金", "土"][dt.getDay()];
     return `${m}/${d}(${wk})`;
   };
+  // container.date は "M/D" 形式 (例: "11/28")。deliveryViewDate (YYYY-MM-DD) と比較用に変換。
+  const deliveryViewMMDD = React.useMemo(() => {
+    const m = deliveryViewDate.match(/^\d{4}-(\d{2})-(\d{2})$/);
+    if (!m) return "";
+    return `${parseInt(m[1], 10)}/${parseInt(m[2], 10)}`;
+  }, [deliveryViewDate]);
+  // container.date を "M/D" 正規化 (ゼロパディング除去)
+  const normContainerDate = (d: string): string => {
+    const m = d.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (m) return `${parseInt(m[1], 10)}/${parseInt(m[2], 10)}`;
+    return d;
+  };
+  // "M/D" を数値化 (前後判定用、referenceYear は現在年)
+  const dateSortKey = (d: string): number => {
+    const m = d.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (m) {
+      const now = new Date();
+      const year = now.getFullYear();
+      const monthNow = now.getMonth() + 1;
+      const monthContainer = parseInt(m[1], 10);
+      // 年またぎ対策: 現在月と 6ヶ月以上離れていれば翌年扱い (シンプル近似)
+      let yy = year;
+      if (monthContainer < monthNow - 6) yy = year + 1;
+      return yy * 10000 + parseInt(m[1], 10) * 100 + parseInt(m[2], 10);
+    }
+    return 0;
+  };
 
   const deliveryScrollRef = useRef<HTMLDivElement>(null);
 
@@ -3114,64 +3226,80 @@ function App() {
   const [deliveryYardGroupRow, setDeliveryYardGroupRow] = useState<
     Record<string, number>
   >({});
-  // Phase2b: 日付別レイアウト保存 (YYYY-MM-DD -> {order, row})
+  // Phase2b: 日付別レイアウト保存 (YYYY-MM-DD -> {order, row, col})
+  //   row/col は明示的位置指定 (未設定なら row=1, col=order index)
   const [deliveryYardLayoutByDate, setDeliveryYardLayoutByDate] = useState<
-    Record<string, { order: string[]; row: Record<string, number> }>
+    Record<string, {
+      order: string[];
+      row: Record<string, number>;
+      col?: Record<string, number>;
+    }>
   >({});
   // Phase2b: 空地域を含めた全表示 (デフォルト false: コンテナ有り地域のみ)
   const [showAllDeliveryRegions, setShowAllDeliveryRegions] = useState(false);
-  // Phase2b: 現在の日付に対応するレイアウトを取得 (未設定なら旧共通レイアウトを流用)
+  // Phase2b: 現在の日付に対応するレイアウトを取得
+  //   Phase2f: 未設定なら空 (デフォルト状態) — 旧共通レイアウトのフォールバックは撤廃
+  //   すべての地域が row=1, col=index (yardGroups 内出現順) で並ぶ
   const currentDayLayout = React.useMemo(() => {
     const perDate = deliveryYardLayoutByDate[deliveryViewDate];
-    if (perDate) return perDate;
+    if (perDate) return { order: perDate.order, row: perDate.row, col: perDate.col ?? {} };
     return {
       order: deliveryYardGroupOrder,
-      row: deliveryYardGroupRow,
+      row: {} as Record<string, number>,
+      col: {} as Record<string, number>,
     };
   }, [
     deliveryYardLayoutByDate,
     deliveryViewDate,
     deliveryYardGroupOrder,
-    deliveryYardGroupRow,
   ]);
   // Phase2b: 実際に描画する順序 = そのDate にコンテナがある地域 or ユーザーが日別レイアウトで明示的に配置した地域のみ。
   //   全 6 地域を並べるのではなく、必要なものだけ表示。
   const yardGroups = React.useMemo(() => {
     // その日に何らかのコンテナがある地域を集める
+    // container.date は "M/D" 形式なので deliveryViewMMDD と比較
     const regionsWithContainers = new Set<string>();
     containers.forEach((c) => {
-      if (c.date === deliveryViewDate && c.pickupYardGroup) {
+      if (!c.date || !c.pickupYardGroup) return;
+      if (normContainerDate(c.date) === deliveryViewMMDD) {
         regionsWithContainers.add(c.pickupYardGroup);
       }
     });
-    // 日別レイアウトで明示的に位置指定された地域も表示 (row の Record にある key)
-    const perDate = deliveryYardLayoutByDate[deliveryViewDate];
-    const explicitPlaced = perDate ? new Set(Object.keys(perDate.row)) : new Set();
-    // 表示対象 = containers か explicit のいずれかに含まれる地域 (全表示モードなら全部)
+    // 空フレーム残存対策: 明示配置による強制表示は撤廃 (containers 有無で判定)
     const visible = showAllDeliveryRegions
       ? DEFAULT_YARD_GROUPS
-      : DEFAULT_YARD_GROUPS.filter(
-          (k) => regionsWithContainers.has(k) || explicitPlaced.has(k),
-        );
+      : DEFAULT_YARD_GROUPS.filter((k) => regionsWithContainers.has(k));
     // order を尊重
     const valid = currentDayLayout.order.filter((k) => visible.includes(k));
     const missing = visible.filter((k) => !valid.includes(k));
     return [...valid, ...missing];
-  }, [containers, deliveryViewDate, currentDayLayout, deliveryYardLayoutByDate, showAllDeliveryRegions]);
+  }, [containers, deliveryViewMMDD, currentDayLayout, showAllDeliveryRegions]);
   // 日付レイアウトを update するヘルパー
+  //   Phase2f: 未設定なら empty から始める (旧共通レイアウトのフォールバックは撤廃)
   const updateDayLayout = (
     date: string,
-    updater: (prev: { order: string[]; row: Record<string, number> }) => {
+    updater: (prev: {
       order: string[];
       row: Record<string, number>;
+      col: Record<string, number>;
+    }) => {
+      order: string[];
+      row: Record<string, number>;
+      col: Record<string, number>;
     },
   ) => {
     setDeliveryYardLayoutByDate((cur) => {
       const prev = cur[date] ?? {
         order: deliveryYardGroupOrder,
-        row: deliveryYardGroupRow,
+        row: {},
+        col: {},
       };
-      return { ...cur, [date]: updater(prev) };
+      const nextObj = updater({
+        order: prev.order,
+        row: prev.row,
+        col: prev.col ?? {},
+      });
+      return { ...cur, [date]: nextObj };
     });
   };
   // Phase2: 全体の列数 (3/4/5)
@@ -3329,27 +3457,89 @@ function App() {
       setDragOverYard(null);
       if (!from || from === name) return;
       e.preventDefault();
-      // 日付ごとレイアウトを更新 (現在の日付のみ)
+      // Phase2f: A を B の上にドロップ → A は B の直下(次の row, 同 col) に配置
+      //   matrix を直接編集 → 全列空になった列のみ詰める (アライン保持)
       updateDayLayout(deliveryViewDate, (prev) => {
-        const order = prev.order.filter((k) => DEFAULT_YARD_GROUPS.includes(k));
-        DEFAULT_YARD_GROUPS.forEach((k) => {
-          if (!order.includes(k)) order.push(k);
+        const matrix = buildYardMatrix(prev, yardGroups);
+        let targetR = -1;
+        let targetC = -1;
+        matrix.forEach((row, r) => {
+          row.forEach((cell, c) => {
+            if (cell === name) {
+              targetR = r;
+              targetC = c;
+            }
+          });
         });
-        const fi = order.indexOf(from);
-        const ti = order.indexOf(name);
-        if (fi >= 0 && ti >= 0) {
-          order.splice(fi, 1);
-          order.splice(ti, 0, from);
-        }
-        const targetRow = prev.row[name] ?? 1;
-        const row = { ...prev.row };
-        if ((row[from] ?? 1) !== targetRow) {
-          row[from] = targetRow;
-        }
-        return { order, row };
+        if (targetR < 0) return prev;
+        // A を既存位置から削除 (null に)
+        matrix.forEach((row) => {
+          const idx = row.indexOf(from);
+          if (idx >= 0) row[idx] = null;
+        });
+        // A を B の直下 (targetR+1, targetC) に挿入 (既存はカスケードで下に)
+        insertYardAt(matrix, targetR + 1, targetC, from);
+        // 空列/末尾空行のみ除去 (中間の空セルは保持でアライン)
+        const trimmed = trimYardMatrix(matrix);
+        const { row, col } = matrixToRowCol(trimmed);
+        return { order: prev.order, row, col };
       });
     };
-  // 「新規行」ドロップゾーン: source を max行+1 に移動 (日付別)
+  // Phase2f: 地域を上下に入れ替え (同じ col の隣接行と swap)
+  const shiftRegionRow = (regionName: string, direction: -1 | 1) => {
+    updateDayLayout(deliveryViewDate, (prev) => {
+      const matrix = buildYardMatrix(prev, yardGroups);
+      let targetR = -1;
+      let targetC = -1;
+      matrix.forEach((row, r) => {
+        row.forEach((cell, c) => {
+          if (cell === regionName) {
+            targetR = r;
+            targetC = c;
+          }
+        });
+      });
+      if (targetR < 0) return prev;
+      const otherR = targetR + direction;
+      if (otherR < 0) return prev;
+      while (matrix.length <= otherR) matrix.push([]);
+      while (matrix[otherR].length <= targetC) matrix[otherR].push(null);
+      const tmp = matrix[targetR][targetC];
+      matrix[targetR][targetC] = matrix[otherR][targetC];
+      matrix[otherR][targetC] = tmp;
+      const trimmed = trimYardMatrix(matrix);
+      const { row, col } = matrixToRowCol(trimmed);
+      return { order: prev.order, row, col };
+    });
+  };
+  // Phase2f: 地域列を左右に入れ替え (列全体を一緒に swap)
+  const shiftRegionCol = (regionName: string, direction: -1 | 1) => {
+    updateDayLayout(deliveryViewDate, (prev) => {
+      const matrix = buildYardMatrix(prev, yardGroups);
+      let targetCol = -1;
+      matrix.forEach((row) => {
+        row.forEach((cell, c) => {
+          if (cell === regionName) targetCol = c;
+        });
+      });
+      if (targetCol < 0) return prev;
+      const otherCol = targetCol + direction;
+      if (otherCol < 0) return prev;
+      const maxCols = Math.max(...matrix.map((r) => r.length), 0);
+      if (otherCol >= maxCols) return prev;
+      // 全行で col targetCol ↔ col otherCol を swap
+      matrix.forEach((row) => {
+        while (row.length <= Math.max(targetCol, otherCol)) row.push(null);
+        const tmp = row[targetCol];
+        row[targetCol] = row[otherCol];
+        row[otherCol] = tmp;
+      });
+      const trimmed = trimYardMatrix(matrix);
+      const { row, col } = matrixToRowCol(trimmed);
+      return { order: prev.order, row, col };
+    });
+  };
+  // 「新規行」ドロップゾーン: source を新規行の先頭に追加
   const onYardNewRowDrop = (e: React.DragEvent<HTMLElement>) => {
     const from = draggingYardRef.current;
     draggingYardRef.current = null;
@@ -3358,12 +3548,15 @@ function App() {
     if (!from) return;
     e.preventDefault();
     updateDayLayout(deliveryViewDate, (prev) => {
-      const rows = Object.values(prev.row);
-      const maxRow = rows.length > 0 ? Math.max(...rows, 1) : 1;
-      return {
-        order: prev.order,
-        row: { ...prev.row, [from]: maxRow + 1 },
-      };
+      const matrix = buildYardMatrix(prev, yardGroups);
+      matrix.forEach((row) => {
+        const idx = row.indexOf(from);
+        if (idx >= 0) row[idx] = null;
+      });
+      matrix.push([from]);
+      const trimmed = trimYardMatrix(matrix);
+      const { row, col } = matrixToRowCol(trimmed);
+      return { order: prev.order, row, col };
     });
   };
   const [newRowDragOver, setNewRowDragOver] = useState(false);
@@ -6416,12 +6609,15 @@ function App() {
                     {/* Phase2: 日付ナビゲータ (右寄せ) + 前日以前/翌日以降のコンテナ数バッジ */}
                     {(() => {
                       // 前日以前 / 翌日以降のコンテナ数を集計
+                      // container.date は "M/D" 形式なので数値化して比較
+                      const viewKey = dateSortKey(deliveryViewMMDD);
                       let prevCount = 0;
                       let nextCount = 0;
                       containers.forEach((c) => {
                         if (!c.date) return;
-                        if (c.date < deliveryViewDate) prevCount++;
-                        else if (c.date > deliveryViewDate) nextCount++;
+                        const k = dateSortKey(normContainerDate(c.date));
+                        if (k < viewKey) prevCount++;
+                        else if (k > viewKey) nextCount++;
                       });
                       return (
                         <div className="delivery-date-nav">
@@ -6437,6 +6633,22 @@ function App() {
                             }
                           >
                             {showAllDeliveryRegions ? "全" : "有"}
+                          </button>
+                          <button
+                            type="button"
+                            className="delivery-date-btn"
+                            onClick={() => {
+                              if (!confirm(`${formatDeliveryDate(deliveryViewDate)} のレイアウトをデフォルト (全地域を1行) にリセットしますか?`)) return;
+                              setDeliveryYardLayoutByDate((cur) => {
+                                const next = { ...cur };
+                                delete next[deliveryViewDate];
+                                return next;
+                              });
+                            }}
+                            title="この日付のレイアウトをリセット"
+                            style={{ color: "#dc2626" }}
+                          >
+                            ⟲
                           </button>
                           {prevCount > 0 && (
                             <span
@@ -6486,27 +6698,42 @@ function App() {
                     style={{ flex: "1 1 0", minHeight: 0, overflow: "auto" }}
                   >
                     {(() => {
-                      // Phase2: 地域を row 単位でグループ化。行数 = max(row) with default=1
-                      // Phase2b: 現在の日付のレイアウトを使用
+                      // Phase2d: 明示的 (row, col) 配置で CSS Grid 描画
+                      //   + 未使用 col を除去してタイトに詰める (relative alignment 保持)
                       const dayRow = currentDayLayout.row;
-                      const rowValues = yardGroups.map(
-                        (n) => dayRow[n] ?? 1,
-                      );
-                      const maxRow = rowValues.length > 0
-                        ? Math.max(...rowValues, 1)
+                      const dayCol = currentDayLayout.col;
+                      const defaultColFor = (n: string) => {
+                        const idx = DEFAULT_YARD_GROUPS.indexOf(n);
+                        return idx >= 0 ? idx + 1 : 1;
+                      };
+                      const rawPositions = yardGroups.map((n) => ({
+                        name: n,
+                        row: dayRow[n] ?? 1,
+                        col: dayCol[n] ?? defaultColFor(n),
+                      }));
+                      // 使用中の col をソートして 1..N にリマップ (未使用 col は詰める)
+                      const usedCols = Array.from(
+                        new Set(rawPositions.map((p) => p.col)),
+                      ).sort((a, b) => a - b);
+                      const colMap = new Map<number, number>();
+                      usedCols.forEach((c, i) => colMap.set(c, i + 1));
+                      const positions = rawPositions.map((p) => ({
+                        ...p,
+                        col: colMap.get(p.col) ?? 1,
+                      }));
+                      const maxRow = positions.length > 0
+                        ? Math.max(...positions.map((p) => p.row), 1)
                         : 1;
-                      const rowIndices = Array.from(
-                        { length: maxRow },
-                        (_, i) => i + 1,
-                      );
-                      const renderRegion = (yardName: string) => (
-                        <div
-                          key={`${deliveryViewDate}-${yardName}`}
-                          className={`delivery-region-column${dragOverYard === yardName ? " delivery-region-drop-target" : ""}`}
-                          onDragOver={onYardDragOver(yardName)}
-                          onDragLeave={onYardDragLeave}
-                          onDrop={onYardDrop(yardName)}
-                        >
+                      const maxCol = Math.max(usedCols.length, 1);
+                      const renderRegion = (yardName: string) => {
+                        const myPos = positions.find((p) => p.name === yardName);
+                        const myCol = myPos?.col ?? 1;
+                        const myRow = myPos?.row ?? 1;
+                        const canLeft = myCol > 1;
+                        const canRight = myCol < maxCol;
+                        const canUp = myRow > 1;
+                        return (
+                        <>
                           <div
                             className="delivery-region-name"
                             draggable={displayMode === "pc"}
@@ -6515,10 +6742,57 @@ function App() {
                             style={
                               draggingYard === yardName ? { opacity: 0.5 } : undefined
                             }
-                            title="ドラッグして並び替え(別行の地域上にドロップで行間移動)"
+                            title="ドラッグして並び替え(別地域の上にドロップでその直下に配置)"
                           >
+                            <button
+                              type="button"
+                              className="delivery-region-arrow"
+                              disabled={!canLeft}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                shiftRegionCol(yardName, -1);
+                              }}
+                              title="左の列と入れ替え (列全体)"
+                            >
+                              ◀
+                            </button>
+                            <button
+                              type="button"
+                              className="delivery-region-arrow"
+                              disabled={!canUp}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                shiftRegionRow(yardName, -1);
+                              }}
+                              title="上の行と入れ替え (同じ列)"
+                            >
+                              ▲
+                            </button>
                             <span className="delivery-region-drag-handle">⠿</span>
                             {yardName}
+                            <button
+                              type="button"
+                              className="delivery-region-arrow"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                shiftRegionRow(yardName, 1);
+                              }}
+                              title="下の行と入れ替え (同じ列)"
+                            >
+                              ▼
+                            </button>
+                            <button
+                              type="button"
+                              className="delivery-region-arrow"
+                              disabled={!canRight}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                shiftRegionCol(yardName, 1);
+                              }}
+                              title="右の列と入れ替え (列全体)"
+                            >
+                              ▶
+                            </button>
                           </div>
                           <DroppableArea
                             id={`delivery-${deliveryViewDate}-${yardName}`}
@@ -6528,7 +6802,7 @@ function App() {
                             {containers
                               .filter(
                                 (c) =>
-                                  c.date === deliveryViewDate &&
+                                  normContainerDate(c.date) === deliveryViewMMDD &&
                                   c.pickupYardGroup === yardName,
                               )
                               .map((c) => (
@@ -6543,28 +6817,43 @@ function App() {
                                 />
                               ))}
                           </DroppableArea>
-                        </div>
-                      );
+                        </>
+                        );
+                      };
                       return (
-                        <div className="delivery-region-grid">
-                          {rowIndices.map((rowNum) => {
-                            const inRow = yardGroups.filter(
-                              (n) => (dayRow[n] ?? 1) === rowNum,
-                            );
-                            if (inRow.length === 0) return null;
-                            return (
-                              <div
-                                key={`row-${rowNum}`}
-                                className="delivery-region-row"
-                              >
-                                {inRow.map(renderRegion)}
-                              </div>
-                            );
-                          })}
+                        <div
+                          className="delivery-region-grid"
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: `repeat(${maxCol}, minmax(140px, 1fr))`,
+                            gridTemplateRows: `repeat(${maxRow}, auto)`,
+                            gap: 8,
+                            padding: "4px 0",
+                          }}
+                        >
+                          {positions.map((p) => (
+                            <div
+                              key={`${deliveryViewDate}-${p.name}`}
+                              className={`delivery-region-column${dragOverYard === p.name ? " delivery-region-drop-target" : ""}`}
+                              style={{
+                                gridColumn: p.col,
+                                gridRow: p.row,
+                              }}
+                              onDragOver={onYardDragOver(p.name)}
+                              onDragLeave={onYardDragLeave}
+                              onDrop={onYardDrop(p.name)}
+                            >
+                              {renderRegion(p.name)}
+                            </div>
+                          ))}
                           {/* 新規行 drop zone (ドラッグ中のみ表示) */}
                           {draggingYard && (
                             <div
                               className={`delivery-region-new-row-drop${newRowDragOver ? " active" : ""}`}
+                              style={{
+                                gridColumn: `1 / span ${maxCol}`,
+                                gridRow: maxRow + 1,
+                              }}
                               onDragOver={onYardNewRowDragOver}
                               onDragLeave={onYardNewRowDragLeave}
                               onDrop={onYardNewRowDrop}

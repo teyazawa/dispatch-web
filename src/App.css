@@ -537,6 +537,31 @@ body::before {
   outline-offset: -2px;
   background: rgba(59, 130, 246, 0.08);
 }
+/* Phase2f: 地域ヘッダーの ◀ ▶ 矢印ボタン (列全体を入れ替え) */
+.delivery-region-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  padding: 0;
+  font-size: 10px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  cursor: pointer;
+  color: #374151;
+  flex-shrink: 0;
+}
+.delivery-region-arrow:hover:not(:disabled) {
+  background: #e0e7ff;
+  border-color: #6366f1;
+  color: #4338ca;
+}
+.delivery-region-arrow:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
 
 /* Phase2: ドライバーグループ 列移動 drag */
 .driver-group-drag-handle {
