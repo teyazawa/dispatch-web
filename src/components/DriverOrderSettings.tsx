@@ -30,6 +30,15 @@ type Props = {
   outsourcedDrivers: DriverLike[];
   orderMap: DriverOrderMap;
   onGroupOrderChange: (groupKey: string, driverIds: string[]) => void;
+
+  // Phase2 拡張: 各グループの列 (1..N) / サブ列 (1|2|3) 設定
+  driverGroupColumn?: Record<string, number>;
+  driverGroupSubColumns?: Record<string, 1 | 2 | 3>;
+  driverGridColumns?: 3 | 4 | 5;
+  defaultColForDriverGroup?: (key: string) => number;
+  onDriverGroupColumnChange?: (key: string, col: number) => void;
+  onDriverGroupSubColumnsChange?: (key: string, count: 1 | 2 | 3) => void;
+  onDriverGridColumnsChange?: (n: 3 | 4 | 5) => void;
 };
 
 export function DriverOrderSettings({
@@ -41,8 +50,21 @@ export function DriverOrderSettings({
   outsourcedDrivers,
   orderMap,
   onGroupOrderChange,
+  driverGroupColumn,
+  driverGroupSubColumns,
+  driverGridColumns,
+  defaultColForDriverGroup,
+  onDriverGroupColumnChange,
+  onDriverGroupSubColumnsChange,
+  onDriverGridColumnsChange,
 }: Props) {
+  const [tab, setTab] = useState<"order" | "layout">("order");
   if (!visible) return null;
+
+  const allGroups: (GroupEntry & { kind: "owned" | "outsourced" })[] = [
+    ...ownedGroups.map((g) => ({ ...g, kind: "owned" as const })),
+    ...outsourcedGroups.map((g) => ({ ...g, kind: "outsourced" as const })),
+  ];
 
   return (
     <div
@@ -92,15 +114,215 @@ export function DriverOrderSettings({
           </button>
         </div>
 
-        <p style={{ fontSize: 11, color: "#666", margin: "0 0 12px" }}>
-          行をドラッグして並び替え。変更は自動保存されて全端末に反映されます。
-        </p>
+        {/* Phase2: タブ (並び順 / グループ配置) */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+          <button
+            onClick={() => setTab("order")}
+            style={{
+              flex: 1,
+              padding: "6px 10px",
+              fontSize: 12,
+              background: tab === "order" ? "#3b82f6" : "#f3f4f6",
+              color: tab === "order" ? "#fff" : "#374151",
+              border: "1px solid #d1d5db",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontWeight: tab === "order" ? "bold" : "normal",
+            }}
+          >
+            ドライバー並び順
+          </button>
+          <button
+            onClick={() => setTab("layout")}
+            style={{
+              flex: 1,
+              padding: "6px 10px",
+              fontSize: 12,
+              background: tab === "layout" ? "#3b82f6" : "#f3f4f6",
+              color: tab === "layout" ? "#fff" : "#374151",
+              border: "1px solid #d1d5db",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontWeight: tab === "layout" ? "bold" : "normal",
+            }}
+          >
+            グループ配置
+          </button>
+        </div>
 
-        <section style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: "bold", fontSize: 13, marginBottom: 6 }}>
-            自車
-          </div>
-          {ownedGroups.map((g) => (
+        {tab === "layout" && (
+          <>
+            <p style={{ fontSize: 11, color: "#666", margin: "0 0 12px" }}>
+              全体列数と、各グループの配置列・内部サブ列数を設定します。
+            </p>
+            {/* 全体列数選択 */}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                padding: "8px 10px",
+                marginBottom: 10,
+                background: "#f0f9ff",
+                border: "1px solid #bae6fd",
+                borderRadius: 4,
+              }}
+            >
+              <span style={{ fontSize: 12, color: "#0c4a6e", fontWeight: 600 }}>
+                全体の列数
+              </span>
+              <div style={{ display: "flex", gap: 2 }}>
+                {[3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() =>
+                      onDriverGridColumnsChange?.(n as 3 | 4 | 5)
+                    }
+                    style={{
+                      width: 40,
+                      height: 26,
+                      padding: 0,
+                      fontSize: 12,
+                      background:
+                        (driverGridColumns ?? 3) === n ? "#0ea5e9" : "#ffffff",
+                      color:
+                        (driverGridColumns ?? 3) === n ? "#fff" : "#374151",
+                      border: "1px solid #7dd3fc",
+                      borderRadius: 3,
+                      cursor: "pointer",
+                      fontWeight:
+                        (driverGridColumns ?? 3) === n ? "bold" : "normal",
+                    }}
+                  >
+                    {n}列
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 6, marginBottom: 16 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto auto",
+                  gap: 8,
+                  padding: "4px 8px",
+                  fontSize: 11,
+                  color: "#6b7280",
+                  fontWeight: "bold",
+                  borderBottom: "1px solid #e5e7eb",
+                }}
+              >
+                <span>グループ</span>
+                <span>配置列</span>
+                <span>内部サブ列</span>
+              </div>
+              {allGroups.map((g) => {
+                const curCol =
+                  driverGroupColumn?.[g.key] ??
+                  defaultColForDriverGroup?.(g.key) ??
+                  1;
+                const curSub = driverGroupSubColumns?.[g.key] ?? 1;
+                const gridN = driverGridColumns ?? 3;
+                return (
+                  <div
+                    key={`layout-${g.key}`}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr auto auto",
+                      gap: 8,
+                      padding: "6px 8px",
+                      alignItems: "center",
+                      background: "#f9fafb",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 4,
+                    }}
+                  >
+                    <span style={{ fontSize: 13 }}>
+                      {g.label}
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "#9ca3af",
+                          marginLeft: 6,
+                        }}
+                      >
+                        ({g.kind === "owned" ? "自車" : "傭車"})
+                      </span>
+                    </span>
+                    <div style={{ display: "flex", gap: 2 }}>
+                      {Array.from({ length: gridN }, (_, i) => i + 1).map(
+                        (c) => (
+                          <button
+                            key={c}
+                            onClick={() =>
+                              onDriverGroupColumnChange?.(g.key, c)
+                            }
+                            style={{
+                              width: 26,
+                              height: 24,
+                              padding: 0,
+                              fontSize: 11,
+                              background:
+                                curCol === c ? "#3b82f6" : "#ffffff",
+                              color: curCol === c ? "#fff" : "#374151",
+                              border: "1px solid #d1d5db",
+                              borderRadius: 3,
+                              cursor: "pointer",
+                              fontWeight: curCol === c ? "bold" : "normal",
+                            }}
+                          >
+                            {c}
+                          </button>
+                        ),
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 2 }}>
+                      {[1, 2, 3].map((s) => (
+                        <button
+                          key={s}
+                          onClick={() =>
+                            onDriverGroupSubColumnsChange?.(
+                              g.key,
+                              s as 1 | 2 | 3,
+                            )
+                          }
+                          style={{
+                            width: 32,
+                            height: 24,
+                            padding: 0,
+                            fontSize: 11,
+                            background:
+                              curSub === s ? "#7c3aed" : "#ffffff",
+                            color: curSub === s ? "#fff" : "#374151",
+                            border: "1px solid #d1d5db",
+                            borderRadius: 3,
+                            cursor: "pointer",
+                            fontWeight: curSub === s ? "bold" : "normal",
+                          }}
+                        >
+                          {s}列
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {tab === "order" && (
+          <>
+            <p style={{ fontSize: 11, color: "#666", margin: "0 0 12px" }}>
+              行をドラッグして並び替え。変更は自動保存されて全端末に反映されます。
+            </p>
+
+            <section style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: "bold", fontSize: 13, marginBottom: 6 }}>
+                自車
+              </div>
+              {ownedGroups.map((g) => (
             <GroupOrderList
               key={`o-${g.key}`}
               groupLabel={g.label}
@@ -110,25 +332,27 @@ export function DriverOrderSettings({
               onChange={onGroupOrderChange}
             />
           ))}
-        </section>
+            </section>
 
-        <section>
-          <div style={{ fontWeight: "bold", fontSize: 13, marginBottom: 6 }}>
-            傭車
-          </div>
-          {outsourcedGroups.map((g) => (
-            <GroupOrderList
-              key={`x-${g.key}`}
-              groupLabel={g.label}
-              groupKey={g.key}
-              drivers={outsourcedDrivers.filter(
-                (d) => (d.groupName || "") === g.key,
-              )}
-              order={orderMap[g.key]}
-              onChange={onGroupOrderChange}
-            />
-          ))}
-        </section>
+            <section>
+              <div style={{ fontWeight: "bold", fontSize: 13, marginBottom: 6 }}>
+                傭車
+              </div>
+              {outsourcedGroups.map((g) => (
+                <GroupOrderList
+                  key={`x-${g.key}`}
+                  groupLabel={g.label}
+                  groupKey={g.key}
+                  drivers={outsourcedDrivers.filter(
+                    (d) => (d.groupName || "") === g.key,
+                  )}
+                  order={orderMap[g.key]}
+                  onChange={onGroupOrderChange}
+                />
+              ))}
+            </section>
+          </>
+        )}
       </div>
     </div>
   );

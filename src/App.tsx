@@ -29,6 +29,7 @@ import {
 import { useDriverOrder, sortDriversByOrder } from "./lib/driverOrder";
 import { DriverOrderSettings } from "./components/DriverOrderSettings";
 import { useMailExtraRecipients } from "./lib/mailExtraRecipients";
+import { useDocumentPip } from "./lib/documentPip";
 
 /** 表示モード */
 type DisplayMode = "pc" | "tablet" | "phone";
@@ -133,6 +134,68 @@ type Container = {
   worker4?: string;
 };
 
+type SectionKey = "chassis" | "drivers" | "delivery";
+const DEFAULT_SECTION_ORDER: SectionKey[] = ["chassis", "drivers", "delivery"];
+
+// Phase2: レイアウトモード。
+//   linear = 従来の 3列並び(左中右)。sectionOrder/PiP 動作。
+//   l-shape = 左=シャーシ全高、右上=ドライバー、右下=配送分 の 2×2(左マージ)
+type LayoutMode = "linear" | "l-shape";
+const DEFAULT_LAYOUT_MODE: LayoutMode = "linear";
+
+// target が指定されればそこへ portal、null なら通常インライン描画。
+//   PiP window に一部セクションを飛ばす用途で使用。
+function InlineOrPortal({
+  target,
+  children,
+}: {
+  target: Element | null;
+  children: React.ReactNode;
+}) {
+  if (target) return createPortal(children, target) as React.ReactElement;
+  return <>{children}</>;
+}
+
+// セクション見出し内の PiP 開閉ボタン
+function SectionPipButton({
+  section,
+  pipSection,
+  supported,
+  onOpen,
+  onClose,
+}: {
+  section: SectionKey;
+  pipSection: SectionKey | null;
+  supported: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}) {
+  const isThisOpen = pipSection === section;
+  const otherOpen = pipSection !== null && pipSection !== section;
+  const disabled = !supported || otherOpen;
+  const title = !supported
+    ? "Chrome/Edge 116+ で利用可能"
+    : otherOpen
+      ? "他のセクションが別窓表示中"
+      : isThisOpen
+        ? "別窓を閉じる"
+        : "別窓へ移動";
+  return (
+    <button
+      type="button"
+      className="section-pip-btn"
+      disabled={disabled}
+      title={title}
+      onClick={isThisOpen ? onClose : onOpen}
+      aria-label={title}
+    >
+      {isThisOpen ? "◱" : "🗗"}
+    </button>
+  );
+}
+
+type PipWindowSize = { w: number; h: number };
+
 type BoardState = {
   groups: ChassisGroup[];
   trucks: Truck[];
@@ -149,6 +212,24 @@ type BoardState = {
   theme?: ThemeSettings;
   // extraMailRecipients は独立ストレージ (server/data/mail-extra-recipients.json) に移動済み。
   // 旧データ互換のため型上は残さない (この型は保存/読み込みの schema)
+  sectionOrder?: SectionKey[];
+  pipWindowSizes?: Partial<Record<SectionKey, PipWindowSize>>;
+  layoutMode?: LayoutMode;
+  chassisColumnCollapsed?: boolean;
+  // Phase2b: 配送地域のレイアウトは日付ごとに保持 (YYYY-MM-DD -> ...)
+  deliveryYardGroupOrder?: string[]; // 旧形式(全日共通) 互換のため残す
+  deliveryYardGroupRow?: Record<string, number>; // 旧
+  deliveryYardLayoutByDate?: Record<string, {
+    order: string[];
+    row: Record<string, number>;
+  }>;
+  driverGroupColumn?: Record<string, number>;
+  driverGroupSubColumns?: Record<string, 1 | 2 | 3>;
+  driverGridColumns?: 3 | 4 | 5;
+  driverGroupOrderOverride?: string[];
+  driverSubColumnOverride?: Record<string, 1 | 2 | 3>;
+  lShapeRightWidth?: number;
+  lShapeDriversHeight?: number;
   version: number;
   updatedAt: string;
   updatedBy: string;
@@ -1060,7 +1141,8 @@ async function uploadThemeBgToStorage(file: File): Promise<string> {
 
 function App() {
   // ── 表示モード（sensors より先に定義） ──
-  const [displayMode, setDisplayMode] = useState<DisplayMode>(() => {
+  //   Phase2 でヘッダーの切替UIは削除。displayMode は初期検出のみで固定。
+  const [displayMode] = useState<DisplayMode>(() => {
     const saved = localStorage.getItem("dispatch-display-mode");
     if (saved === "pc" || saved === "tablet" || saved === "phone") return saved;
     return detectDisplayMode();
@@ -1304,6 +1386,47 @@ function App() {
   const [kindColors, setKindColors] = useState<Record<string, string>>({});
   const [axleColors, setAxleColors] = useState<Record<string, string>>({});
   const [sizeColors, setSizeColors] = useState<Record<string, string>>({});
+
+  // Phase1: セクション並び順(全PC共通・board_state保存)
+  const [sectionOrder, setSectionOrder] = useState<SectionKey[]>(DEFAULT_SECTION_ORDER);
+  // Phase1: 各セクション PiP 窓の保存サイズ (Document PiP は width/height のみ設定可)
+  const [pipWindowSizes, setPipWindowSizes] = useState<Partial<Record<SectionKey, PipWindowSize>>>({});
+  // Phase2: レイアウトモード (linear=旧3列 / l-shape=左=シャーシ全高)
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(DEFAULT_LAYOUT_MODE);
+  // Phase2: シャーシプール 3列(three)⇔1列(single) 切替
+  const [chassisColumnCollapsed, setChassisColumnCollapsed] = useState<boolean>(false);
+
+  // Phase1: Document PiP フック。閉じたときの窓サイズを board_state に保存。
+  const {
+    pipWindow,
+    pipSection,
+    openPip,
+    closePip,
+    supported: pipSupported,
+  } = useDocumentPip({
+    onClose: (section, size) => {
+      setPipWindowSizes((prev) => ({ ...prev, [section]: size }));
+    },
+  });
+
+  // Phase1: DragOverlay を、pointer がある側のドキュメント(main or PiP)に portal 切替。
+  //   D&D 中に PiP 窓内でオーバーレイが見えるようにする。
+  const [overlayInPip, setOverlayInPip] = useState(false);
+  useEffect(() => {
+    if (!pipWindow) {
+      setOverlayInPip(false);
+      return;
+    }
+    const body = pipWindow.document.body;
+    const onEnter = () => setOverlayInPip(true);
+    const onLeave = () => setOverlayInPip(false);
+    body.addEventListener("pointerenter", onEnter);
+    body.addEventListener("pointerleave", onLeave);
+    return () => {
+      body.removeEventListener("pointerenter", onEnter);
+      body.removeEventListener("pointerleave", onLeave);
+    };
+  }, [pipWindow]);
 
   // 設定モーダルを開く
   const openSettings = () => {
@@ -2935,14 +3058,333 @@ function App() {
   const [middleWidth, setMiddleWidth] = useState<number>(610); // ドライバー
   const [deliveryWidth, setDeliveryWidth] = useState<number>(500); // 配送分
 
+  // Phase2: L字レイアウト用 サイズ (chassis 幅は leftWidth を再利用、drivers 高さは独立)
+  const [lShapeDriversHeight, setLShapeDriversHeight] = useState<number>(420);
+  // Phase2: L字レイアウト時の右カラム幅 (drivers + delivery の共通幅)
+  const [lShapeRightWidth, setLShapeRightWidth] = useState<number>(900);
+  // Phase2: シャーシ折りたたみ時の外枠幅
+  const CHASSIS_COLLAPSED_WIDTH = 280;
+  // 折りたたみ前の幅を保持 (展開時に復元)
+  const prevChassisWidthRef = useRef<number>(700);
+
+  // Phase2: 配送分 1日表示の対象日 (YYYY-MM-DD)。localStorage 復元。
+  //   初期値: 保存があればそれ、なければ「翌日」(今日+1) の日付
+  const [deliveryViewDate, setDeliveryViewDate] = useState<string>(() => {
+    try {
+      const v = localStorage.getItem("dispatch-delivery-view-date");
+      if (v && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    } catch {
+      /* ignore */
+    }
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    return t.toISOString().slice(0, 10);
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("dispatch-delivery-view-date", deliveryViewDate);
+    } catch {
+      /* ignore */
+    }
+  }, [deliveryViewDate]);
+  const shiftDeliveryDate = (delta: number) => {
+    const [y, m, d] = deliveryViewDate.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + delta);
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    setDeliveryViewDate(`${yy}-${mm}-${dd}`);
+  };
+  const formatDeliveryDate = (iso: string): string => {
+    const [y, m, d] = iso.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    const wk = ["日", "月", "火", "水", "木", "金", "土"][dt.getDay()];
+    return `${m}/${d}(${wk})`;
+  };
+
   const deliveryScrollRef = useRef<HTMLDivElement>(null);
 
   // ヤードグループ（大井・青海・品川・本牧）
-  const yardGroups = ["大井", "青海", "中防", "品川", "本牧", "その他"];
+  const DEFAULT_YARD_GROUPS = ["大井", "青海", "中防", "品川", "本牧", "その他"];
+  const [deliveryYardGroupOrder, setDeliveryYardGroupOrder] = useState<string[]>(
+    DEFAULT_YARD_GROUPS,
+  );
+  // Phase2: 配送地域ごとの行番号 (自由 2D グリッド) — 旧共通レイアウト用
+  const [deliveryYardGroupRow, setDeliveryYardGroupRow] = useState<
+    Record<string, number>
+  >({});
+  // Phase2b: 日付別レイアウト保存 (YYYY-MM-DD -> {order, row})
+  const [deliveryYardLayoutByDate, setDeliveryYardLayoutByDate] = useState<
+    Record<string, { order: string[]; row: Record<string, number> }>
+  >({});
+  // Phase2b: 空地域を含めた全表示 (デフォルト false: コンテナ有り地域のみ)
+  const [showAllDeliveryRegions, setShowAllDeliveryRegions] = useState(false);
+  // Phase2b: 現在の日付に対応するレイアウトを取得 (未設定なら旧共通レイアウトを流用)
+  const currentDayLayout = React.useMemo(() => {
+    const perDate = deliveryYardLayoutByDate[deliveryViewDate];
+    if (perDate) return perDate;
+    return {
+      order: deliveryYardGroupOrder,
+      row: deliveryYardGroupRow,
+    };
+  }, [
+    deliveryYardLayoutByDate,
+    deliveryViewDate,
+    deliveryYardGroupOrder,
+    deliveryYardGroupRow,
+  ]);
+  // Phase2b: 実際に描画する順序 = そのDate にコンテナがある地域 or ユーザーが日別レイアウトで明示的に配置した地域のみ。
+  //   全 6 地域を並べるのではなく、必要なものだけ表示。
+  const yardGroups = React.useMemo(() => {
+    // その日に何らかのコンテナがある地域を集める
+    const regionsWithContainers = new Set<string>();
+    containers.forEach((c) => {
+      if (c.date === deliveryViewDate && c.pickupYardGroup) {
+        regionsWithContainers.add(c.pickupYardGroup);
+      }
+    });
+    // 日別レイアウトで明示的に位置指定された地域も表示 (row の Record にある key)
+    const perDate = deliveryYardLayoutByDate[deliveryViewDate];
+    const explicitPlaced = perDate ? new Set(Object.keys(perDate.row)) : new Set();
+    // 表示対象 = containers か explicit のいずれかに含まれる地域 (全表示モードなら全部)
+    const visible = showAllDeliveryRegions
+      ? DEFAULT_YARD_GROUPS
+      : DEFAULT_YARD_GROUPS.filter(
+          (k) => regionsWithContainers.has(k) || explicitPlaced.has(k),
+        );
+    // order を尊重
+    const valid = currentDayLayout.order.filter((k) => visible.includes(k));
+    const missing = visible.filter((k) => !valid.includes(k));
+    return [...valid, ...missing];
+  }, [containers, deliveryViewDate, currentDayLayout, deliveryYardLayoutByDate, showAllDeliveryRegions]);
+  // 日付レイアウトを update するヘルパー
+  const updateDayLayout = (
+    date: string,
+    updater: (prev: { order: string[]; row: Record<string, number> }) => {
+      order: string[];
+      row: Record<string, number>;
+    },
+  ) => {
+    setDeliveryYardLayoutByDate((cur) => {
+      const prev = cur[date] ?? {
+        order: deliveryYardGroupOrder,
+        row: deliveryYardGroupRow,
+      };
+      return { ...cur, [date]: updater(prev) };
+    });
+  };
+  // Phase2: 全体の列数 (3/4/5)
+  const [driverGridColumns, setDriverGridColumns] = useState<3 | 4 | 5>(3);
+  // Phase2: ドライバーグループごとの列(1..N)割り当てオーバーライド
+  const [driverGroupColumn, setDriverGroupColumn] = useState<
+    Record<string, number>
+  >({});
+  // Phase2: ドライバーグループごとの内部サブ列数(1|2|3)
+  const [driverGroupSubColumns, setDriverGroupSubColumns] = useState<
+    Record<string, 1 | 2 | 3>
+  >({});
+  // Phase2: 個別ドライバーのサブ列(1|2|3) 指定 (multi-col モードのグループ内)
+  const [driverSubColumnOverride, setDriverSubColumnOverride] = useState<
+    Record<string, 1 | 2 | 3>
+  >({});
+
+  // Phase2: ドライバーグループの列(1..N)割り当てヘルパー
+  //   default: owned → 1, outsourced 前半 → 2, outsourced 後半 → 3 (最大 3 に丸め)
+  //   driverGroupColumn オーバーライドがあればそちらを優先 (N を超えたら N に clamp)
+  const defaultColForDriverGroup = React.useCallback(
+    (key: string): number => {
+      const ownedKeys = OWNED_GROUP_ORDER.map((g) => g.key);
+      if (ownedKeys.includes(key)) return 1;
+      const outsourcedKeys = OUTSOURCED_GROUP_ORDER.map((g) => g.key);
+      const idx = outsourcedKeys.indexOf(key);
+      if (idx < 0) return 1;
+      const half = Math.ceil(outsourcedKeys.length / 2);
+      return idx < half ? 2 : 3;
+    },
+    [OWNED_GROUP_ORDER, OUTSOURCED_GROUP_ORDER],
+  );
+  const colForDriverGroup = (key: string): number => {
+    const c = driverGroupColumn[key] ?? defaultColForDriverGroup(key);
+    return Math.min(Math.max(1, c), driverGridColumns);
+  };
+
+  // Phase2: ドライバーグループ 列変更 drag (グループ見出しを別列へドロップ)
+  //   + グループ間の垂直並び順は driverGroupOrderOverride で管理
+  const draggingDriverGroupRef = useRef<string | null>(null);
+  const [draggingDriverGroup, setDraggingDriverGroup] = useState<string | null>(null);
+  const [dragOverDriverColumn, setDragOverDriverColumn] = useState<number | null>(null);
+  const [dragOverDriverGroup, setDragOverDriverGroup] = useState<string | null>(null);
+  // グループの表示順オーバーライド (drop-on-group 時に更新)
+  const [driverGroupOrderOverride, setDriverGroupOrderOverride] = useState<string[]>([]);
+
+  const onDriverGroupDragStart =
+    (key: string) => (e: React.DragEvent<HTMLElement>) => {
+      draggingDriverGroupRef.current = key;
+      setDraggingDriverGroup(key);
+      try {
+        e.dataTransfer.setData("text/x-dispatch-driver-group", key);
+        e.dataTransfer.effectAllowed = "move";
+      } catch {
+        /* ignore */
+      }
+    };
+  const onDriverGroupDragEnd = () => {
+    draggingDriverGroupRef.current = null;
+    setDraggingDriverGroup(null);
+    setDragOverDriverColumn(null);
+    setDragOverDriverGroup(null);
+  };
+  const onDriverColumnDragOver =
+    (col: number) => (e: React.DragEvent<HTMLElement>) => {
+      if (!draggingDriverGroupRef.current) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (dragOverDriverColumn !== col) setDragOverDriverColumn(col);
+    };
+  const onDriverColumnDragLeave = () => setDragOverDriverColumn(null);
+  const onDriverColumnDrop =
+    (col: number) => (e: React.DragEvent<HTMLElement>) => {
+      const key = draggingDriverGroupRef.current;
+      draggingDriverGroupRef.current = null;
+      setDraggingDriverGroup(null);
+      setDragOverDriverColumn(null);
+      setDragOverDriverGroup(null);
+      if (!key) return;
+      e.preventDefault();
+      setDriverGroupColumn((cur) => ({ ...cur, [key]: col }));
+    };
+  // 個別グループ block への drop: 対象グループの列に移動 + 対象グループの前に挿入 (垂直順)
+  const onDriverGroupDragOverBlock =
+    (targetKey: string) => (e: React.DragEvent<HTMLElement>) => {
+      if (!draggingDriverGroupRef.current) return;
+      if (draggingDriverGroupRef.current === targetKey) return;
+      e.preventDefault();
+      e.stopPropagation(); // 親 section の onDragOver に伝搬させない
+      e.dataTransfer.dropEffect = "move";
+      if (dragOverDriverGroup !== targetKey) setDragOverDriverGroup(targetKey);
+    };
+  const onDriverGroupDropBlock =
+    (targetKey: string) => (e: React.DragEvent<HTMLElement>) => {
+      const from = draggingDriverGroupRef.current;
+      draggingDriverGroupRef.current = null;
+      setDraggingDriverGroup(null);
+      setDragOverDriverColumn(null);
+      setDragOverDriverGroup(null);
+      if (!from || from === targetKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // target の列に合わせる
+      const targetCol = colForDriverGroup(targetKey);
+      setDriverGroupColumn((cur) => ({ ...cur, [from]: targetCol }));
+      // 表示順オーバーライドを更新: source を target の直前に挿入
+      setDriverGroupOrderOverride((cur) => {
+        const allKeys = [
+          ...OWNED_GROUP_ORDER.map((g) => g.key),
+          ...OUTSOURCED_GROUP_ORDER.map((g) => g.key),
+        ];
+        // 現在の実効順序 (override + 未指定を末尾に追加)
+        const effective = cur.length > 0
+          ? [...cur, ...allKeys.filter((k) => !cur.includes(k))]
+          : [...allKeys];
+        const fromIdx = effective.indexOf(from);
+        const targetIdx = effective.indexOf(targetKey);
+        if (fromIdx < 0 || targetIdx < 0) return cur;
+        effective.splice(fromIdx, 1);
+        // targetIdx が fromIdx より後だったらズレる補正
+        const newTargetIdx = effective.indexOf(targetKey);
+        effective.splice(newTargetIdx, 0, from);
+        return effective;
+      });
+    };
+
+  // Phase2: 地域列 native drag 並び替え
+  const draggingYardRef = useRef<string | null>(null);
+  const [draggingYard, setDraggingYard] = useState<string | null>(null);
+  const [dragOverYard, setDragOverYard] = useState<string | null>(null);
+  const onYardDragStart =
+    (name: string) => (e: React.DragEvent<HTMLElement>) => {
+      draggingYardRef.current = name;
+      setDraggingYard(name);
+      try {
+        e.dataTransfer.setData("text/x-dispatch-yard", name);
+        e.dataTransfer.effectAllowed = "move";
+      } catch {
+        /* ignore */
+      }
+    };
+  const onYardDragOver =
+    (name: string) => (e: React.DragEvent<HTMLElement>) => {
+      if (!draggingYardRef.current || draggingYardRef.current === name) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (dragOverYard !== name) setDragOverYard(name);
+    };
+  const onYardDragLeave = () => setDragOverYard(null);
+  const onYardDrop =
+    (name: string) => (e: React.DragEvent<HTMLElement>) => {
+      const from = draggingYardRef.current;
+      draggingYardRef.current = null;
+      setDraggingYard(null);
+      setDragOverYard(null);
+      if (!from || from === name) return;
+      e.preventDefault();
+      // 日付ごとレイアウトを更新 (現在の日付のみ)
+      updateDayLayout(deliveryViewDate, (prev) => {
+        const order = prev.order.filter((k) => DEFAULT_YARD_GROUPS.includes(k));
+        DEFAULT_YARD_GROUPS.forEach((k) => {
+          if (!order.includes(k)) order.push(k);
+        });
+        const fi = order.indexOf(from);
+        const ti = order.indexOf(name);
+        if (fi >= 0 && ti >= 0) {
+          order.splice(fi, 1);
+          order.splice(ti, 0, from);
+        }
+        const targetRow = prev.row[name] ?? 1;
+        const row = { ...prev.row };
+        if ((row[from] ?? 1) !== targetRow) {
+          row[from] = targetRow;
+        }
+        return { order, row };
+      });
+    };
+  // 「新規行」ドロップゾーン: source を max行+1 に移動 (日付別)
+  const onYardNewRowDrop = (e: React.DragEvent<HTMLElement>) => {
+    const from = draggingYardRef.current;
+    draggingYardRef.current = null;
+    setDraggingYard(null);
+    setDragOverYard(null);
+    if (!from) return;
+    e.preventDefault();
+    updateDayLayout(deliveryViewDate, (prev) => {
+      const rows = Object.values(prev.row);
+      const maxRow = rows.length > 0 ? Math.max(...rows, 1) : 1;
+      return {
+        order: prev.order,
+        row: { ...prev.row, [from]: maxRow + 1 },
+      };
+    });
+  };
+  const [newRowDragOver, setNewRowDragOver] = useState(false);
+  const onYardNewRowDragOver = (e: React.DragEvent<HTMLElement>) => {
+    if (!draggingYardRef.current) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!newRowDragOver) setNewRowDragOver(true);
+  };
+  const onYardNewRowDragLeave = () => setNewRowDragOver(false);
+  const onYardDragEnd = () => {
+    draggingYardRef.current = null;
+    setDraggingYard(null);
+    setDragOverYard(null);
+  };
 
   // 仕切り線ドラッグでリサイズ
-  const startResize =
-    (target: "left" | "middle" | "right") =>
+  //   Phase1/2: 全てのセクションでドラッグ→右で対象セクションを広げる (+dx)。
+  //   末尾セクションも同じ挙動 (直感的)。
+  const startResizeForSection =
+    (section: SectionKey, _isTrailing: boolean) =>
     (e: React.MouseEvent<HTMLDivElement>) => {
       e.preventDefault();
       const startX = e.clientX;
@@ -2953,19 +3395,19 @@ function App() {
       function onMouseMove(ev: MouseEvent) {
         const dx = ev.clientX - startX;
 
-        if (target === "left") {
-          let newLeft = startLeft + dx;
-          newLeft = Math.max(260, Math.min(newLeft, 700));
-          setLeftWidth(newLeft);
-        } else if (target === "middle") {
-          let newMiddle = startMiddle + dx;
-          newMiddle = Math.max(260, Math.min(newMiddle, 700));
-          setMiddleWidth(newMiddle);
+        if (section === "chassis") {
+          let v = startLeft + dx;
+          v = Math.max(260, Math.min(v, 1200));
+          setLeftWidth(v);
+        } else if (section === "drivers") {
+          let v = startMiddle + dx;
+          v = Math.max(260, Math.min(v, 1200));
+          setMiddleWidth(v);
         } else {
-          // ★ right（配送分）
-          let newDelivery = startDelivery - dx; // 右からつまむイメージなら ± は好みで
-          newDelivery = Math.max(260, Math.min(newDelivery, 900));
-          setDeliveryWidth(newDelivery);
+          // delivery
+          let v = startDelivery + dx;
+          v = Math.max(260, Math.min(v, 1200));
+          setDeliveryWidth(v);
         }
       }
 
@@ -2976,6 +3418,123 @@ function App() {
 
       window.addEventListener("mousemove", onMouseMove);
       window.addEventListener("mouseup", onMouseUp);
+    };
+
+  // section -> 現在の幅を取得
+  const widthForSection = (k: SectionKey): number =>
+    k === "chassis" ? leftWidth : k === "drivers" ? middleWidth : deliveryWidth;
+  // section が sectionOrder の何番目か (0-2、pipSection を除いた「メインに残る配列」上での位置)
+  //   PiP 中のセクションはメインから portal で抜けているので、そのぶんズラして flex order を計算する
+  const inMainSections: SectionKey[] = sectionOrder.filter((k) => k !== pipSection);
+  const orderIndexOf = (k: SectionKey): number => {
+    if (k === pipSection) return 0; // portal 中は使わない
+    const i = inMainSections.indexOf(k);
+    if (i >= 0) return i;
+    // fallback: グローバル順
+    const g = sectionOrder.indexOf(k);
+    return g < 0 ? DEFAULT_SECTION_ORDER.indexOf(k) : g;
+  };
+
+  // Phase2: L字レイアウト用 縦/横リサイザ
+  const startLShapeVResize = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = leftWidth;
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(260, Math.min(startW + (ev.clientX - startX), 1200));
+      setLeftWidth(w);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+  const startLShapeHResize = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = lShapeDriversHeight;
+    const onMove = (ev: MouseEvent) => {
+      const h = Math.max(200, Math.min(startH + (ev.clientY - startY), 900));
+      setLShapeDriversHeight(h);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+  // L字レイアウト用 右端リサイザ (右カラムの実幅を調整)
+  const startLShapeRResize = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = lShapeRightWidth;
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(300, Math.min(startW + (ev.clientX - startX), 1600));
+      setLShapeRightWidth(w);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // ===== Phase1: セクション並び替え (HTML5 native drag) =====
+  // 既存 @dnd-kit の DndContext と競合しないよう native drag を採用。
+  const draggingSectionRef = useRef<SectionKey | null>(null);
+  const [draggingSection, setDraggingSection] = useState<SectionKey | null>(null);
+  const [dragOverSection, setDragOverSection] = useState<SectionKey | null>(null);
+
+  const onSectionDragStart =
+    (k: SectionKey) => (e: React.DragEvent<HTMLElement>) => {
+      draggingSectionRef.current = k;
+      setDraggingSection(k);
+      try {
+        e.dataTransfer.setData("text/x-dispatch-section", k);
+        e.dataTransfer.effectAllowed = "move";
+      } catch {
+        /* setData 失敗しても続行 */
+      }
+    };
+  const onSectionDragOver =
+    (k: SectionKey) => (e: React.DragEvent<HTMLElement>) => {
+      if (!draggingSectionRef.current) return;
+      if (draggingSectionRef.current === k) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (dragOverSection !== k) setDragOverSection(k);
+    };
+  const onSectionDragLeave =
+    (k: SectionKey) => (_e: React.DragEvent<HTMLElement>) => {
+      if (dragOverSection === k) setDragOverSection(null);
+    };
+  const onSectionDrop =
+    (k: SectionKey) => (e: React.DragEvent<HTMLElement>) => {
+      const from = draggingSectionRef.current;
+      draggingSectionRef.current = null;
+      setDraggingSection(null);
+      setDragOverSection(null);
+      if (!from || from === k) return;
+      e.preventDefault();
+      setSectionOrder((cur) => {
+        const next = [...cur];
+        const fromIdx = next.indexOf(from);
+        const toIdx = next.indexOf(k);
+        if (fromIdx < 0 || toIdx < 0) return cur;
+        next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, from);
+        return next;
+      });
+    };
+  const onSectionDragEnd =
+    (_k: SectionKey) => (_e: React.DragEvent<HTMLElement>) => {
+      draggingSectionRef.current = null;
+      setDraggingSection(null);
+      setDragOverSection(null);
     };
 
   function getTruckForDriver(driverId: string) {
@@ -3688,6 +4247,53 @@ function App() {
         if (s.sizeColors) setSizeColors(s.sizeColors);
         if (s.theme) setTheme({ ...DEFAULT_THEME, ...s.theme });
         // extraMailRecipients は /api/mail-extra-recipients に移動済み
+        if (Array.isArray(s.sectionOrder)) {
+          const valid = s.sectionOrder.filter((k: any) =>
+            (DEFAULT_SECTION_ORDER as string[]).includes(k),
+          ) as SectionKey[];
+          // 不足キーを末尾に補完(前方互換)
+          const missing = DEFAULT_SECTION_ORDER.filter((k) => !valid.includes(k));
+          setSectionOrder([...valid, ...missing]);
+        }
+        if (s.pipWindowSizes && typeof s.pipWindowSizes === "object") {
+          setPipWindowSizes(s.pipWindowSizes);
+        }
+        if (s.layoutMode === "linear" || s.layoutMode === "l-shape") {
+          setLayoutMode(s.layoutMode);
+        }
+        if (typeof s.chassisColumnCollapsed === "boolean") {
+          setChassisColumnCollapsed(s.chassisColumnCollapsed);
+        }
+        if (Array.isArray(s.deliveryYardGroupOrder)) {
+          setDeliveryYardGroupOrder(s.deliveryYardGroupOrder);
+        }
+        if (s.driverGroupColumn && typeof s.driverGroupColumn === "object") {
+          setDriverGroupColumn(s.driverGroupColumn);
+        }
+        if (s.driverGroupSubColumns && typeof s.driverGroupSubColumns === "object") {
+          setDriverGroupSubColumns(s.driverGroupSubColumns);
+        }
+        if (s.driverGridColumns === 3 || s.driverGridColumns === 4 || s.driverGridColumns === 5) {
+          setDriverGridColumns(s.driverGridColumns);
+        }
+        if (Array.isArray(s.driverGroupOrderOverride)) {
+          setDriverGroupOrderOverride(s.driverGroupOrderOverride);
+        }
+        if (s.driverSubColumnOverride && typeof s.driverSubColumnOverride === "object") {
+          setDriverSubColumnOverride(s.driverSubColumnOverride);
+        }
+        if (s.deliveryYardGroupRow && typeof s.deliveryYardGroupRow === "object") {
+          setDeliveryYardGroupRow(s.deliveryYardGroupRow);
+        }
+        if (s.deliveryYardLayoutByDate && typeof s.deliveryYardLayoutByDate === "object") {
+          setDeliveryYardLayoutByDate(s.deliveryYardLayoutByDate);
+        }
+        if (typeof s.lShapeRightWidth === "number") {
+          setLShapeRightWidth(s.lShapeRightWidth);
+        }
+        if (typeof s.lShapeDriversHeight === "number") {
+          setLShapeDriversHeight(s.lShapeDriversHeight);
+        }
 
         versionRef.current = dbVersion;
       } finally {
@@ -3789,6 +4395,54 @@ function App() {
             if (next.sizeColors) setSizeColors(next.sizeColors);
             if (next.theme) setTheme({ ...DEFAULT_THEME, ...next.theme });
             // extraMailRecipients は独立フックで管理
+            if (Array.isArray(next.sectionOrder)) {
+              const valid = next.sectionOrder.filter((k: any) =>
+                (DEFAULT_SECTION_ORDER as string[]).includes(k),
+              ) as SectionKey[];
+              const missing = DEFAULT_SECTION_ORDER.filter(
+                (k) => !valid.includes(k),
+              );
+              setSectionOrder([...valid, ...missing]);
+            }
+            if (next.pipWindowSizes && typeof next.pipWindowSizes === "object") {
+              setPipWindowSizes(next.pipWindowSizes);
+            }
+            if (next.layoutMode === "linear" || next.layoutMode === "l-shape") {
+              setLayoutMode(next.layoutMode);
+            }
+            if (typeof next.chassisColumnCollapsed === "boolean") {
+              setChassisColumnCollapsed(next.chassisColumnCollapsed);
+            }
+            if (Array.isArray(next.deliveryYardGroupOrder)) {
+              setDeliveryYardGroupOrder(next.deliveryYardGroupOrder);
+            }
+            if (next.driverGroupColumn && typeof next.driverGroupColumn === "object") {
+              setDriverGroupColumn(next.driverGroupColumn);
+            }
+            if (next.driverGroupSubColumns && typeof next.driverGroupSubColumns === "object") {
+              setDriverGroupSubColumns(next.driverGroupSubColumns);
+            }
+            if (next.driverGridColumns === 3 || next.driverGridColumns === 4 || next.driverGridColumns === 5) {
+              setDriverGridColumns(next.driverGridColumns);
+            }
+            if (Array.isArray(next.driverGroupOrderOverride)) {
+              setDriverGroupOrderOverride(next.driverGroupOrderOverride);
+            }
+            if (next.driverSubColumnOverride && typeof next.driverSubColumnOverride === "object") {
+              setDriverSubColumnOverride(next.driverSubColumnOverride);
+            }
+            if (next.deliveryYardGroupRow && typeof next.deliveryYardGroupRow === "object") {
+              setDeliveryYardGroupRow(next.deliveryYardGroupRow);
+            }
+            if (next.deliveryYardLayoutByDate && typeof next.deliveryYardLayoutByDate === "object") {
+              setDeliveryYardLayoutByDate(next.deliveryYardLayoutByDate);
+            }
+            if (typeof next.lShapeRightWidth === "number") {
+              setLShapeRightWidth(next.lShapeRightWidth);
+            }
+            if (typeof next.lShapeDriversHeight === "number") {
+              setLShapeDriversHeight(next.lShapeDriversHeight);
+            }
 
             versionRef.current = incomingVersion;
           } finally {
@@ -3838,6 +4492,20 @@ function App() {
         sizeColors,
         theme,
         // extraMailRecipients は /api/mail-extra-recipients に移動済み
+        sectionOrder,
+        pipWindowSizes,
+        layoutMode,
+        chassisColumnCollapsed,
+        deliveryYardGroupOrder,
+        deliveryYardGroupRow,
+        deliveryYardLayoutByDate,
+        driverGroupColumn,
+        driverGroupSubColumns,
+        driverGridColumns,
+        driverGroupOrderOverride,
+        driverSubColumnOverride,
+        lShapeRightWidth,
+        lShapeDriversHeight,
 
         version: nextVersion,
         updatedAt: new Date().toISOString(),
@@ -3872,6 +4540,20 @@ function App() {
     axleColors,
     sizeColors,
     theme,
+    sectionOrder,
+    pipWindowSizes,
+    layoutMode,
+    chassisColumnCollapsed,
+    deliveryYardGroupOrder,
+    deliveryYardGroupRow,
+    deliveryYardLayoutByDate,
+    driverGroupColumn,
+    driverGroupSubColumns,
+    driverGridColumns,
+    driverGroupOrderOverride,
+    driverSubColumnOverride,
+    lShapeRightWidth,
+    lShapeDriversHeight,
     hydrationDone,
   ]);
 
@@ -3906,8 +4588,8 @@ function App() {
     );
   }, [hydrationDone, yards]);
 
-  // 配送レーンに表示すべき日付一覧（containers から動的に）
-  const dayKeys = Array.from(new Set(containers.map((c) => c.date))).sort();
+  // Phase2: 配送分は 1日表示化により全日リスト(dayKeys)は不要になった。
+  //   (元は `const dayKeys = ...` があったが削除)
   const legend20 = sizeColors?.["size-20"];
   const legend40 = sizeColors?.["size-40"];
 
@@ -3990,21 +4672,35 @@ function App() {
                 )}
               </div>
 
-              {/* ★ 表示モード切替 */}
-              <div className="mode-toggle-group">
-                {([
-                  ["pc", "\u{1F5A5}", "PC"],
-                  ["tablet", "\u{1F4CB}", "タブレット"],
-                  ["phone", "\u{1F4F1}", "スマホ"],
-                ] as [DisplayMode, string, string][]).map(([mode, icon, label]) => (
-                  <button
-                    key={mode}
-                    className={`mode-toggle-btn${displayMode === mode ? " active" : ""}`}
-                    onClick={() => setDisplayMode(mode)}
-                  >
-                    {displayMode === "phone" ? icon : `${icon} ${label}`}
-                  </button>
-                ))}
+              {/* ★ 音声送信・配車表・レイアウトモード切替 */}
+              <div className="header-shortcut-group">
+                <button
+                  className="header-shortcut-btn header-shortcut-voice"
+                  onClick={() => openVoiceWindow()}
+                  title="音声送信パネル"
+                >
+                  🔊 音声送信
+                </button>
+                <button
+                  className="header-shortcut-btn header-shortcut-table"
+                  onClick={() => openDispatchTable()}
+                  title="配車表ウィンドウ"
+                >
+                  📋 配車表
+                </button>
+                <button
+                  className={`header-shortcut-btn header-shortcut-layout${layoutMode === "l-shape" ? " active" : ""}`}
+                  onClick={() =>
+                    setLayoutMode((m) => (m === "linear" ? "l-shape" : "linear"))
+                  }
+                  title={
+                    layoutMode === "linear"
+                      ? "L字レイアウトへ切替 (左=シャーシ、右上=ドライバー、右下=配送分)"
+                      : "3列レイアウトへ切替"
+                  }
+                >
+                  {layoutMode === "l-shape" ? "▤ L字" : "▥ 3列"}
+                </button>
               </div>
 
               <AuthBar />
@@ -4884,14 +5580,117 @@ function App() {
                 ))}
               </div>
             )}
-            <div className="main">
+            <div
+              className={`main main-layout-${layoutMode}`}
+              style={
+                layoutMode === "l-shape" && displayMode === "pc"
+                  ? ({
+                      // CSS variables for L-shape grid template
+                      ["--l-chassis-w" as any]: `${leftWidth}px`,
+                      ["--l-drivers-h" as any]: `${lShapeDriversHeight}px`,
+                      ["--l-right-w" as any]: `${lShapeRightWidth}px`,
+                    } as React.CSSProperties)
+                  : undefined
+              }
+            >
+              {/* L字レイアウト時の縦リサイザ (シャーシと右カラムの間) */}
+              {layoutMode === "l-shape" && displayMode === "pc" && (
+                <div
+                  className="resizer resizer-vertical l-shape-vres"
+                  data-role="l-shape-vres"
+                  onMouseDown={startLShapeVResize}
+                />
+              )}
+              {/* L字レイアウト時の横リサイザ (ドライバーと配送分の間) */}
+              {layoutMode === "l-shape" && displayMode === "pc" && (
+                <div
+                  className="resizer resizer-horizontal l-shape-hres"
+                  data-role="l-shape-hres"
+                  onMouseDown={startLShapeHResize}
+                />
+              )}
+              {/* L字レイアウト時の右端リサイザ (右カラム全体の幅を調整) */}
+              {layoutMode === "l-shape" && displayMode === "pc" && (
+                <div
+                  className="resizer resizer-vertical l-shape-rres"
+                  data-role="l-shape-rres"
+                  onMouseDown={startLShapeRResize}
+                />
+              )}
               {/* 左：シャーシプール＋予備車 */}
+              <InlineOrPortal
+                target={
+                  pipSection === "chassis" && pipWindow
+                    ? pipWindow.document.body
+                    : null
+                }
+              >
               <div
                 id="phone-panel-chassis"
                 className="left-panel"
-                style={displayMode === "pc" ? { width: leftWidth, flex: "0 0 auto" } : undefined}
+                data-section="chassis"
+                style={
+                  pipSection === "chassis"
+                    ? { width: "100%", flex: "0 0 auto", boxSizing: "border-box" }
+                    : displayMode === "pc"
+                      ? { width: widthForSection("chassis"), flex: "0 0 auto", order: orderIndexOf("chassis") * 2 }
+                      : undefined
+                }
               >
-                <h2>シャーシプール</h2>
+                <h2
+                  onDragOver={onSectionDragOver("chassis")}
+                  onDragLeave={onSectionDragLeave("chassis")}
+                  onDrop={onSectionDrop("chassis")}
+                  className={
+                    dragOverSection === "chassis" ? "section-drop-target" : undefined
+                  }
+                >
+                  <span
+                    draggable={displayMode === "pc"}
+                    onDragStart={onSectionDragStart("chassis")}
+                    onDragEnd={onSectionDragEnd("chassis")}
+                    className="section-drag-handle"
+                    title="ドラッグして並び替え"
+                    style={
+                      draggingSection === "chassis" ? { opacity: 0.5 } : undefined
+                    }
+                  >
+                    ⠿
+                  </span>
+                  シャーシプール
+                  <button
+                    type="button"
+                    className="chassis-collapse-btn"
+                    onClick={() => {
+                      setChassisColumnCollapsed((v) => {
+                        const next = !v;
+                        if (next) {
+                          // 折りたたみ: 現在の幅を退避してから縮める
+                          prevChassisWidthRef.current = leftWidth;
+                          setLeftWidth(CHASSIS_COLLAPSED_WIDTH);
+                        } else {
+                          // 展開: 退避した幅に戻す
+                          setLeftWidth(prevChassisWidthRef.current);
+                        }
+                        return next;
+                      });
+                    }}
+                    title={chassisColumnCollapsed ? "3列表示に戻す" : "1列表示に折りたたむ"}
+                  >
+                    {chassisColumnCollapsed ? "+" : "−"}
+                  </button>
+                  {displayMode === "pc" && (
+                    <SectionPipButton
+                      section="chassis"
+                      pipSection={pipSection}
+                      supported={pipSupported}
+                      onOpen={() =>
+                        openPip("chassis", pipWindowSizes.chassis)
+                      }
+                      onClose={closePip}
+                    />
+                  )}
+                </h2>
 
                 {yards.map((yard) => {
                   // ★ slotMode と ラベルを毎ヤードごとに決定
@@ -4934,6 +5733,12 @@ function App() {
                                 label: labels.back || "奥",
                               },
                             ];
+
+                  // Phase2: chassisColumnCollapsed=true のとき「中」「奥」列を非表示。
+                  //   slotMode は維持 (中/奥のシャーシは state に残る) → 表示だけ front のみに絞る
+                  const displayedYardPositions = chassisColumnCollapsed
+                    ? yardPositions.filter((p) => p.id === "front")
+                    : yardPositions;
 
                   const isHidden = !!hiddenPoolYards[yard.id];
                   return (
@@ -5004,7 +5809,7 @@ function App() {
                         <div className="yard-table">
                           <div className="yard-header-row">
                             <div className="yard-header-cell" />
-                            {yardPositions.map((pos) => (
+                            {displayedYardPositions.map((pos) => (
                               <div
                                 key={pos.id}
                                 className="yard-header-cell yard-header-pos"
@@ -5018,7 +5823,7 @@ function App() {
                             <div key={lane.id} className="yard-lane-row">
                               <div className="yard-lane-name">{lane.label}</div>
 
-                              {yardPositions.map((pos) => {
+                              {displayedYardPositions.map((pos) => {
                                 const group = getSlotGroup(
                                   yard.id,
                                   lane.id,
@@ -5083,15 +5888,60 @@ function App() {
                   );
                 })}
               </div>
-              <div className="resizer" onMouseDown={startResize("left")} />
+              </InlineOrPortal>
               {/* 中央：ドライバー */}
+              <InlineOrPortal
+                target={
+                  pipSection === "drivers" && pipWindow
+                    ? pipWindow.document.body
+                    : null
+                }
+              >
               <div
                 id="phone-panel-driver"
                 className="driver-panel"
-                style={displayMode === "pc" ? { width: middleWidth, flex: "0 0 auto" } : undefined}
+                data-section="drivers"
+                style={
+                  pipSection === "drivers"
+                    ? { width: "100%", flex: "0 0 auto", boxSizing: "border-box" }
+                    : displayMode === "pc"
+                      ? { width: widthForSection("drivers"), flex: "0 0 auto", order: orderIndexOf("drivers") * 2 }
+                      : undefined
+                }
               >
-                <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <h2
+                  style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  onDragOver={onSectionDragOver("drivers")}
+                  onDragLeave={onSectionDragLeave("drivers")}
+                  onDrop={onSectionDrop("drivers")}
+                  className={
+                    dragOverSection === "drivers" ? "section-drop-target" : undefined
+                  }
+                >
+                  <span
+                    draggable={displayMode === "pc"}
+                    onDragStart={onSectionDragStart("drivers")}
+                    onDragEnd={onSectionDragEnd("drivers")}
+                    className="section-drag-handle"
+                    title="ドラッグして並び替え"
+                    style={
+                      draggingSection === "drivers" ? { opacity: 0.5 } : undefined
+                    }
+                  >
+                    ⠿
+                  </span>
                   <span>ドライバー</span>
+                  {displayMode === "pc" && (
+                    <SectionPipButton
+                      section="drivers"
+                      pipSection={pipSection}
+                      supported={pipSupported}
+                      onOpen={() =>
+                        openPip("drivers", pipWindowSizes.drivers)
+                      }
+                      onClose={closePip}
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => setDriverOrderModalOpen(true)}
@@ -5110,250 +5960,417 @@ function App() {
                   </button>
                 </h2>
 
-                <div className="driver-groups-grid">
-                  {/* 左：自車 */}
-                  <section className="driver-group-column">
-                    <h3 className="driver-group-column-title">自車</h3>
-
-                    {VISIBLE_OWNED_GROUP_ORDER.map(({ key, label }) => {
-                      const groupDrivers = sortDriversByOrder(
-                        ownedDrivers.filter((d) => (d.groupName || "") === key),
-                        driverOrderState.order[key],
+                <div
+                  className="driver-cols-wrapper"
+                  style={{
+                    // Phase2c: 列別 flex-column スタック (擬似 masonry)。flex row + 各stack min-width で確実横並び
+                    display: "flex",
+                    flexDirection: "row",
+                    alignItems: "flex-start",
+                    gap: 12,
+                    minWidth: "min-content",
+                  }}
+                >
+                  {(() => {
+                    // グループ表示順: override があればそれ + 未指定は末尾に。
+                    const defaultAllKeys = [
+                      ...VISIBLE_OWNED_GROUP_ORDER.map((g) => g.key),
+                      ...VISIBLE_OUTSOURCED_GROUP_ORDER.map((g) => g.key),
+                    ];
+                    const effectiveOrder =
+                      driverGroupOrderOverride.length > 0
+                        ? [
+                            ...driverGroupOrderOverride.filter((k) =>
+                              defaultAllKeys.includes(k),
+                            ),
+                            ...defaultAllKeys.filter(
+                              (k) => !driverGroupOrderOverride.includes(k),
+                            ),
+                          ]
+                        : defaultAllKeys;
+                    const allGroups = effectiveOrder
+                      .map((k) => {
+                        const owned = VISIBLE_OWNED_GROUP_ORDER.find(
+                          (g) => g.key === k,
+                        );
+                        if (owned) return owned;
+                        return VISIBLE_OUTSOURCED_GROUP_ORDER.find(
+                          (g) => g.key === k,
+                        );
+                      })
+                      .filter((g): g is (typeof VISIBLE_OWNED_GROUP_ORDER)[number] =>
+                        Boolean(g),
                       );
-                      if (groupDrivers.length === 0) return null;
-
-                      return (
-                        <div key={key} className="driver-group">
-                          <div
-                            className="driver-group-name"
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: 8,
-                            }}
-                          >
-                            <span>・{label}</span>
-                            <button
-                              className="btn-small btn-primary"
-                              style={{ fontSize: 11, padding: "2px 8px" }}
-                              onClick={() => sendGroupBatchMail(key, label)}
-                              title="このグループの全ドライバーに一斉メール"
+                    return (
+                      <>
+                        {/* N 個の列スタック。各列はグループの一部(またはピース) を保持 */}
+                        {Array.from({ length: driverGridColumns }, (_, i) => i + 1).map(
+                          (colNum) => (
+                            <div
+                              key={`col-stack-${colNum}`}
+                              className={`driver-col-stack${dragOverDriverColumn === colNum ? " driver-col-stack-drop-target" : ""}`}
+                              data-col={colNum}
+                              onDragOver={onDriverColumnDragOver(colNum)}
+                              onDragLeave={onDriverColumnDragLeave}
+                              onDrop={onDriverColumnDrop(colNum)}
                             >
-                              📧 一斉配信
-                            </button>
-                          </div>
-                          <div className="driver-list">
-                            {groupDrivers.map((d) => {
-                              const truck = getTruckForDriver(d.id);
-                              const group = getGroupForDriver(d.id);
+                              {allGroups
+                                .filter(({ key }) => {
+                                  const startCol = colForDriverGroup(key);
+                                  const span = Math.min(
+                                    (driverGroupSubColumns[key] ?? 1) as number,
+                                    driverGridColumns - startCol + 1,
+                                  );
+                                  return (
+                                    colNum >= startCol && colNum < startCol + span
+                                  );
+                                })
+                                .map(({ key, label }) => {
+                                  const startCol = colForDriverGroup(key);
+                                  const groupSubCount = (driverGroupSubColumns[key] ?? 1) as 1 | 2 | 3;
+                                  const subIndex = colNum - startCol + 1; // 1..span
+                                  const isFirstPiece = subIndex === 1;
+                                  return { key, label, isFirstPiece, subIndex, groupSubCount, startCol };
+                                })
+                                .map(({ key, label, isFirstPiece, subIndex, groupSubCount: outerSubCount }) => {
+                          const isOwned = OWNED_GROUP_ORDER.some(
+                            (o) => o.key === key,
+                          );
+                          const sourceDrivers = isOwned
+                            ? ownedDrivers
+                            : outsourcedDrivers;
+                          const groupDrivers = sortDriversByOrder(
+                            sourceDrivers.filter(
+                              (d) => (d.groupName || "") === key,
+                            ),
+                            driverOrderState.order[key],
+                          );
+                          if (groupDrivers.length === 0) return null;
 
-                              return (
-                                <section key={d.id} className="driver-row">
-                                  <div className="driver-col">
-                                    <div
-                                      className="driver-name"
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 4,
-                                      }}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={!excludedDrivers[d.id]}
-                                        onChange={() =>
-                                          toggleExcludedDriver(d.id)
-                                        }
-                                        title="一斉メール対象"
-                                        style={{ cursor: "pointer" }}
-                                      />
-                                      <span
-                                        style={{
-                                          textDecoration: excludedDrivers[d.id]
-                                            ? "line-through"
-                                            : undefined,
-                                          opacity: excludedDrivers[d.id]
-                                            ? 0.5
-                                            : 1,
-                                        }}
-                                      >
-                                        {d.name}
-                                      </span>
-                                    </div>
-                                    <DroppableArea
-                                      id={`driver-${d.id}-truck`}
-                                      className="slot-driver-truck"
-                                      placeholder=" "
-                                    >
-                                      {truck && (
-                                        <DraggableTruckCard truck={truck} />
-                                      )}
-                                    </DroppableArea>
-                                  </div>
-
-                                  <div className="driver-slot-col">
-                                    <DroppableArea
-                                      id={`driver-${d.id}-group`}
-                                      className="slot-driver-group"
-                                      placeholder=" "
-                                    >
-                                      {group && (
-                                        <DraggableGroupCard
-                                          group={group}
-                                          kindColors={kindColors}
-                                          axleColors={axleColors}
-                                          sizeColors={sizeColors}
-                                          onTap={handleCardTap}
-                                          onContextMenuGroup={(e, g) =>
-                                            openMailMenu(e, g, d)
-                                          }
-                                          practiceColorMap={practiceState.colors}
-                                        />
-                                      )}
-                                    </DroppableArea>
-                                  </div>
-                                </section>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </section>
-
-                  {/* 右：傭車 */}
-                  <section className="driver-group-column">
-                    <h3 className="driver-group-column-title">傭車</h3>
-
-                    {VISIBLE_OUTSOURCED_GROUP_ORDER.map(({ key, label }) => {
-                      const groupDrivers = sortDriversByOrder(
-                        outsourcedDrivers.filter(
-                          (d) => (d.groupName || "") === key,
-                        ),
-                        driverOrderState.order[key],
-                      );
-                      if (groupDrivers.length === 0) return null;
-
-                      return (
-                        <div key={key} className="driver-group">
-                          <div
-                            className="driver-group-name"
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: 8,
-                            }}
-                          >
-                            <span>・{label}</span>
-                            <button
-                              className="btn-small btn-primary"
-                              style={{ fontSize: 11, padding: "2px 8px" }}
-                              onClick={() => sendGroupBatchMail(key, label)}
-                              title="このグループの全ドライバーに一斉メール"
+                          const groupSubCount = outerSubCount;
+                          return (
+                            <div
+                              key={`${key}-piece-${subIndex}`}
+                              className={`driver-group driver-group-piece${!isFirstPiece ? " driver-group-continuation" : ""}${dragOverDriverGroup === key ? " driver-group-drop-target" : ""}`}
+                              data-sub-count={groupSubCount}
+                              data-sub-index={subIndex}
+                              onDragOver={onDriverGroupDragOverBlock(key)}
+                              onDrop={onDriverGroupDropBlock(key)}
+                              style={
+                                draggingDriverGroup === key
+                                  ? { opacity: 0.5 }
+                                  : undefined
+                              }
                             >
-                              📧 一斉配信
-                            </button>
-                          </div>
-                          <div className="driver-list">
-                            {groupDrivers.map((d) => {
-                              const truck = getTruckForDriver(d.id);
-                              const group = getGroupForDriver(d.id);
+                              <div
+                                className="driver-group-name"
+                                draggable={isFirstPiece && displayMode === "pc"}
+                                onDragStart={isFirstPiece ? onDriverGroupDragStart(key) : undefined}
+                                onDragEnd={isFirstPiece ? onDriverGroupDragEnd : undefined}
+                                style={{
+                                  display: "flex",
+                                  flexWrap: "nowrap",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  gap: 6,
+                                  overflow: "hidden",
+                                  // 継続ピースでは中身を非表示にしつつ高さは保持 (ドライバー行の Y 揃え)
+                                  visibility: isFirstPiece ? "visible" : "hidden",
+                                  cursor: isFirstPiece && displayMode === "pc" ? "grab" : "default",
+                                  userSelect: "none",
+                                }}
+                                title={
+                                  isFirstPiece && displayMode === "pc"
+                                    ? "ドラッグして別列へ移動"
+                                    : undefined
+                                }
+                              >
+                                <span
+                                  style={{
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    minWidth: 0,
+                                    flex: "1 1 auto",
+                                  }}
+                                >
+                                  {displayMode === "pc" && (
+                                    <span className="driver-group-drag-handle">⠿</span>
+                                  )}
+                                  ・{label}
+                                </span>
+                                <button
+                                  className="btn-small btn-primary"
+                                  style={{
+                                    fontSize: 11,
+                                    padding: "2px 6px",
+                                    flexShrink: 0,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  onClick={
+                                    isFirstPiece
+                                      ? () => sendGroupBatchMail(key, label)
+                                      : undefined
+                                  }
+                                  title={isFirstPiece ? "このグループの全ドライバーに一斉メール" : undefined}
+                                >
+                                  📧
+                                </button>
+                              </div>
+                              {(() => {
+                                // Phase2: サブ列 1/2/3 に拡張
+                                const subCount = groupSubCount;
+                                const isMulti = subCount >= 2;
+                                // 均等分割: 各 sub-col に driver 数を配分
+                                const perSub = Math.ceil(groupDrivers.length / subCount);
+                                const subFor = (id: string, idx: number): 1 | 2 | 3 => {
+                                  const ov = driverSubColumnOverride[id];
+                                  if (ov && ov >= 1 && ov <= subCount) return ov as 1 | 2 | 3;
+                                  // デフォルト: idx 位置で分割
+                                  const s = Math.floor(idx / perSub) + 1;
+                                  return Math.min(s, subCount) as 1 | 2 | 3;
+                                };
+                                const subDrivers: (typeof groupDrivers)[] = isMulti
+                                  ? Array.from({ length: subCount }, (_, i) =>
+                                      groupDrivers.filter(
+                                        (d, idx) => subFor(d.id, idx) === i + 1,
+                                      ),
+                                    )
+                                  : [groupDrivers];
+                                const renderRow = (d: (typeof groupDrivers)[number]) => {
+                                  const truck = getTruckForDriver(d.id);
+                                  const group = getGroupForDriver(d.id);
+                                  return (
+                                    <section key={d.id} className="driver-row">
+                                      <div className="driver-col">
+                                        <div
+                                          className="driver-name"
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 4,
+                                            whiteSpace: "nowrap",
+                                            overflow: "hidden",
+                                          }}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={!excludedDrivers[d.id]}
+                                            onChange={() =>
+                                              toggleExcludedDriver(d.id)
+                                            }
+                                            title="一斉メール対象"
+                                            style={{ cursor: "pointer", flexShrink: 0 }}
+                                          />
+                                          <span
+                                            style={{
+                                              whiteSpace: "nowrap",
+                                              overflow: "hidden",
+                                              textOverflow: "ellipsis",
+                                              flex: "1 1 auto",
+                                              minWidth: 0,
+                                              textDecoration: excludedDrivers[d.id]
+                                                ? "line-through"
+                                                : undefined,
+                                              opacity: excludedDrivers[d.id]
+                                                ? 0.5
+                                                : 1,
+                                            }}
+                                          >
+                                            {d.name}
+                                          </span>
+                                        </div>
+                                        {isMulti && (
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              gap: 2,
+                                              marginTop: 2,
+                                              marginBottom: 2,
+                                            }}
+                                          >
+                                            {Array.from(
+                                              { length: subCount },
+                                              (_, i) => i + 1,
+                                            ).map((s) => {
+                                              const idx = groupDrivers.indexOf(d);
+                                              const currentSub = subFor(d.id, idx);
+                                              const isCurrent = currentSub === s;
+                                              return (
+                                                <button
+                                                  key={s}
+                                                  type="button"
+                                                  className="driver-sub-move-btn"
+                                                  title={`${s}列目へ`}
+                                                  onMouseDown={(e) => e.stopPropagation()}
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    setDriverSubColumnOverride(
+                                                      (cur) => ({
+                                                        ...cur,
+                                                        [d.id]: s as 1 | 2 | 3,
+                                                      }),
+                                                    );
+                                                  }}
+                                                  style={{
+                                                    background: isCurrent
+                                                      ? "#7c3aed"
+                                                      : "#eef2ff",
+                                                    color: isCurrent
+                                                      ? "#fff"
+                                                      : "#4338ca",
+                                                    fontWeight: isCurrent
+                                                      ? "bold"
+                                                      : "normal",
+                                                    marginLeft: 0,
+                                                    minWidth: 22,
+                                                  }}
+                                                >
+                                                  {s}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                        <DroppableArea
+                                          id={`driver-${d.id}-truck`}
+                                          className="slot-driver-truck"
+                                          placeholder=" "
+                                        >
+                                          {truck && (
+                                            <DraggableTruckCard truck={truck} />
+                                          )}
+                                        </DroppableArea>
+                                      </div>
 
-                              return (
-                                <section key={d.id} className="driver-row">
-                                  <div className="driver-col">
-                                    <div
-                                      className="driver-name"
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 4,
-                                      }}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={!excludedDrivers[d.id]}
-                                        onChange={() =>
-                                          toggleExcludedDriver(d.id)
-                                        }
-                                        title="一斉メール対象"
-                                        style={{ cursor: "pointer" }}
-                                      />
-                                      <span
-                                        style={{
-                                          textDecoration: excludedDrivers[d.id]
-                                            ? "line-through"
-                                            : undefined,
-                                          opacity: excludedDrivers[d.id]
-                                            ? 0.5
-                                            : 1,
-                                        }}
-                                      >
-                                        {d.name}
-                                      </span>
-                                    </div>
-                                    <DroppableArea
-                                      id={`driver-${d.id}-truck`}
-                                      className="slot-driver-truck"
-                                      placeholder=" "
-                                    >
-                                      {truck && (
-                                        <DraggableTruckCard truck={truck} />
-                                      )}
-                                    </DroppableArea>
+                                      <div className="driver-slot-col">
+                                        <DroppableArea
+                                          id={`driver-${d.id}-group`}
+                                          className="slot-driver-group"
+                                          placeholder=" "
+                                        >
+                                          {group && (
+                                            <DraggableGroupCard
+                                              group={group}
+                                              kindColors={kindColors}
+                                              axleColors={axleColors}
+                                              sizeColors={sizeColors}
+                                              onTap={handleCardTap}
+                                              onContextMenuGroup={(e, g) =>
+                                                openMailMenu(e, g, d)
+                                              }
+                                              practiceColorMap={practiceState.colors}
+                                            />
+                                          )}
+                                        </DroppableArea>
+                                      </div>
+                                    </section>
+                                  );
+                                };
+                                // Phase2c: 列別スタック描画 (擬似 masonry)。
+                                //   このピースは subIndex 番目の sub-col のドライバーのみ表示。
+                                const pieceDrivers = isMulti
+                                  ? (subDrivers[subIndex - 1] ?? [])
+                                  : groupDrivers;
+                                return (
+                                  <div className="driver-list">
+                                    {pieceDrivers.map(renderRow)}
                                   </div>
-
-                                  <div className="driver-slot-col">
-                                    <DroppableArea
-                                      id={`driver-${d.id}-group`}
-                                      className="slot-driver-group"
-                                      placeholder=" "
-                                    >
-                                      {group && (
-                                        <DraggableGroupCard
-                                          group={group}
-                                          kindColors={kindColors}
-                                          axleColors={axleColors}
-                                          sizeColors={sizeColors}
-                                          onTap={handleCardTap}
-                                          onContextMenuGroup={(e, g) =>
-                                            openMailMenu(e, g, d)
-                                          }
-                                          practiceColorMap={practiceState.colors}
-                                        />
-                                      )}
-                                    </DroppableArea>
-                                  </div>
-                                </section>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </section>
+                                );
+                              })()}
+                            </div>
+                          );
+                        })}
+                            </div>
+                          ),
+                        )}
+                      </>
+                    );
+                  })()}
+                  {/* Phase2: drag中の空列 drop zone (指定列に何もない位置へドロップして移動) */}
+                  {draggingDriverGroup &&
+                    Array.from({ length: driverGridColumns }, (_, i) => i + 1).map(
+                      (col) => (
+                        <div
+                          key={`col-drop-${col}`}
+                          className={`driver-column-drop-zone${dragOverDriverColumn === col ? " active" : ""}`}
+                          style={{
+                            gridColumn: `${col}`,
+                            gridRow: "1 / -1",
+                          }}
+                          onDragOver={onDriverColumnDragOver(col)}
+                          onDragLeave={onDriverColumnDragLeave}
+                          onDrop={onDriverColumnDrop(col)}
+                        />
+                      ),
+                    )}
                 </div>
               </div>
-              <div className="resizer" onMouseDown={startResize("middle")} />
+              </InlineOrPortal>
               {/* 右：配送分＋一時保管＋配送完了 */}
+              <InlineOrPortal
+                target={
+                  pipSection === "delivery" && pipWindow
+                    ? pipWindow.document.body
+                    : null
+                }
+              >
               <div
                 id="phone-panel-delivery"
                 className="delivery-panel"
-                style={displayMode === "pc" ? {
-                  width: deliveryWidth,
-                  flex: "0 0 auto",
-                  display: "flex",
-                  flexDirection: "column",
-                  height: "100vh",
-                  overflow: "hidden",
-                } : {
-                  display: "flex",
-                  flexDirection: "column" as const,
-                }}
+                data-section="delivery"
+                style={
+                  pipSection === "delivery"
+                    ? {
+                        width: "100%",
+                        flex: "0 0 auto",
+                        display: "flex",
+                        flexDirection: "column",
+                        height: "100vh",
+                        overflow: "hidden",
+                        boxSizing: "border-box",
+                      }
+                    : layoutMode === "l-shape" && displayMode === "pc"
+                      ? {
+                          display: "flex",
+                          flexDirection: "column",
+                          height: "100%",
+                          overflow: "hidden",
+                          boxSizing: "border-box",
+                        }
+                      : displayMode === "pc" ? {
+                          width: widthForSection("delivery"),
+                          flex: "0 0 auto",
+                          display: "flex",
+                          flexDirection: "column",
+                          height: "100vh",
+                          overflow: "hidden",
+                          order: orderIndexOf("delivery") * 2,
+                        } : {
+                          display: "flex",
+                          flexDirection: "column" as const,
+                        }
+                }
               >
-                {/* 配送分: flex column で上下2ブロック */}
+                {/* 配送分: L字時は横並び (配送分 | 配送完了), それ以外は縦積み (配送分 -> 配送完了) */}
+                <div
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection:
+                      layoutMode === "l-shape" && displayMode === "pc"
+                        ? "row"
+                        : "column",
+                    minHeight: 0,
+                    overflow: "hidden",
+                    paddingRight: "8px",
+                    gap:
+                      layoutMode === "l-shape" && displayMode === "pc"
+                        ? 8
+                        : 0,
+                  }}
+                >
                 <div
                   style={{
                     flex: 1,
@@ -5361,61 +6378,225 @@ function App() {
                     flexDirection: "column",
                     minHeight: 0,
                     overflow: "hidden",
-                    paddingRight: "8px",
                   }}
                 >
-                  <h2 style={{ flexShrink: 0 }}>配送分</h2>
+                  <h2
+                    style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}
+                    onDragOver={onSectionDragOver("delivery")}
+                    onDragLeave={onSectionDragLeave("delivery")}
+                    onDrop={onSectionDrop("delivery")}
+                    className={
+                      dragOverSection === "delivery" ? "section-drop-target" : undefined
+                    }
+                  >
+                    <span
+                      draggable={displayMode === "pc"}
+                      onDragStart={onSectionDragStart("delivery")}
+                      onDragEnd={onSectionDragEnd("delivery")}
+                      className="section-drag-handle"
+                      title="ドラッグして並び替え"
+                      style={
+                        draggingSection === "delivery" ? { opacity: 0.5 } : undefined
+                      }
+                    >
+                      ⠿
+                    </span>
+                    配送分
+                    {displayMode === "pc" && (
+                      <SectionPipButton
+                        section="delivery"
+                        pipSection={pipSection}
+                        supported={pipSupported}
+                        onOpen={() =>
+                          openPip("delivery", pipWindowSizes.delivery)
+                        }
+                        onClose={closePip}
+                      />
+                    )}
+                    {/* Phase2: 日付ナビゲータ (右寄せ) + 前日以前/翌日以降のコンテナ数バッジ */}
+                    {(() => {
+                      // 前日以前 / 翌日以降のコンテナ数を集計
+                      let prevCount = 0;
+                      let nextCount = 0;
+                      containers.forEach((c) => {
+                        if (!c.date) return;
+                        if (c.date < deliveryViewDate) prevCount++;
+                        else if (c.date > deliveryViewDate) nextCount++;
+                      });
+                      return (
+                        <div className="delivery-date-nav">
+                          <button
+                            type="button"
+                            className="delivery-date-btn"
+                            onClick={() => setShowAllDeliveryRegions((v) => !v)}
+                            title={showAllDeliveryRegions ? "コンテナのある地域のみ表示" : "全ての地域を表示"}
+                            style={
+                              showAllDeliveryRegions
+                                ? { background: "#dbeafe", borderColor: "#3b82f6" }
+                                : undefined
+                            }
+                          >
+                            {showAllDeliveryRegions ? "全" : "有"}
+                          </button>
+                          {prevCount > 0 && (
+                            <span
+                              className="delivery-date-badge"
+                              title={`前日以前に ${prevCount} 件のコンテナ`}
+                            >
+                              {prevCount}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            className="delivery-date-btn"
+                            onClick={() => shiftDeliveryDate(-1)}
+                            title="前日"
+                          >
+                            ◀
+                          </button>
+                          <span className="delivery-date-label">
+                            {formatDeliveryDate(deliveryViewDate)}
+                          </span>
+                          <button
+                            type="button"
+                            className="delivery-date-btn"
+                            onClick={() => shiftDeliveryDate(1)}
+                            title="翌日"
+                          >
+                            ▶
+                          </button>
+                          {nextCount > 0 && (
+                            <span
+                              className="delivery-date-badge"
+                              title={`翌日以降に ${nextCount} 件のコンテナ`}
+                            >
+                              {nextCount}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </h2>
 
-                  {/* 配送分スクロールボックス */}
+                  {/* 配送分スクロールボックス
+                      Phase2: 1日表示 + 地域(pickupYardGroup)を横並び列に */}
                   <div
                     ref={deliveryScrollRef}
                     className="delivery-scroll"
                     style={{ flex: "1 1 0", minHeight: 0, overflow: "auto" }}
                   >
-                    <div className="days-scroll">
-                      {dayKeys.map((dayKey) => {
-                        return (
-                          <section key={dayKey} className="day-column">
-                            {yardGroups.map((yardName) => (
+                    {(() => {
+                      // Phase2: 地域を row 単位でグループ化。行数 = max(row) with default=1
+                      // Phase2b: 現在の日付のレイアウトを使用
+                      const dayRow = currentDayLayout.row;
+                      const rowValues = yardGroups.map(
+                        (n) => dayRow[n] ?? 1,
+                      );
+                      const maxRow = rowValues.length > 0
+                        ? Math.max(...rowValues, 1)
+                        : 1;
+                      const rowIndices = Array.from(
+                        { length: maxRow },
+                        (_, i) => i + 1,
+                      );
+                      const renderRegion = (yardName: string) => (
+                        <div
+                          key={`${deliveryViewDate}-${yardName}`}
+                          className={`delivery-region-column${dragOverYard === yardName ? " delivery-region-drop-target" : ""}`}
+                          onDragOver={onYardDragOver(yardName)}
+                          onDragLeave={onYardDragLeave}
+                          onDrop={onYardDrop(yardName)}
+                        >
+                          <div
+                            className="delivery-region-name"
+                            draggable={displayMode === "pc"}
+                            onDragStart={onYardDragStart(yardName)}
+                            onDragEnd={onYardDragEnd}
+                            style={
+                              draggingYard === yardName ? { opacity: 0.5 } : undefined
+                            }
+                            title="ドラッグして並び替え(別行の地域上にドロップで行間移動)"
+                          >
+                            <span className="delivery-region-drag-handle">⠿</span>
+                            {yardName}
+                          </div>
+                          <DroppableArea
+                            id={`delivery-${deliveryViewDate}-${yardName}`}
+                            className="slot-auto delivery-region-slot"
+                            placeholder="ここにコンテナAをドロップ"
+                          >
+                            {containers
+                              .filter(
+                                (c) =>
+                                  c.date === deliveryViewDate &&
+                                  c.pickupYardGroup === yardName,
+                              )
+                              .map((c) => (
+                                <DraggableContainerCard
+                                  key={c.id}
+                                  container={c}
+                                  sizeColors={sizeColors}
+                                  practiceColorMap={practiceState.colors}
+                                  onContextMenuContainer={
+                                    openContainerContextMenu
+                                  }
+                                />
+                              ))}
+                          </DroppableArea>
+                        </div>
+                      );
+                      return (
+                        <div className="delivery-region-grid">
+                          {rowIndices.map((rowNum) => {
+                            const inRow = yardGroups.filter(
+                              (n) => (dayRow[n] ?? 1) === rowNum,
+                            );
+                            if (inRow.length === 0) return null;
+                            return (
                               <div
-                                key={`${dayKey}-${yardName}`}
-                                className="delivery-yard-row"
+                                key={`row-${rowNum}`}
+                                className="delivery-region-row"
                               >
-                                <div className="delivery-yard-name">
-                                  {yardName}
-                                </div>
-                                <DroppableArea
-                                  id={`delivery-${dayKey}-${yardName}`}
-                                  className="slot-auto"
-                                  placeholder="ここにコンテナAをドロップ"
-                                >
-                                  {containers
-                                    .filter(
-                                      (c) =>
-                                        c.date === dayKey &&
-                                        c.pickupYardGroup === yardName,
-                                    )
-                                    .map((c) => (
-                                      <DraggableContainerCard
-                                        key={c.id}
-                                        container={c}
-                                        sizeColors={sizeColors}
-                                        practiceColorMap={practiceState.colors}
-                                        onContextMenuContainer={
-                                          openContainerContextMenu
-                                        }
-                                      />
-                                    ))}
-                                </DroppableArea>
+                                {inRow.map(renderRegion)}
                               </div>
-                            ))}
-                          </section>
-                        );
-                      })}
-                    </div>
+                            );
+                          })}
+                          {/* 新規行 drop zone (ドラッグ中のみ表示) */}
+                          {draggingYard && (
+                            <div
+                              className={`delivery-region-new-row-drop${newRowDragOver ? " active" : ""}`}
+                              onDragOver={onYardNewRowDragOver}
+                              onDragLeave={onYardNewRowDragLeave}
+                              onDrop={onYardNewRowDrop}
+                            >
+                              ＋ 新しい行にドロップ
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
-
-                  <div className="delivery-completed" style={{ flexShrink: 0, maxHeight: "220px", overflowY: "auto" }}>
+                </div>
+                {/* 配送完了ブロック: L字時は右カラム, それ以外は下段 */}
+                <div
+                  className="delivery-completed"
+                  style={
+                    layoutMode === "l-shape" && displayMode === "pc"
+                      ? {
+                          flexShrink: 0,
+                          width: 220,
+                          maxHeight: "none",
+                          overflowY: "auto",
+                          borderLeft: "1px solid #e5e7eb",
+                          paddingLeft: 8,
+                        }
+                      : {
+                          flexShrink: 0,
+                          maxHeight: "220px",
+                          overflowY: "auto",
+                        }
+                  }
+                >
                     <h3>
                       配送完了{" "}
                       {completedContainers.length > 0 && (
@@ -5447,69 +6628,33 @@ function App() {
                 </div>
                 {/* ↑ 配送分フレックスエリアここまで */}
 
-                {/* ✅ ボタンをスクロールエリアの外に配置（固定） */}
-                <div
-                  style={{
-                    padding: "12px",
-                    borderTop: "1px solid #ddd",
-                    background: "#fff",
-                    flexShrink: 0, // ← 追加：縮まないようにする
-                  }}
-                >
-                  <button
-                    onClick={() => openVoiceWindow()}
-                    style={{
-                      width: "100%",
-                      padding: "12px",
-                      fontSize: "16px",
-                      fontWeight: "bold",
-                      background: "#4CAF50",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    🔊 音声送信パネルを開く
-                  </button>
-                  <button
-                    onClick={() => openDispatchTable()}
-                    style={{
-                      width: "100%",
-                      padding: "12px",
-                      fontSize: "16px",
-                      fontWeight: "bold",
-                      background: "#1976d2",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "8px",
-                      marginTop: "8px",
-                    }}
-                  >
-                    📋 配車表を開く
-                  </button>
-                </div>
+                {/* 音声送信/配車表ボタンはヘッダーに移動済み */}
               </div>
               {/* ← delivery-panelの終わり */}
 
-              {/* ★ 右パネル用の仕切り線（必ず main の中の最後の子に） */}
-              <div className="resizer" onMouseDown={startResize("right")} />
+              </InlineOrPortal>
+              {/* 各セクション間の resizer をまとめて描画 (linear モードのみ)。
+                  - 末尾以外: そのセクションを +dx で広げる
+                  - 末尾: -dx (トレーリング挙動、旧「right」相当) */}
+              {displayMode === "pc" && layoutMode === "linear" &&
+                inMainSections.map((k, idx) => {
+                  const isLast = idx === inMainSections.length - 1;
+                  return (
+                    <div
+                      key={`resizer-${k}`}
+                      className="resizer"
+                      style={{ order: idx * 2 + 1 }}
+                      onMouseDown={startResizeForSection(k, isLast)}
+                    />
+                  );
+                })}
             </div>
 
             {createPortal(
               <DragOverlay style={{ zIndex: 999999 }}>
                 {activeDragId ? renderDragOverlay(activeDragId) : null}
               </DragOverlay>,
-              document.body,
+              overlayInPip && pipWindow ? pipWindow.document.body : document.body,
             )}
           </DndContext>
 
@@ -5896,7 +7041,7 @@ function App() {
               setPracticeColorPicker((s) => ({ ...s, visible: false }))
             }
           />
-          {/* ドライバー並び順 (常設) */}
+          {/* ドライバー並び順 (常設) + Phase2 グループ配置設定タブ */}
           <DriverOrderSettings
             visible={driverOrderModalOpen}
             onClose={() => setDriverOrderModalOpen(false)}
@@ -5906,6 +7051,17 @@ function App() {
             outsourcedDrivers={outsourcedDrivers}
             orderMap={driverOrderState.order}
             onGroupOrderChange={setDriverGroupOrder}
+            driverGroupColumn={driverGroupColumn}
+            driverGroupSubColumns={driverGroupSubColumns}
+            driverGridColumns={driverGridColumns}
+            defaultColForDriverGroup={defaultColForDriverGroup}
+            onDriverGroupColumnChange={(k, c) =>
+              setDriverGroupColumn((cur) => ({ ...cur, [k]: c }))
+            }
+            onDriverGroupSubColumnsChange={(k, s) =>
+              setDriverGroupSubColumns((cur) => ({ ...cur, [k]: s }))
+            }
+            onDriverGridColumnsChange={setDriverGridColumns}
           />
           {detailModal.visible && (
             <div

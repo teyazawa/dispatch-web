@@ -202,6 +202,112 @@ body::before {
   color: #4b5563;
 }
 
+/* Phase2: L字レイアウト
+   左=シャーシ全高、右上=ドライバー、右下=配送分 + 右端リサイザ */
+.main.main-layout-l-shape {
+  display: grid !important;
+  grid-template-columns: var(--l-chassis-w, 700px) 6px var(--l-right-w, 900px) 6px;
+  grid-template-rows: var(--l-drivers-h, 420px) 6px 1fr;
+  grid-template-areas:
+    "chassis vres drivers  rres"
+    "chassis vres hres     rres"
+    "chassis vres delivery rres";
+  gap: 0;
+  height: calc(100vh - 60px); /* ヘッダー分差し引き。実測で調整可 */
+  overflow: hidden;
+}
+.main-layout-l-shape .l-shape-rres {
+  grid-area: rres;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+}
+.main-layout-l-shape .l-shape-rres::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: #d1d5db;
+  border-radius: 2px;
+}
+.main-layout-l-shape .l-shape-rres:hover::before {
+  background: #3b82f6;
+}
+.main-layout-l-shape [data-section="chassis"] {
+  grid-area: chassis;
+  width: auto !important;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  order: unset !important;
+}
+.main-layout-l-shape [data-section="drivers"] {
+  grid-area: drivers;
+  width: auto !important;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  order: unset !important;
+}
+.main-layout-l-shape [data-section="delivery"] {
+  grid-area: delivery;
+  width: auto !important;
+  height: 100%;
+  order: unset !important;
+}
+.main-layout-l-shape .l-shape-vres {
+  grid-area: vres;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+}
+.main-layout-l-shape .l-shape-vres::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: #d1d5db;
+  border-radius: 2px;
+}
+.main-layout-l-shape .l-shape-vres:hover::before {
+  background: #3b82f6;
+}
+.main-layout-l-shape .l-shape-hres {
+  grid-area: hres;
+  height: 6px;
+  width: 100%;
+  cursor: row-resize;
+  background: transparent;
+  position: relative;
+}
+.main-layout-l-shape .l-shape-hres::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: #d1d5db;
+  border-radius: 2px;
+}
+.main-layout-l-shape .l-shape-hres:hover::before {
+  background: #3b82f6;
+}
+/* L字時はセクション並び替えハンドルを隠す (位置は固定) */
+.main-layout-l-shape .section-drag-handle {
+  display: none;
+}
+
 .main {
   display: flex;
   gap: 1px;
@@ -227,6 +333,239 @@ body::before {
   cursor: col-resize;
   position: relative;
   flex: 0 0 auto;
+}
+
+/* Phase1: セクションドラッグハンドル + ドロップ強調 */
+.section-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  cursor: grab;
+  color: #9ca3af;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 4px;
+  user-select: none;
+  transition: background 0.15s, color 0.15s;
+  margin-right: 4px;
+}
+.section-drag-handle:hover {
+  background: #f3f4f6;
+  color: #3b82f6;
+}
+.section-drag-handle:active {
+  cursor: grabbing;
+}
+.section-drop-target {
+  outline: 2px dashed #3b82f6;
+  outline-offset: 2px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.06);
+}
+.mode-phone .section-drag-handle {
+  display: none;
+}
+
+.section-pip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 6px;
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 1;
+  background: #f5f5f5;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #374151;
+}
+
+/* Phase2: シャーシプール 3列⇔1列 トグル */
+.chassis-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin-left: 6px;
+  font-size: 16px;
+  font-weight: bold;
+  line-height: 1;
+  background: #eef2ff;
+  border: 1px solid #6366f1;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #4338ca;
+}
+.chassis-collapse-btn:hover {
+  background: #c7d2fe;
+}
+
+/* Phase2: 配送分 日付ナビゲータ */
+.delivery-date-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 6px;
+  background: #f3f4f6;
+  border-radius: 6px;
+}
+.delivery-date-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 12px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #374151;
+}
+.delivery-date-btn:hover {
+  background: #e0e7ff;
+  border-color: #6366f1;
+  color: #4338ca;
+}
+.delivery-date-label {
+  min-width: 72px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+/* Phase2d: 前日以前/翌日以降のコンテナ数バッジ */
+.delivery-date-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #f59e0b;
+  border-radius: 10px;
+  line-height: 1;
+}
+
+/* Phase2: 配送分 地域列
+   (Phase2b: 自由2Dグリッド。行ごとに flex row を積む) */
+.delivery-region-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+.delivery-region-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  min-height: 60px;
+}
+.delivery-region-new-row-drop {
+  padding: 12px;
+  font-size: 12px;
+  color: #6b7280;
+  text-align: center;
+  background: rgba(59, 130, 246, 0.04);
+  border: 2px dashed #cbd5e1;
+  border-radius: 6px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.delivery-region-new-row-drop.active {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+/* 旧クラス (互換で維持) */
+.delivery-region-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 4px 0;
+}
+.delivery-region-column {
+  flex: 1 1 140px;
+  min-width: 140px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #fafafa;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 6px;
+}
+.delivery-region-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  padding: 4px 6px;
+  background: #ffffff;
+  border-radius: 4px;
+  text-align: center;
+  cursor: grab;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.delivery-region-name:active {
+  cursor: grabbing;
+}
+.delivery-region-drag-handle {
+  color: #9ca3af;
+  font-size: 11px;
+  line-height: 1;
+}
+.delivery-region-drop-target {
+  outline: 2px dashed #3b82f6;
+  outline-offset: -2px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+/* Phase2: ドライバーグループ 列移動 drag */
+.driver-group-drag-handle {
+  color: #9ca3af;
+  font-size: 11px;
+  line-height: 1;
+  margin-right: 4px;
+}
+.driver-group-column-drop-target {
+  outline: 2px dashed #7c3aed;
+  outline-offset: -2px;
+  background: rgba(124, 58, 237, 0.06);
+  border-radius: 6px;
+}
+.delivery-region-slot {
+  flex: 1 1 auto;
+  min-height: 60px;
+}
+.section-pip-btn:hover:not(:disabled) {
+  background: #e0e7ff;
+  border-color: #6366f1;
+  color: #4338ca;
+}
+.section-pip-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.mode-phone .section-pip-btn {
+  display: none;
 }
 
 .resizer::before {
@@ -286,6 +625,12 @@ body::before {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* Phase2d: パネル内スクロール時にヘッダーを常に上部に固定 */
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+  z-index: 20;
+  padding: 4px 0;
 }
 
 .left-panel h2::before {
@@ -788,7 +1133,9 @@ body.dragging {
   display: flex;
   flex-direction: column;
   gap: 12px 16px; /* 行間と列間 */
-  /*overflow: visible !important;  外側は絶対に visible */
+  /* Phase2c: col-stack が幅を超えたら panel 内で横スクロール (隣接 panel を圧迫しないように) */
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
 /* ドライバーパネルの中身を2列グリッドに */
@@ -796,6 +1143,47 @@ body.dragging {
   display: flex;
   flex-direction: column;
   gap: 4px; /* ドライバー同士の縦の間隔 */
+}
+
+/* Phase2: グループ内ドライバーを 2列分割 (設定で切替 + 明示的 sub-col 割当)
+   driver-row のデフォルトレイアウト(横並び 90px | 1fr) をキープしつつ
+   sub-col ごとに driver-row 最小幅(260px) を確保 */
+.driver-list-2col {
+  display: flex;
+  flex-direction: row !important; /* .driver-list の column 継承を打ち消す */
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+.driver-list-2col .driver-sub-col {
+  flex: 1 1 260px;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 30px;
+}
+/* Phase2c: 列別スタック方式へ移行済み。旧 data-sub-count min-width は不要 (各 piece は col-stack 幅) */
+.driver-group[data-sub-count="1"],
+.driver-group[data-sub-count="2"],
+.driver-group[data-sub-count="3"] {
+  min-width: 0;
+}
+/* ドライバー行の sub-col 移動ボタン */
+.driver-sub-move-btn {
+  padding: 0 4px;
+  font-size: 10px;
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.4;
+  min-width: 22px;
+  flex-shrink: 0;
+}
+.driver-sub-move-btn:hover {
+  background: #c7d2fe;
 }
 
 .driver-row {
@@ -1341,9 +1729,70 @@ body.dragging {
 }
 .driver-groups-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)); /* 自車 / 傭車 の2列 */
-  column-gap: 16px;
+  /* Phase2: N列 grid (inline style で列数指定)。各列は最低 driver-row 幅 260px */
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
+  column-gap: 12px;
   row-gap: 12px;
+  grid-auto-flow: row dense;
+  min-width: min-content;
+  position: relative;
+}
+
+/* Phase2c: 列別 flex-column スタック (擬似 masonry) */
+.driver-cols-wrapper {
+  position: relative;
+}
+.driver-col-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 0 0 280px; /* 固定幅 280px、shrink/grow なし。内容(driver-row 260+)を確実に収める */
+  width: 280px;
+  min-width: 280px;
+  min-height: 40px;
+  padding: 4px;
+  border-radius: 6px;
+  border: 2px dashed transparent;
+  transition: border-color 0.15s, background 0.15s;
+  box-sizing: border-box;
+}
+.driver-col-stack-drop-target {
+  border-color: #7c3aed;
+  background: rgba(124, 58, 237, 0.05);
+}
+.driver-group-piece {
+  /* 各ピースは分離感を出さないよう境界線なし */
+}
+.driver-group-continuation {
+  /* 続きピース: ヘッダーなし。境界も出さない */
+}
+
+/* Phase2: 空列 drop zone (ドラッグ中のみレンダリング。列全体を薄くハイライト) */
+.driver-column-drop-zone {
+  border: 2px dashed transparent;
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.02);
+  pointer-events: auto;
+  z-index: 0;
+}
+.driver-column-drop-zone.active {
+  border-color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+}
+.driver-group {
+  z-index: 1;
+  position: relative;
+}
+/* driver-row の最小幅を確保して 90px driver-col + chassis 160px を維持 */
+.driver-row {
+  min-width: 260px;
+}
+/* 車両/シャーシ枠は最小幅で縮まないように */
+.card-container.slot-driver-truck {
+  min-width: var(--slot-driver-truck-width);
+}
+.card-container.slot-driver-group {
+  min-width: var(--card-width);
 }
 
 .driver-group-column-title {
@@ -1754,6 +2203,42 @@ body.dragging {
   border-radius: 6px;
   padding: 2px;
   flex-shrink: 0;
+}
+
+/* Phase2: ヘッダーの音声送信/配車表/レイアウト切替ボタン */
+.header-shortcut-group {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.header-shortcut-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 0.15s, transform 0.05s;
+}
+.header-shortcut-btn:hover {
+  filter: brightness(1.08);
+}
+.header-shortcut-btn:active {
+  transform: translateY(1px);
+}
+.header-shortcut-voice {
+  background: #4caf50;
+}
+.header-shortcut-table {
+  background: #1976d2;
+}
+.header-shortcut-layout {
+  background: #6b7280;
+}
+.header-shortcut-layout.active {
+  background: #7c3aed;
 }
 
 .mode-toggle-btn {
