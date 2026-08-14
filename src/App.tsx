@@ -310,6 +310,8 @@ type BoardState = {
     col?: Record<string, number>;
     pack?: Record<string, string>; // Phase2h: 右partner名 -> 左partner名 (①同士の横並びペア)
   }>;
+  // Phase2h: 地域内コンテナ表示列数 (日付ごと×地域ごとに 1|2)
+  regionContainerCols?: Record<string, Record<string, 1 | 2>>;
   driverGroupColumn?: Record<string, number>;
   driverGroupSubColumns?: Record<string, 1 | 2 | 3>;
   driverGridColumns?: 3 | 4 | 5;
@@ -4633,6 +4635,9 @@ function App() {
         if (s.deliveryYardLayoutByDate && typeof s.deliveryYardLayoutByDate === "object") {
           setDeliveryYardLayoutByDate(s.deliveryYardLayoutByDate);
         }
+        if (s.regionContainerCols && typeof s.regionContainerCols === "object") {
+          setRegionContainerCols(s.regionContainerCols);
+        }
         if (typeof s.lShapeRightWidth === "number") {
           setLShapeRightWidth(s.lShapeRightWidth);
         }
@@ -4782,6 +4787,9 @@ function App() {
             if (next.deliveryYardLayoutByDate && typeof next.deliveryYardLayoutByDate === "object") {
               setDeliveryYardLayoutByDate(next.deliveryYardLayoutByDate);
             }
+            if (next.regionContainerCols && typeof next.regionContainerCols === "object") {
+              setRegionContainerCols(next.regionContainerCols);
+            }
             if (typeof next.lShapeRightWidth === "number") {
               setLShapeRightWidth(next.lShapeRightWidth);
             }
@@ -4844,6 +4852,7 @@ function App() {
         deliveryYardGroupOrder,
         deliveryYardGroupRow,
         deliveryYardLayoutByDate,
+        regionContainerCols,
         driverGroupColumn,
         driverGroupSubColumns,
         driverGridColumns,
@@ -4892,6 +4901,7 @@ function App() {
     deliveryYardGroupOrder,
     deliveryYardGroupRow,
     deliveryYardLayoutByDate,
+    regionContainerCols,
     driverGroupColumn,
     driverGroupSubColumns,
     driverGridColumns,
