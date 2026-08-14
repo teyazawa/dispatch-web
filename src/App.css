@@ -764,6 +764,9 @@ body.dragging {
   min-height: 38px;
   max-height: none; /* 伸び放題OK */
   padding: 4px 6px;
+  /* Phase3: パネルが広い時 (単窓モード等) でも yard-table と横幅を揃えて折り返す。
+     70px + 3*220 + gap ≒ 740px */
+  max-width: 740px;
 
   align-items: flex-end; /* ← 追加：縦方向は下揃え */
   justify-content: flex-start; /* ← 追加：横方向は左揃え */
@@ -1393,9 +1396,13 @@ body.dragging {
 .yard-header-row,
 .yard-lane-row {
   display: grid;
-  grid-template-columns: 70px repeat(3, minmax(70px, 1fr)); /* レーン名 + 前中奥 */
+  /* Phase3: yard-section 側で --pos-cols を指定して動的化 (未指定なら 3)
+     Phase3: 単窓モード等でパネルが広くなっても各カラムを 220px 上限にキャップ
+             (残りの余白は末尾に空きとして残す)。従来の 700px panel なら 3×210 でジャストフィット。 */
+  grid-template-columns: 70px repeat(var(--pos-cols, 3), minmax(70px, 220px));
   gap: 4px;
   align-items: stretch;
+  justify-content: start;
 }
 
 .yard-header-row {

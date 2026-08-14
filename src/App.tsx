@@ -1206,6 +1206,7 @@ function DroppableArea({
       ref={setNodeRef}
       className={`card-container ${className ?? ""}`}
       style={{ borderColor: isOver ? "#3b82f6" : "#e2e8f0" }}
+      data-drop-id={id}
     >
       {React.Children.count(children) > 0
         ? children
@@ -1229,6 +1230,262 @@ async function uploadThemeBgToStorage(file: File): Promise<string> {
 /** メイン */
 
 function App() {
+  // Phase3 (Tauri): URL ?window=chassis|drivers|delivery で単窓モード指定。
+  //   default (未指定/不正値) は 3セクション全表示 (Web / Tauri 1窓時)
+  const windowRole = React.useMemo<SectionKey | null>(() => {
+    if (typeof window === "undefined") return null;
+    const p = new URLSearchParams(window.location.search).get("window");
+    return p === "chassis" || p === "drivers" || p === "delivery" ? p : null;
+  }, []);
+  // Tauri 実行時判定 (デスクトップアプリで @tauri-apps/api が使えるか)
+  const isTauri = React.useMemo(
+    () =>
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window),
+    [],
+  );
+  // Phase3: メイン window で別窓化されているセクション (Tauri のみ)
+  //   detach 中のセクションはメインで非表示。子 window を閉じたら復帰。
+  const [detachedSections, setDetachedSections] = useState<Set<SectionKey>>(
+    () => new Set(),
+  );
+  const shouldShowSection = React.useCallback(
+    (k: SectionKey) => {
+      if (windowRole) return windowRole === k;
+      return !detachedSections.has(k);
+    },
+    [windowRole, detachedSections],
+  );
+  // Phase3: cross-window drag ghost 描画 + drop 検知
+  //   Tauri Rust 側の start_drag_session が xdrag-start/move/end を発火。
+  //   各 window でリスンし、カーソルが自窓上にあるとき ghost を表示。
+  //   mouseup (Rust polling) で xdrag-end → 該当窓が elementFromPoint で drop target を検出し、
+  //   非source側のみ handleDragEnd を synthetic 呼び出し。
+  //   source側は「cursor が自窓を出た」フラグを立て、以降の handleDragEnd を早期 return させる。
+  const handleDragEndRef = useRef<((event: any) => void) | null>(null);
+  // Phase3: source 窓でカーソルが自窓を出た瞬間に true。以降の dnd-kit onDragEnd は state 更新しない
+  const sourceLeftWindowRef = useRef(false);
+  useEffect(() => {
+    if (!isTauri) return;
+    let currentDrag: {
+      itemId: string;
+      itemType: string;
+      label: string;
+      sourceLabel: string;
+    } | null = null;
+    let ghost: HTMLDivElement | null = null;
+    let ownBounds: { x: number; y: number; w: number; h: number } | null = null;
+    let myLabel: string = "";
+    let sourceCancelled = false; // Phase3: source 窓での dnd-kit キャンセル済みフラグ
+    const unlistens: Array<() => void> = [];
+    const setupGhost = (label: string) => {
+      if (ghost) return;
+      ghost = document.createElement("div");
+      ghost.style.cssText =
+        "position:fixed;pointer-events:none;z-index:99999;background:#e0e7ff;padding:6px 10px;border-radius:8px;border:2px solid #6366f1;box-shadow:0 4px 12px rgba(0,0,0,0.15);font-size:12px;font-weight:bold;color:#3730a3;display:none;transform:translate(-50%, -100%);will-change:left,top";
+      ghost.textContent = `↔ ${label}`;
+      document.body.appendChild(ghost);
+    };
+    const cleanupGhost = () => {
+      ghost?.remove();
+      ghost = null;
+      currentDrag = null;
+      ownBounds = null;
+    };
+    const refreshOwnBounds = async () => {
+      const { getCurrentWebviewWindow } = await import(
+        "@tauri-apps/api/webviewWindow"
+      );
+      const w = getCurrentWebviewWindow();
+      myLabel = w.label;
+      const pos = await w.outerPosition();
+      const size = await w.outerSize();
+      ownBounds = { x: pos.x, y: pos.y, w: size.width, h: size.height };
+    };
+    (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlistens.push(
+        await listen("xdrag-start", (evt) => {
+          const p = evt.payload as any;
+          currentDrag = {
+            itemId: p.itemId,
+            itemType: p.itemType,
+            label: p.label ?? p.itemId,
+            sourceLabel: p.sourceLabel ?? "",
+          };
+          sourceCancelled = false;
+          sourceLeftWindowRef.current = false;
+          setupGhost(currentDrag.label);
+          refreshOwnBounds();
+        }),
+      );
+      unlistens.push(
+        await listen("xdrag-move", (evt) => {
+          const p = evt.payload as { x: number; y: number; pressed: boolean };
+          if (!currentDrag || !ghost || !ownBounds) return;
+          const lx = p.x - ownBounds.x;
+          const ly = p.y - ownBounds.y;
+          const inside =
+            lx >= 0 && lx < ownBounds.w && ly >= 0 && ly < ownBounds.h;
+          if (inside) {
+            ghost.style.display = "block";
+            ghost.style.left = `${lx}px`;
+            ghost.style.top = `${ly}px`;
+          } else {
+            ghost.style.display = "none";
+            // Phase3: source 窓かつカーソルが自窓を離れた瞬間、フラグを立てて
+            //   以降の handleDragEnd (dnd-kit onDragEnd) を早期 return させる
+            const isSource = currentDrag.sourceLabel === myLabel;
+            if (isSource && !sourceCancelled) {
+              sourceCancelled = true;
+              sourceLeftWindowRef.current = true;
+              // 念のため pointercancel も打つ (dnd-kit の DragOverlay 表示を止める)
+              try {
+                document.dispatchEvent(
+                  new PointerEvent("pointercancel", {
+                    pointerType: "mouse",
+                    pointerId: 1,
+                    bubbles: true,
+                    cancelable: true,
+                  }),
+                );
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        }),
+      );
+      // Phase3: 楽観的更新: 他窓で drop が適用されたら、自窓 (特に source) も同じ状態を local に反映
+      //   これで Supabase sync (800ms debounce + realtime) を待たずに UI が即座に揃う。
+      //   全窓が同じ setGroups を呼ぶため両方 Supabase save するが、内容が同じなので problem なし。
+      unlistens.push(
+        await listen("xdrag-applied", (evt) => {
+          const p = evt.payload as {
+            activeId: string;
+            overId: string;
+            originLabel: string;
+          };
+          if (p.originLabel === myLabel) return; // 送信元は自分で適用済み
+          if (!handleDragEndRef.current) return;
+          handleDragEndRef.current({
+            active: { id: p.activeId },
+            over: { id: p.overId },
+          });
+          sourceLeftWindowRef.current = false;
+        }),
+      );
+      unlistens.push(
+        await listen("xdrag-end", (evt) => {
+          const p = evt.payload as { x: number; y: number };
+          if (!currentDrag || !ownBounds) {
+            sourceLeftWindowRef.current = false;
+            cleanupGhost();
+            return;
+          }
+          const isSource = currentDrag.sourceLabel === myLabel;
+          const lx = p.x - ownBounds.x;
+          const ly = p.y - ownBounds.y;
+          const inside =
+            lx >= 0 && lx < ownBounds.w && ly >= 0 && ly < ownBounds.h;
+          if (isSource) {
+            // source側: 合成 pointercancel を発火して dnd-kit の drag を「キャンセル」扱いに
+            try {
+              document.dispatchEvent(
+                new PointerEvent("pointercancel", {
+                  pointerType: "mouse",
+                  pointerId: 1,
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+            } catch {
+              /* ignore */
+            }
+          } else if (inside) {
+            // 非source かつ カーソルが自窓内: elementFromPoint で drop target を探し、
+            //   dnd-kit の handleDragEnd を synthetic に呼び出して state 更新。
+            //   その後 xdrag-applied イベントを他窓 (特に source) にブロードキャストして
+            //   楽観的に同じ state 更新を適用させる (Supabase sync ラグ回避)。
+            const el = document.elementFromPoint(lx, ly);
+            const dropEl = el?.closest("[data-drop-id]") as HTMLElement | null;
+            const dropId = dropEl?.getAttribute("data-drop-id");
+            if (dropId && handleDragEndRef.current) {
+              handleDragEndRef.current({
+                active: { id: currentDrag.itemId },
+                over: { id: dropId },
+              });
+              // Phase3: 楽観的更新用に全窓へ「drop 適用済み」通知
+              const activeId = currentDrag.itemId;
+              const capturedDropId = dropId;
+              import("@tauri-apps/api/event")
+                .then(({ emit }) =>
+                  emit("xdrag-applied", {
+                    activeId,
+                    overId: capturedDropId,
+                    originLabel: myLabel,
+                  }),
+                )
+                .catch((err) => console.error("xdrag-applied emit failed", err));
+            }
+          }
+          cleanupGhost();
+        }),
+      );
+    })().catch((err) => console.error("xdrag listeners failed", err));
+    return () => {
+      unlistens.forEach((u) => u());
+      cleanupGhost();
+    };
+  }, [isTauri]);
+
+  // Tauri: セクションを別 window に detach
+  const detachSectionToWindow = React.useCallback(
+    async (section: SectionKey) => {
+      if (!isTauri) return;
+      const { WebviewWindow } = await import(
+        "@tauri-apps/api/webviewWindow"
+      );
+      const label = `section-${section}`;
+      // 既に開いているなら focus のみ
+      const existing = await WebviewWindow.getByLabel(label);
+      if (existing) {
+        await existing.setFocus();
+        return;
+      }
+      // 現在の URL クエリを流用しつつ window=section を上書き
+      const params = new URLSearchParams(window.location.search);
+      params.set("window", section);
+      const url = `${window.location.pathname}?${params.toString()}`;
+      const title =
+        section === "chassis"
+          ? "シャーシプール"
+          : section === "drivers"
+            ? "ドライバー"
+            : "配送分";
+      const w = new WebviewWindow(label, {
+        url,
+        title,
+        width: 900,
+        height: 800,
+      });
+      w.once("tauri://created", () => {
+        setDetachedSections((prev) => new Set(prev).add(section));
+      });
+      w.once("tauri://destroyed", () => {
+        setDetachedSections((prev) => {
+          const next = new Set(prev);
+          next.delete(section);
+          return next;
+        });
+      });
+      w.once("tauri://error", (e) => {
+        console.error("detach window error", section, e);
+      });
+    },
+    [isTauri],
+  );
+
   // ── 表示モード（sensors より先に定義） ──
   //   Phase2 でヘッダーの切替UIは削除。displayMode は初期検出のみで固定。
   const [displayMode] = useState<DisplayMode>(() => {
@@ -3932,6 +4189,13 @@ function App() {
 
   function handleDragEnd(event: any) {
     const { active, over } = event;
+    // Phase3: cursor が自窓を出た後、dnd-kit が over=null で onDragEnd を発火するケースはスキップ。
+    //   受信側 window の xdrag-end handler + xdrag-applied で drop 適用済み。
+    //   over がある場合 (=xdrag-applied 経由の楽観的更新) は通常通り実行する。
+    if (!over && sourceLeftWindowRef.current) {
+      sourceLeftWindowRef.current = false;
+      return;
+    }
 
     // ドロップ不可エリアに A+C をドロップ → C だけ配送分へ（日付・ヤード変更なし）
     if (!over) {
@@ -4291,6 +4555,8 @@ function App() {
       return;
     }
   }
+  // Phase3: cross-window drop handler が最新の handleDragEnd を呼べるよう ref に同期
+  handleDragEndRef.current = handleDragEnd;
 
   function renderDragOverlay(id: string) {
     // シャーシグループ(A or A+C)
@@ -5904,6 +6170,23 @@ function App() {
             onDragStart={(e) => {
               setActiveDragId(String(e.active.id));
               document.body.classList.add("dragging"); // ✅ 追加
+              // Phase3: Tauri 時は cross-window drag session を Rust に始めてもらう
+              if (isTauri) {
+                import("@tauri-apps/api/core")
+                  .then(({ invoke }) =>
+                    invoke("start_drag_session", {
+                      payload: {
+                        itemId: String(e.active.id),
+                        itemType:
+                          (e.active.data.current as any)?.type ?? "unknown",
+                        label: String(e.active.id),
+                      },
+                    }),
+                  )
+                  .catch((err) =>
+                    console.error("start_drag_session failed", err),
+                  );
+              }
             }}
             onDragCancel={() => {
               setActiveDragId(null);
@@ -5936,9 +6219,9 @@ function App() {
               </div>
             )}
             <div
-              className={`main main-layout-${layoutMode}`}
+              className={`main main-layout-${windowRole ? "linear" : layoutMode}`}
               style={
-                layoutMode === "l-shape" && displayMode === "pc"
+                !windowRole && layoutMode === "l-shape" && displayMode === "pc"
                   ? ({
                       // CSS variables for L-shape grid template
                       ["--l-chassis-w" as any]: `${leftWidth}px`,
@@ -5949,7 +6232,7 @@ function App() {
               }
             >
               {/* L字レイアウト時の縦リサイザ (シャーシと右カラムの間) */}
-              {layoutMode === "l-shape" && displayMode === "pc" && (
+              {!windowRole && layoutMode === "l-shape" && displayMode === "pc" && (
                 <div
                   className="resizer resizer-vertical l-shape-vres"
                   data-role="l-shape-vres"
@@ -5957,7 +6240,7 @@ function App() {
                 />
               )}
               {/* L字レイアウト時の横リサイザ (ドライバーと配送分の間) */}
-              {layoutMode === "l-shape" && displayMode === "pc" && (
+              {!windowRole && layoutMode === "l-shape" && displayMode === "pc" && (
                 <div
                   className="resizer resizer-horizontal l-shape-hres"
                   data-role="l-shape-hres"
@@ -5965,7 +6248,7 @@ function App() {
                 />
               )}
               {/* L字レイアウト時の右端リサイザ (右カラム全体の幅を調整) */}
-              {layoutMode === "l-shape" && displayMode === "pc" && (
+              {!windowRole && layoutMode === "l-shape" && displayMode === "pc" && (
                 <div
                   className="resizer resizer-vertical l-shape-rres"
                   data-role="l-shape-rres"
@@ -5973,6 +6256,7 @@ function App() {
                 />
               )}
               {/* 左：シャーシプール＋予備車 */}
+              {shouldShowSection("chassis") && (
               <InlineOrPortal
                 target={
                   pipSection === "chassis" && pipWindow
@@ -5985,7 +6269,9 @@ function App() {
                 className="left-panel"
                 data-section="chassis"
                 style={
-                  pipSection === "chassis"
+                  windowRole === "chassis"
+                    ? { flex: 1, width: "100%", boxSizing: "border-box" }
+                    : pipSection === "chassis"
                     ? { width: "100%", flex: "0 0 auto", boxSizing: "border-box" }
                     : displayMode === "pc"
                       ? { width: widthForSection("chassis"), flex: "0 0 auto", order: orderIndexOf("chassis") * 2 }
@@ -6045,6 +6331,16 @@ function App() {
                       onClose={closePip}
                     />
                   )}
+                  {isTauri && !windowRole && (
+                    <button
+                      type="button"
+                      className="section-pip-btn"
+                      title="別ウィンドウで開く"
+                      onClick={() => detachSectionToWindow("chassis")}
+                    >
+                      🪟
+                    </button>
+                  )}
                 </h2>
 
                 {yards.map((yard) => {
@@ -6097,7 +6393,11 @@ function App() {
 
                   const isHidden = !!hiddenPoolYards[yard.id];
                   return (
-                    <div key={yard.id} className="yard-section">
+                    <div
+                      key={yard.id}
+                      className="yard-section"
+                      style={{ ["--pos-cols" as any]: displayedYardPositions.length } as React.CSSProperties}
+                    >
                       <div
                         className="yard-title"
                         style={{
@@ -6244,7 +6544,9 @@ function App() {
                 })}
               </div>
               </InlineOrPortal>
+              )}
               {/* 中央：ドライバー */}
+              {shouldShowSection("drivers") && (
               <InlineOrPortal
                 target={
                   pipSection === "drivers" && pipWindow
@@ -6257,7 +6559,9 @@ function App() {
                 className="driver-panel"
                 data-section="drivers"
                 style={
-                  pipSection === "drivers"
+                  windowRole === "drivers"
+                    ? { flex: 1, width: "100%", boxSizing: "border-box" }
+                    : pipSection === "drivers"
                     ? { width: "100%", flex: "0 0 auto", boxSizing: "border-box" }
                     : displayMode === "pc"
                       ? { width: widthForSection("drivers"), flex: "0 0 auto", order: orderIndexOf("drivers") * 2 }
@@ -6296,6 +6600,16 @@ function App() {
                       }
                       onClose={closePip}
                     />
+                  )}
+                  {isTauri && !windowRole && (
+                    <button
+                      type="button"
+                      className="section-pip-btn"
+                      title="別ウィンドウで開く"
+                      onClick={() => detachSectionToWindow("drivers")}
+                    >
+                      🪟
+                    </button>
                   )}
                   <button
                     type="button"
@@ -6663,7 +6977,9 @@ function App() {
                 </div>
               </div>
               </InlineOrPortal>
+              )}
               {/* 右：配送分＋一時保管＋配送完了 */}
+              {shouldShowSection("delivery") && (
               <InlineOrPortal
                 target={
                   pipSection === "delivery" && pipWindow
@@ -6676,7 +6992,17 @@ function App() {
                 className="delivery-panel"
                 data-section="delivery"
                 style={
-                  pipSection === "delivery"
+                  windowRole === "delivery"
+                    ? {
+                        flex: 1,
+                        width: "100%",
+                        display: "flex",
+                        flexDirection: "column",
+                        height: "100vh",
+                        overflow: "hidden",
+                        boxSizing: "border-box",
+                      }
+                    : pipSection === "delivery"
                     ? {
                         width: "100%",
                         flex: "0 0 auto",
@@ -6767,6 +7093,16 @@ function App() {
                         }
                         onClose={closePip}
                       />
+                    )}
+                    {isTauri && !windowRole && (
+                      <button
+                        type="button"
+                        className="section-pip-btn"
+                        title="別ウィンドウで開く"
+                        onClick={() => detachSectionToWindow("delivery")}
+                      >
+                        🪟
+                      </button>
                     )}
                     {/* Phase2: 日付ナビゲータ (右寄せ) + 前日以前/翌日以降のコンテナ数バッジ */}
                     {(() => {
@@ -7256,10 +7592,11 @@ function App() {
               {/* ← delivery-panelの終わり */}
 
               </InlineOrPortal>
-              {/* 各セクション間の resizer をまとめて描画 (linear モードのみ)。
+              )}
+              {/* 各セクション間の resizer をまとめて描画 (linear モードのみ、windowRole 未設定時のみ)。
                   - 末尾以外: そのセクションを +dx で広げる
                   - 末尾: -dx (トレーリング挙動、旧「right」相当) */}
-              {displayMode === "pc" && layoutMode === "linear" &&
+              {!windowRole && displayMode === "pc" && layoutMode === "linear" &&
                 inMainSections.map((k, idx) => {
                   const isLast = idx === inMainSections.length - 1;
                   return (
