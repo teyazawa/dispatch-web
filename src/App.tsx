@@ -307,6 +307,8 @@ type BoardState = {
   deliveryYardLayoutByDate?: Record<string, {
     order: string[];
     row: Record<string, number>;
+    col?: Record<string, number>;
+    pack?: Record<string, string>; // Phase2h: 右partner名 -> 左partner名 (①同士の横並びペア)
   }>;
   driverGroupColumn?: Record<string, number>;
   driverGroupSubColumns?: Record<string, 1 | 2 | 3>;
@@ -1735,9 +1737,20 @@ function App() {
     containerForColor: null,
   });
 
+  // Phase2h: 地域ヘッダー右クリックメニュー (pack 解除)
+  const [regionContextMenu, setRegionContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    yardName: string;
+  }>({ visible: false, x: 0, y: 0, yardName: "" });
+
   // どこかクリックしたらメニューを閉じる
   useEffect(() => {
-    const close = () => setMailMenu((s) => ({ ...s, visible: false }));
+    const close = () => {
+      setMailMenu((s) => ({ ...s, visible: false }));
+      setRegionContextMenu((s) => ({ ...s, visible: false }));
+    };
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
   }, []);
@@ -3233,20 +3246,31 @@ function App() {
       order: string[];
       row: Record<string, number>;
       col?: Record<string, number>;
+      pack?: Record<string, string>;
     }>
   >({});
   // Phase2b: 空地域を含めた全表示 (デフォルト false: コンテナ有り地域のみ)
   const [showAllDeliveryRegions, setShowAllDeliveryRegions] = useState(false);
+  // Phase2g: 地域内コンテナを 2列表示するかのトグル (地域ごと、日付ごと)
+  const [regionContainerCols, setRegionContainerCols] = useState<
+    Record<string, Record<string, 1 | 2>>
+  >({});
   // Phase2b: 現在の日付に対応するレイアウトを取得
   //   Phase2f: 未設定なら空 (デフォルト状態) — 旧共通レイアウトのフォールバックは撤廃
   //   すべての地域が row=1, col=index (yardGroups 内出現順) で並ぶ
   const currentDayLayout = React.useMemo(() => {
     const perDate = deliveryYardLayoutByDate[deliveryViewDate];
-    if (perDate) return { order: perDate.order, row: perDate.row, col: perDate.col ?? {} };
+    if (perDate) return {
+      order: perDate.order,
+      row: perDate.row,
+      col: perDate.col ?? {},
+      pack: perDate.pack ?? {},
+    };
     return {
       order: deliveryYardGroupOrder,
       row: {} as Record<string, number>,
       col: {} as Record<string, number>,
+      pack: {} as Record<string, string>,
     };
   }, [
     deliveryYardLayoutByDate,
@@ -3282,10 +3306,12 @@ function App() {
       order: string[];
       row: Record<string, number>;
       col: Record<string, number>;
+      pack: Record<string, string>;
     }) => {
       order: string[];
       row: Record<string, number>;
       col: Record<string, number>;
+      pack: Record<string, string>;
     },
   ) => {
     setDeliveryYardLayoutByDate((cur) => {
@@ -3293,11 +3319,13 @@ function App() {
         order: deliveryYardGroupOrder,
         row: {},
         col: {},
+        pack: {},
       };
       const nextObj = updater({
         order: prev.order,
         row: prev.row,
         col: prev.col ?? {},
+        pack: prev.pack ?? {},
       });
       return { ...cur, [date]: nextObj };
     });
@@ -3441,54 +3469,129 @@ function App() {
         /* ignore */
       }
     };
+  // Phase2h: drop 位置の左右判定 (右半分に落とすと ①同士なら pack)
+  const dragOverHalfRef = useRef<"left" | "right" | null>(null);
+  const [dragOverHalf, setDragOverHalf] = useState<"left" | "right" | null>(null);
   const onYardDragOver =
     (name: string) => (e: React.DragEvent<HTMLElement>) => {
-      if (!draggingYardRef.current || draggingYardRef.current === name) return;
+      const from = draggingYardRef.current;
+      if (!from || from === name) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
       if (dragOverYard !== name) setDragOverYard(name);
+      // pack 条件: 両方 ①、対象が pack ペアの片割れでない
+      const dayPack = currentDayLayout.pack ?? {};
+      const sourceIs1 =
+        (regionContainerCols[deliveryViewDate]?.[from] ?? 1) === 1;
+      const targetIs1 =
+        (regionContainerCols[deliveryViewDate]?.[name] ?? 1) === 1;
+      const targetHasRight = Object.values(dayPack).includes(name);
+      const targetIsRight = name in dayPack;
+      const canPack =
+        sourceIs1 && targetIs1 && !targetHasRight && !targetIsRight;
+      if (canPack) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const isRight = e.clientX >= rect.left + rect.width / 2;
+        const half: "left" | "right" = isRight ? "right" : "left";
+        if (dragOverHalfRef.current !== half) {
+          dragOverHalfRef.current = half;
+          setDragOverHalf(half);
+        }
+      } else {
+        if (dragOverHalfRef.current !== null) {
+          dragOverHalfRef.current = null;
+          setDragOverHalf(null);
+        }
+      }
     };
-  const onYardDragLeave = () => setDragOverYard(null);
+  const onYardDragLeave = () => {
+    setDragOverYard(null);
+    dragOverHalfRef.current = null;
+    setDragOverHalf(null);
+  };
   const onYardDrop =
     (name: string) => (e: React.DragEvent<HTMLElement>) => {
       const from = draggingYardRef.current;
+      const half = dragOverHalfRef.current;
       draggingYardRef.current = null;
+      dragOverHalfRef.current = null;
       setDraggingYard(null);
       setDragOverYard(null);
+      setDragOverHalf(null);
       if (!from || from === name) return;
       e.preventDefault();
-      // Phase2f: A を B の上にドロップ → A は B の直下(次の row, 同 col) に配置
-      //   matrix を直接編集 → 全列空になった列のみ詰める (アライン保持)
       updateDayLayout(deliveryViewDate, (prev) => {
-        const matrix = buildYardMatrix(prev, yardGroups);
+        const nextPack: Record<string, string> = { ...(prev.pack ?? {}) };
+        const sourceIs1 =
+          (regionContainerCols[deliveryViewDate]?.[from] ?? 1) === 1;
+        const targetIs1 =
+          (regionContainerCols[deliveryViewDate]?.[name] ?? 1) === 1;
+        const targetHasRight = Object.values(nextPack).includes(name);
+        const targetIsRight = name in nextPack;
+        const doPack =
+          half === "right" &&
+          sourceIs1 &&
+          targetIs1 &&
+          !targetHasRight &&
+          !targetIsRight;
+        // matrix には pack-right region を含めない (行/列は左partner に inherit する扱い)
+        const packRightSet = new Set(Object.keys(nextPack));
+        const filteredYards = yardGroups.filter((n) => !packRightSet.has(n));
+        const matrix = buildYardMatrix(prev, filteredYards);
+        // source の既存 pack 状態をクリア
+        //   Case A: source が右 partner → pack から delete のみ
+        //   Case B: source が左 partner → 右partner が orphan 化。source の matrix 位置を orphan に譲渡
+        if (nextPack[from]) {
+          delete nextPack[from];
+        }
+        const orphanRight = Object.keys(nextPack).find(
+          (k) => nextPack[k] === from,
+        );
+        if (orphanRight) {
+          delete nextPack[orphanRight];
+          matrix.forEach((row) => {
+            const idx = row.indexOf(from);
+            if (idx >= 0) row[idx] = orphanRight;
+          });
+        } else {
+          matrix.forEach((row) => {
+            const idx = row.indexOf(from);
+            if (idx >= 0) row[idx] = null;
+          });
+        }
+        if (doPack) {
+          // pack モード: source を name の右partner に。source は matrix には入れず、name の位置を inherit
+          nextPack[from] = name;
+          const trimmed = trimYardMatrix(matrix);
+          const { row, col } = matrixToRowCol(trimmed);
+          return { order: prev.order, row, col, pack: nextPack };
+        }
+        // 通常: name の直下に挿入
+        //   name が pack-right の場合、matrix には無いので左partner の位置を targetにする
+        const effectiveTarget = targetIsRight ? nextPack[name] : name;
         let targetR = -1;
         let targetC = -1;
         matrix.forEach((row, r) => {
           row.forEach((cell, c) => {
-            if (cell === name) {
+            if (cell === effectiveTarget) {
               targetR = r;
               targetC = c;
             }
           });
         });
-        if (targetR < 0) return prev;
-        // A を既存位置から削除 (null に)
-        matrix.forEach((row) => {
-          const idx = row.indexOf(from);
-          if (idx >= 0) row[idx] = null;
-        });
-        // A を B の直下 (targetR+1, targetC) に挿入 (既存はカスケードで下に)
+        if (targetR < 0) return { order: prev.order, row: prev.row, col: prev.col, pack: nextPack };
         insertYardAt(matrix, targetR + 1, targetC, from);
-        // 空列/末尾空行のみ除去 (中間の空セルは保持でアライン)
         const trimmed = trimYardMatrix(matrix);
         const { row, col } = matrixToRowCol(trimmed);
-        return { order: prev.order, row, col };
+        return { order: prev.order, row, col, pack: nextPack };
       });
     };
   // Phase2f: 地域を上下に入れ替え (同じ col の隣接行と swap)
   const shiftRegionRow = (regionName: string, direction: -1 | 1) => {
     updateDayLayout(deliveryViewDate, (prev) => {
-      const matrix = buildYardMatrix(prev, yardGroups);
+      const packRightSet = new Set(Object.keys(prev.pack ?? {}));
+      const filteredYards = yardGroups.filter((n) => !packRightSet.has(n));
+      const matrix = buildYardMatrix(prev, filteredYards);
       let targetR = -1;
       let targetC = -1;
       matrix.forEach((row, r) => {
@@ -3509,13 +3612,15 @@ function App() {
       matrix[otherR][targetC] = tmp;
       const trimmed = trimYardMatrix(matrix);
       const { row, col } = matrixToRowCol(trimmed);
-      return { order: prev.order, row, col };
+      return { order: prev.order, row, col, pack: prev.pack };
     });
   };
   // Phase2f: 地域列を左右に入れ替え (列全体を一緒に swap)
   const shiftRegionCol = (regionName: string, direction: -1 | 1) => {
     updateDayLayout(deliveryViewDate, (prev) => {
-      const matrix = buildYardMatrix(prev, yardGroups);
+      const packRightSet = new Set(Object.keys(prev.pack ?? {}));
+      const filteredYards = yardGroups.filter((n) => !packRightSet.has(n));
+      const matrix = buildYardMatrix(prev, filteredYards);
       let targetCol = -1;
       matrix.forEach((row) => {
         row.forEach((cell, c) => {
@@ -3536,11 +3641,11 @@ function App() {
       });
       const trimmed = trimYardMatrix(matrix);
       const { row, col } = matrixToRowCol(trimmed);
-      return { order: prev.order, row, col };
+      return { order: prev.order, row, col, pack: prev.pack };
     });
   };
-  // 「新規行」ドロップゾーン: source を新規行の先頭に追加
-  const onYardNewRowDrop = (e: React.DragEvent<HTMLElement>) => {
+  // Phase2h: 「新規列」ドロップゾーン: source を右端の新規列 (row 0) に配置
+  const onYardNewColDrop = (e: React.DragEvent<HTMLElement>) => {
     const from = draggingYardRef.current;
     draggingYardRef.current = null;
     setDraggingYard(null);
@@ -3548,29 +3653,76 @@ function App() {
     if (!from) return;
     e.preventDefault();
     updateDayLayout(deliveryViewDate, (prev) => {
-      const matrix = buildYardMatrix(prev, yardGroups);
-      matrix.forEach((row) => {
-        const idx = row.indexOf(from);
-        if (idx >= 0) row[idx] = null;
-      });
-      matrix.push([from]);
+      const nextPack: Record<string, string> = { ...(prev.pack ?? {}) };
+      const packRightSet = new Set(Object.keys(nextPack));
+      const filteredYards = yardGroups.filter((n) => !packRightSet.has(n));
+      const matrix = buildYardMatrix(prev, filteredYards);
+      // source の pack 状態を破棄 (from が pack-right なら pack から delete; 左 partner なら orphan 昇格)
+      if (nextPack[from]) {
+        delete nextPack[from];
+      }
+      const orphanRight = Object.keys(nextPack).find(
+        (k) => nextPack[k] === from,
+      );
+      if (orphanRight) {
+        delete nextPack[orphanRight];
+        matrix.forEach((row) => {
+          const idx = row.indexOf(from);
+          if (idx >= 0) row[idx] = orphanRight;
+        });
+      } else {
+        matrix.forEach((row) => {
+          const idx = row.indexOf(from);
+          if (idx >= 0) row[idx] = null;
+        });
+      }
+      // 右端の新規列 (row 0, col = 現在の最大col + 1) に挿入
+      const maxCols = matrix.reduce((m, r) => Math.max(m, r.length), 0);
+      insertYardAt(matrix, 0, maxCols, from);
       const trimmed = trimYardMatrix(matrix);
       const { row, col } = matrixToRowCol(trimmed);
-      return { order: prev.order, row, col };
+      return { order: prev.order, row, col, pack: nextPack };
     });
   };
-  const [newRowDragOver, setNewRowDragOver] = useState(false);
-  const onYardNewRowDragOver = (e: React.DragEvent<HTMLElement>) => {
+  const [newColDragOver, setNewColDragOver] = useState(false);
+  const onYardNewColDragOver = (e: React.DragEvent<HTMLElement>) => {
     if (!draggingYardRef.current) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    if (!newRowDragOver) setNewRowDragOver(true);
+    if (!newColDragOver) setNewColDragOver(true);
   };
-  const onYardNewRowDragLeave = () => setNewRowDragOver(false);
+  const onYardNewColDragLeave = () => setNewColDragOver(false);
   const onYardDragEnd = () => {
     draggingYardRef.current = null;
     setDraggingYard(null);
     setDragOverYard(null);
+  };
+  // Phase2h: 地域 pack 解除 (右クリックメニュー)
+  //   相方 (or 自分) を右端の新規列 (row 0) に落として pack エントリを削除。
+  const unpackRegion = (yardName: string) => {
+    updateDayLayout(deliveryViewDate, (prev) => {
+      const nextPack: Record<string, string> = { ...(prev.pack ?? {}) };
+      const iAmLeft = Object.keys(nextPack).find(
+        (k) => nextPack[k] === yardName,
+      );
+      const iAmRight = nextPack[yardName];
+      if (!iAmLeft && !iAmRight) return prev;
+      const packRightSet = new Set(Object.keys(nextPack));
+      const filteredYards = yardGroups.filter((n) => !packRightSet.has(n));
+      const matrix = buildYardMatrix(prev, filteredYards);
+      const orphanName = iAmLeft ?? yardName; // 右クリックした側と反対の region が orphan
+      if (iAmLeft) {
+        delete nextPack[iAmLeft];
+      } else if (iAmRight) {
+        delete nextPack[yardName];
+      }
+      // orphan を右端の新規列 (row 0, col = 現在の最大col + 1) に配置
+      const maxCols = matrix.reduce((m, r) => Math.max(m, r.length), 0);
+      insertYardAt(matrix, 0, maxCols, orphanName);
+      const trimmed = trimYardMatrix(matrix);
+      const { row, col } = matrixToRowCol(trimmed);
+      return { order: prev.order, row, col, pack: nextPack };
+    });
   };
 
   // 仕切り線ドラッグでリサイズ
@@ -6700,17 +6852,24 @@ function App() {
                     {(() => {
                       // Phase2d: 明示的 (row, col) 配置で CSS Grid 描画
                       //   + 未使用 col を除去してタイトに詰める (relative alignment 保持)
+                      // Phase2h: pack-right region は positions から除外 (左partner のセル内で inline 描画)
                       const dayRow = currentDayLayout.row;
                       const dayCol = currentDayLayout.col;
+                      const dayPack = currentDayLayout.pack ?? {};
+                      const packRightSet = new Set(Object.keys(dayPack));
+                      const packLeftToRight = new Map<string, string>();
+                      Object.entries(dayPack).forEach(([r, l]) => packLeftToRight.set(l, r));
                       const defaultColFor = (n: string) => {
                         const idx = DEFAULT_YARD_GROUPS.indexOf(n);
                         return idx >= 0 ? idx + 1 : 1;
                       };
-                      const rawPositions = yardGroups.map((n) => ({
-                        name: n,
-                        row: dayRow[n] ?? 1,
-                        col: dayCol[n] ?? defaultColFor(n),
-                      }));
+                      const rawPositions = yardGroups
+                        .filter((n) => !packRightSet.has(n))
+                        .map((n) => ({
+                          name: n,
+                          row: dayRow[n] ?? 1,
+                          col: dayCol[n] ?? defaultColFor(n),
+                        }));
                       // 使用中の col をソートして 1..N にリマップ (未使用 col は詰める)
                       const usedCols = Array.from(
                         new Set(rawPositions.map((p) => p.col)),
@@ -6721,9 +6880,6 @@ function App() {
                         ...p,
                         col: colMap.get(p.col) ?? 1,
                       }));
-                      const maxRow = positions.length > 0
-                        ? Math.max(...positions.map((p) => p.row), 1)
-                        : 1;
                       const maxCol = Math.max(usedCols.length, 1);
                       const renderRegion = (yardName: string) => {
                         const myPos = positions.find((p) => p.name === yardName);
@@ -6732,6 +6888,92 @@ function App() {
                         const canLeft = myCol > 1;
                         const canRight = myCol < maxCol;
                         const canUp = myRow > 1;
+                        const containerCols =
+                          regionContainerCols[deliveryViewDate]?.[yardName] ?? 1;
+                        const toggleContainerCols = () => {
+                          // Phase2h: ①→② 変更時、pack ペアなら警告 + 相方を新row に移動
+                          if (containerCols === 1) {
+                            const pack = currentDayLayout.pack ?? {};
+                            const iAmLeft = Object.keys(pack).find(
+                              (k) => pack[k] === yardName,
+                            );
+                            const iAmRight = pack[yardName];
+                            if (iAmLeft || iAmRight) {
+                              const partnerName = iAmLeft ?? iAmRight!;
+                              const msg =
+                                `「${yardName}」を②に変更すると、横並びの「${partnerName}」が新しい行に移動します。\n` +
+                                `レイアウトが崩れる可能性があります。よろしいですか？`;
+                              if (!window.confirm(msg)) return;
+                              // 相方を新row (matrix 末尾) に移動 + pack 解除
+                              updateDayLayout(deliveryViewDate, (prev) => {
+                                const nextPack: Record<string, string> = {
+                                  ...(prev.pack ?? {}),
+                                };
+                                const packRightSet = new Set(
+                                  Object.keys(nextPack),
+                                );
+                                const filteredYards = yardGroups.filter(
+                                  (n) => !packRightSet.has(n),
+                                );
+                                const matrix = buildYardMatrix(
+                                  prev,
+                                  filteredYards,
+                                );
+                                if (iAmLeft) {
+                                  // yardName が左 → 右partner(iAmLeft) が orphan。yardName の col の末尾に落とす
+                                  delete nextPack[iAmLeft];
+                                  let myCol = -1;
+                                  matrix.forEach((row) => {
+                                    const idx = row.indexOf(yardName);
+                                    if (idx >= 0) myCol = idx;
+                                  });
+                                  if (myCol >= 0) {
+                                    insertYardAt(
+                                      matrix,
+                                      matrix.length,
+                                      myCol,
+                                      iAmLeft,
+                                    );
+                                  }
+                                } else if (iAmRight) {
+                                  // yardName が右 → 左partner(iAmRight) は matrix に既にある。yardName を末尾に落とす
+                                  delete nextPack[yardName];
+                                  let leftCol = -1;
+                                  matrix.forEach((row) => {
+                                    const idx = row.indexOf(iAmRight);
+                                    if (idx >= 0) leftCol = idx;
+                                  });
+                                  if (leftCol >= 0) {
+                                    insertYardAt(
+                                      matrix,
+                                      matrix.length,
+                                      leftCol,
+                                      yardName,
+                                    );
+                                  }
+                                }
+                                const trimmed = trimYardMatrix(matrix);
+                                const { row, col } = matrixToRowCol(trimmed);
+                                return {
+                                  order: prev.order,
+                                  row,
+                                  col,
+                                  pack: nextPack,
+                                };
+                              });
+                            }
+                          }
+                          setRegionContainerCols((cur) => {
+                            const dayMap = { ...(cur[deliveryViewDate] ?? {}) };
+                            dayMap[yardName] = containerCols === 1 ? 2 : 1;
+                            return { ...cur, [deliveryViewDate]: dayMap };
+                          });
+                        };
+                        // Phase2h: pack 中か判定 (右クリックメニュー用)
+                        const dayPackForCtx = currentDayLayout.pack ?? {};
+                        const isPacked =
+                          yardName in dayPackForCtx ||
+                          Object.values(dayPackForCtx).includes(yardName);
                         return (
                         <>
                           <div
@@ -6739,10 +6981,25 @@ function App() {
                             draggable={displayMode === "pc"}
                             onDragStart={onYardDragStart(yardName)}
                             onDragEnd={onYardDragEnd}
+                            onContextMenu={(e) => {
+                              if (!isPacked) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setRegionContextMenu({
+                                visible: true,
+                                x: e.clientX,
+                                y: e.clientY,
+                                yardName,
+                              });
+                            }}
                             style={
                               draggingYard === yardName ? { opacity: 0.5 } : undefined
                             }
-                            title="ドラッグして並び替え(別地域の上にドロップでその直下に配置)"
+                            title={
+                              isPacked
+                                ? "ドラッグして並び替え / 右クリックで pack 解除"
+                                : "ドラッグして並び替え(別地域の上にドロップでその直下に配置)"
+                            }
                           >
                             <button
                               type="button"
@@ -6775,6 +7032,22 @@ function App() {
                               className="delivery-region-arrow"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                toggleContainerCols();
+                              }}
+                              title={containerCols === 1 ? "コンテナを2列表示" : "コンテナを1列表示"}
+                              style={
+                                containerCols === 2
+                                  ? { background: "#dbeafe", borderColor: "#3b82f6", color: "#1d4ed8" }
+                                  : undefined
+                              }
+                            >
+                              {containerCols === 1 ? "①" : "②"}
+                            </button>
+                            <button
+                              type="button"
+                              className="delivery-region-arrow"
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 shiftRegionRow(yardName, 1);
                               }}
                               title="下の行と入れ替え (同じ列)"
@@ -6796,7 +7069,7 @@ function App() {
                           </div>
                           <DroppableArea
                             id={`delivery-${deliveryViewDate}-${yardName}`}
-                            className="slot-auto delivery-region-slot"
+                            className={`slot-auto delivery-region-slot${containerCols === 2 ? " container-cols-2" : ""}`}
                             placeholder="ここにコンテナAをドロップ"
                           >
                             {containers
@@ -6820,45 +7093,96 @@ function App() {
                         </>
                         );
                       };
+                      // Phase2g: 列別 flex-column スタックで描画 (行の高さ引っ張り防止)
+                      const posByCol = new Map<number, typeof positions>();
+                      positions.forEach((p) => {
+                        if (!posByCol.has(p.col)) posByCol.set(p.col, []);
+                        posByCol.get(p.col)!.push(p);
+                      });
+                      posByCol.forEach((list) => list.sort((a, b) => a.row - b.row));
                       return (
                         <div
                           className="delivery-region-grid"
                           style={{
-                            display: "grid",
-                            gridTemplateColumns: `repeat(${maxCol}, minmax(140px, 1fr))`,
-                            gridTemplateRows: `repeat(${maxRow}, auto)`,
+                            display: "flex",
                             gap: 8,
                             padding: "4px 0",
+                            alignItems: "flex-start",
+                            position: "relative",
                           }}
                         >
-                          {positions.map((p) => (
+                          {Array.from({ length: maxCol }, (_, i) => i + 1).map((c) => (
                             <div
-                              key={`${deliveryViewDate}-${p.name}`}
-                              className={`delivery-region-column${dragOverYard === p.name ? " delivery-region-drop-target" : ""}`}
+                              key={`col-${c}`}
+                              className="delivery-region-col-stack"
                               style={{
-                                gridColumn: p.col,
-                                gridRow: p.row,
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 8,
+                                flex: "0 0 auto", // content-fit: 中身のコンテナ数に応じた幅
                               }}
-                              onDragOver={onYardDragOver(p.name)}
-                              onDragLeave={onYardDragLeave}
-                              onDrop={onYardDrop(p.name)}
                             >
-                              {renderRegion(p.name)}
+                              {(posByCol.get(c) ?? []).map((p) => {
+                                const rightPartner = packLeftToRight.get(p.name);
+                                const showPair =
+                                  rightPartner && yardGroups.includes(rightPartner);
+                                if (showPair) {
+                                  // Phase2h: packed pair を flex-row で並べる
+                                  return (
+                                    <div
+                                      key={`pair-${deliveryViewDate}-${p.name}-${rightPartner}`}
+                                      className="delivery-region-pack"
+                                      style={{
+                                        display: "flex",
+                                        flexDirection: "row",
+                                        gap: 4,
+                                        alignItems: "flex-start",
+                                      }}
+                                    >
+                                      <div
+                                        className={`delivery-region-column${dragOverYard === p.name ? ` delivery-region-drop-target delivery-region-drop-${dragOverHalf ?? "left"}` : ""}`}
+                                        onDragOver={onYardDragOver(p.name)}
+                                        onDragLeave={onYardDragLeave}
+                                        onDrop={onYardDrop(p.name)}
+                                      >
+                                        {renderRegion(p.name)}
+                                      </div>
+                                      <div
+                                        className={`delivery-region-column${dragOverYard === rightPartner ? ` delivery-region-drop-target delivery-region-drop-${dragOverHalf ?? "left"}` : ""}`}
+                                        onDragOver={onYardDragOver(rightPartner)}
+                                        onDragLeave={onYardDragLeave}
+                                        onDrop={onYardDrop(rightPartner)}
+                                      >
+                                        {renderRegion(rightPartner)}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div
+                                    key={`${deliveryViewDate}-${p.name}`}
+                                    className={`delivery-region-column${dragOverYard === p.name ? ` delivery-region-drop-target delivery-region-drop-${dragOverHalf ?? "left"}` : ""}`}
+                                    onDragOver={onYardDragOver(p.name)}
+                                    onDragLeave={onYardDragLeave}
+                                    onDrop={onYardDrop(p.name)}
+                                  >
+                                    {renderRegion(p.name)}
+                                  </div>
+                                );
+                              })}
                             </div>
                           ))}
-                          {/* 新規行 drop zone (ドラッグ中のみ表示) */}
+                          {/* Phase2h: 新規列 drop zone (ドラッグ中のみ表示) — 全高の右端 */}
                           {draggingYard && (
                             <div
-                              className={`delivery-region-new-row-drop${newRowDragOver ? " active" : ""}`}
-                              style={{
-                                gridColumn: `1 / span ${maxCol}`,
-                                gridRow: maxRow + 1,
-                              }}
-                              onDragOver={onYardNewRowDragOver}
-                              onDragLeave={onYardNewRowDragLeave}
-                              onDrop={onYardNewRowDrop}
+                              className={`delivery-region-new-col-drop${newColDragOver ? " active" : ""}`}
+                              onDragOver={onYardNewColDragOver}
+                              onDragLeave={onYardNewColDragLeave}
+                              onDrop={onYardNewColDrop}
                             >
-                              ＋ 新しい行にドロップ
+                              <span className="delivery-region-new-col-drop-label">
+                                ＋ 新しい列にドロップ
+                              </span>
                             </div>
                           )}
                         </div>
@@ -7247,6 +7571,22 @@ function App() {
             </div>
           )}
 
+          {/* Phase2h: 地域 pack 解除メニュー */}
+          {regionContextMenu.visible && (
+            <div
+              className="mail-context-menu"
+              style={{ top: regionContextMenu.y, left: regionContextMenu.x }}
+            >
+              <button
+                onClick={() => {
+                  unpackRegion(regionContextMenu.yardName);
+                  setRegionContextMenu((s) => ({ ...s, visible: false }));
+                }}
+              >
+                🔓 pack を解除
+              </button>
+            </div>
+          )}
           {mailMenu.visible && (mailMenu.group || mailMenu.containerForColor) && (
             <div
               className="mail-context-menu"

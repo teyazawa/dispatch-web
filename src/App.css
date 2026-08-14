@@ -459,13 +459,30 @@ body::before {
   line-height: 1;
 }
 
-/* Phase2: 配送分 地域列
-   (Phase2b: 自由2Dグリッド。行ごとに flex row を積む) */
+/* Phase2g: 配送分 地域列 - 列別 flex-column スタック */
 .delivery-region-grid {
   display: flex;
-  flex-direction: column;
+  flex-direction: row; /* 列を横に並べる */
   gap: 8px;
   padding: 4px 0;
+  align-items: flex-start;
+}
+/* Phase2g: 地域内コンテナ 2列表示 (トグル)
+   .delivery-panel .slot-auto.card-container の max-width:180px を上書きする必要あり */
+.delivery-panel .delivery-region-slot.container-cols-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  align-content: start;
+  /* 2列モード: 幅=コンテナ2本ぶん + gap */
+  width: calc(var(--slot-delivery-width) * 2 + 20px) !important;
+  max-width: calc(var(--slot-delivery-width) * 2 + 20px) !important;
+  min-width: calc(var(--slot-delivery-width) * 2 + 20px) !important;
+}
+/* 2列モード時: 個別コンテナカードはデフォルト 160px 幅を維持 (拡大しない) */
+/* grid セルの中央寄せ */
+.delivery-panel .delivery-region-slot.container-cols-2 {
+  justify-items: start;
 }
 .delivery-region-row {
   display: flex;
@@ -473,17 +490,31 @@ body::before {
   align-items: flex-start;
   min-height: 60px;
 }
-.delivery-region-new-row-drop {
-  padding: 12px;
-  font-size: 12px;
+/* Phase2h: 新しい列 drop zone (地域グリッドの右端に縦バー) */
+.delivery-region-new-col-drop {
+  flex: 0 0 auto;
+  align-self: stretch;
+  min-height: 80px;
+  width: 40px;
+  padding: 8px 4px;
+  font-size: 11px;
   color: #6b7280;
   text-align: center;
   background: rgba(59, 130, 246, 0.04);
   border: 2px dashed #cbd5e1;
   border-radius: 6px;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.delivery-region-new-row-drop.active {
+.delivery-region-new-col-drop-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
+  letter-spacing: 0.1em;
+}
+.delivery-region-new-col-drop.active {
   background: rgba(59, 130, 246, 0.12);
   border-color: #3b82f6;
   color: #1d4ed8;
@@ -498,9 +529,9 @@ body::before {
   padding: 4px 0;
 }
 .delivery-region-column {
-  flex: 1 1 140px;
-  min-width: 140px;
-  max-width: 100%;
+  /* Phase2g: content-fit 幅 (コンテナ本数×幅 + padding) */
+  flex: 0 0 auto;
+  width: fit-content;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -536,6 +567,20 @@ body::before {
   outline: 2px dashed #3b82f6;
   outline-offset: -2px;
   background: rgba(59, 130, 246, 0.08);
+  position: relative;
+}
+/* Phase2h: drop 右半分 → pack 予告 (右半分だけ緑色でハイライト) */
+.delivery-region-drop-target.delivery-region-drop-right::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 50%;
+  background: rgba(34, 197, 94, 0.18);
+  border-left: 2px dashed #16a34a;
+  pointer-events: none;
+  z-index: 5;
 }
 /* Phase2f: 地域ヘッダーの ◀ ▶ 矢印ボタン (列全体を入れ替え) */
 .delivery-region-arrow {
@@ -577,9 +622,14 @@ body::before {
   border-radius: 6px;
 }
 .delivery-region-slot {
-  flex: 1 1 auto;
-  min-height: 60px;
+  /* Phase2g: デフォルトはコンテナ1本ぶん (66px 相当) の高さのみ。中身が増えると自然に伸びる */
+  flex: 0 0 auto;
+  min-height: 66px;
+  /* 1列モード: 幅=コンテナ1本ぶん (var(--slot-delivery-width)) */
+  width: calc(var(--slot-delivery-width) + 16px); /* +padding 分 */
+  max-width: none;
 }
+/* 2列モードは container-cols-2 で上書き (下記) */
 .section-pip-btn:hover:not(:disabled) {
   background: #e0e7ff;
   border-color: #6366f1;
