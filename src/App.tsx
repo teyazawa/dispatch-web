@@ -4943,7 +4943,39 @@ function App() {
 
         if (s.groups) setGroups(s.groups);
         if (s.trucks) setTrucks(s.trucks);
-        if (s.containers) setContainers(s.containers);
+        if (s.containers) {
+          // シートコンテナ (id=sheet_* or kintoneId=SHEET_*) は additive merge。
+          // 別クライアントが更新したsheetコンテナを取り込む前の state を Realtime で受けても
+          // local にある sheet コンテナが消えないようにする。
+          // ただし incoming の completedContainers/tempContainers に移動済みなら保持しない。
+          const incomingCompletedIds = new Set(
+            (s.completedContainers ?? []).map((c: any) => String(c.id)),
+          );
+          const incomingTempIds = new Set(
+            (s.tempContainers ?? []).map((c: any) => String(c.id)),
+          );
+          const incoming = s.containers as Container[];
+          setContainers((prev) => {
+            const nextMap = new Map<string, Container>(
+              incoming.map((c) => [String(c.id), c]),
+            );
+            for (const c of prev) {
+              const id = String(c.id);
+              if (nextMap.has(id)) continue;
+              const isSheet =
+                id.startsWith("sheet_") ||
+                String((c as any).kintoneId ?? "").startsWith("SHEET_");
+              if (
+                isSheet &&
+                !incomingCompletedIds.has(id) &&
+                !incomingTempIds.has(id)
+              ) {
+                nextMap.set(id, c);
+              }
+            }
+            return Array.from(nextMap.values());
+          });
+        }
         if (s.tempContainers) setTempContainers(s.tempContainers);
         if (s.completedContainers)
           setCompletedContainers(s.completedContainers);
@@ -5094,7 +5126,36 @@ function App() {
           try {
             if (next.groups) setGroups(next.groups);
             if (next.trucks) setTrucks(next.trucks);
-            if (next.containers) setContainers(next.containers);
+            if (next.containers) {
+              // applyBoardStateFromDb と同じく sheet コンテナは additive merge。
+              const incomingCompletedIds = new Set(
+                (next.completedContainers ?? []).map((c: any) => String(c.id)),
+              );
+              const incomingTempIds = new Set(
+                (next.tempContainers ?? []).map((c: any) => String(c.id)),
+              );
+              const incoming = next.containers as Container[];
+              setContainers((prev) => {
+                const nextMap = new Map<string, Container>(
+                  incoming.map((c) => [String(c.id), c]),
+                );
+                for (const c of prev) {
+                  const id = String(c.id);
+                  if (nextMap.has(id)) continue;
+                  const isSheet =
+                    id.startsWith("sheet_") ||
+                    String((c as any).kintoneId ?? "").startsWith("SHEET_");
+                  if (
+                    isSheet &&
+                    !incomingCompletedIds.has(id) &&
+                    !incomingTempIds.has(id)
+                  ) {
+                    nextMap.set(id, c);
+                  }
+                }
+                return Array.from(nextMap.values());
+              });
+            }
             if (next.tempContainers) setTempContainers(next.tempContainers);
             if (next.completedContainers)
               setCompletedContainers(next.completedContainers);
