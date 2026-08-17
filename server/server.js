@@ -60,6 +60,11 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
   "https://dispatch-web.vercel.app",
+  // Tauri v2 (Windows): built app uses http://tauri.localhost as origin.
+  // (macOS/Linux は tauri://localhost — 参考用に併記)
+  "http://tauri.localhost",
+  "https://tauri.localhost",
+  "tauri://localhost",
 ];
 
 app.use(
