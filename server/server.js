@@ -570,7 +570,12 @@ app.get("/api/containers", async (req, res) => {
       return ov ? { ...c, ...ov } : c;
     });
     // acked済みシートコンテナはUIに返さない（step routing用にメモリは保持）
-    return res.json({ containers: [...overriddenKintone, ...sheetContainerMemory.filter(c => !c.acked)] });
+    // ?includeAll=1 (debug用): acked フィルタをバイパスして全件返す
+    const includeAll = req.query?.includeAll === "1";
+    const sheetToReturn = includeAll
+      ? sheetContainerMemory
+      : sheetContainerMemory.filter((c) => !c.acked);
+    return res.json({ containers: [...overriddenKintone, ...sheetToReturn] });
   } catch (err) {
     console.error("===== /api/containers エラー =====");
     console.error("msg:", err.message);
@@ -1237,7 +1242,9 @@ app.get("/api/debug-sheets", (_req, res) => {
       date: c.date,
       destination: c.destination,
       pickupYard: c.pickupYard,
+      pickupYardGroup: c.pickupYardGroup,
       dropoffYard: c.dropoffYard,
+      size: c.size,
       acked: c.acked,
       nextDay: c.nextDay,
     });
