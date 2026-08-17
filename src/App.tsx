@@ -1229,6 +1229,12 @@ async function uploadThemeBgToStorage(file: File): Promise<string> {
 
 /** メイン */
 
+// Tauri 版で URL/localStorage いずれにも boardId が無い初回起動時の既定値。
+//   Web 版と同じ Supabase 上のボード ID を指す（手塚運輸本番用）。
+//   将来「会社別 exe ビルド」で切り替える場合は .env.local (VITE_DEFAULT_BOARD_ID)
+//   に移行して import.meta.env から読む形にすれば良い。
+const DEFAULT_TAURI_BOARD_ID = "82288d47-6d2e-4961-8ade-b3bc8ac9d2e5";
+
 function App() {
   // Phase3 (Tauri): URL ?window=chassis|drivers|delivery で単窓モード指定。
   //   default (未指定/不正値) は 3セクション全表示 (Web / Tauri 1窓時)
@@ -1486,6 +1492,51 @@ function App() {
     [isTauri],
   );
 
+  // Phase3 F5復元: メイン窓起動時、既存の section-* 子窓を検出して detachedSections を復元。
+  //   これがないと F5 でメインの detachedSections が空に戻り、子窓が開いたままなのに
+  //   メインが該当セクションを再表示して「1セクションが2窓に映る」バグになる。
+  useEffect(() => {
+    if (!isTauri || windowRole) return;
+    let cancelled = false;
+    const unlistens: Array<() => void> = [];
+    (async () => {
+      const { getAllWebviewWindows } = await import(
+        "@tauri-apps/api/webviewWindow"
+      );
+      const all = await getAllWebviewWindows();
+      if (cancelled) return;
+      const restored: SectionKey[] = [];
+      for (const w of all) {
+        const m = /^section-(chassis|drivers|delivery)$/.exec(w.label);
+        if (!m) continue;
+        const section = m[1] as SectionKey;
+        restored.push(section);
+        // 子窓が閉じられたときにメイン側 state から削除
+        const un = await w.once("tauri://destroyed", () => {
+          setDetachedSections((prev) => {
+            const next = new Set(prev);
+            next.delete(section);
+            return next;
+          });
+        });
+        unlistens.push(un);
+      }
+      if (restored.length > 0) {
+        setDetachedSections((prev) => {
+          const next = new Set(prev);
+          restored.forEach((s) => next.add(s));
+          return next;
+        });
+      }
+    })().catch((err) =>
+      console.error("detached section restore failed", err),
+    );
+    return () => {
+      cancelled = true;
+      unlistens.forEach((u) => u());
+    };
+  }, [isTauri, windowRole]);
+
   // ── 表示モード（sensors より先に定義） ──
   //   Phase2 でヘッダーの切替UIは削除。displayMode は初期検出のみで固定。
   const [displayMode] = useState<DisplayMode>(() => {
@@ -1592,6 +1643,17 @@ function App() {
         url.searchParams.set("board", ls);
         window.history.replaceState({}, "", url.toString());
         setBoardId(ls);
+        return;
+      }
+
+      // 2.5) Tauri 初回起動: URL/localStorage 空なら既定 boardId を使用。
+      //   これで新規 boardId が Supabase に無用に作られる事故を防ぐ。
+      //   ユーザーは「設定」→「ボードID変更」で別ボードに切替可能。
+      if (isTauri) {
+        url.searchParams.set("board", DEFAULT_TAURI_BOARD_ID);
+        window.history.replaceState({}, "", url.toString());
+        localStorage.setItem("dispatch-board-id", DEFAULT_TAURI_BOARD_ID);
+        setBoardId(DEFAULT_TAURI_BOARD_ID);
         return;
       }
 
@@ -1892,6 +1954,39 @@ function App() {
   }, [driverGroups]);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // 設定モーダル: ボードID変更 (Tauri で別会社ボードに切替 or Web で URL 貼付以外の切替用)。
+  //   1) prompt で新 UUID を受け取り、
+  //   2) 形式チェック (UUID v4-like) → localStorage & URL を更新、
+  //   3) window.location.href でハードリロード (React state は破棄し、initBoard を再走行)。
+  const handleChangeBoardId = React.useCallback(() => {
+    const input = window.prompt(
+      "新しいボードID (UUID) を入力してください。\nWeb版のアドレスバー ?board=xxxx 部分をコピー&ペーストしてください。",
+      boardId,
+    );
+    if (input == null) return;
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+      alert("UUID 形式ではありません。例: 82288d47-6d2e-4961-8ade-b3bc8ac9d2e5");
+      return;
+    }
+    if (trimmed === boardId) return;
+    localStorage.setItem("dispatch-board-id", trimmed);
+    const url = new URL(window.location.href);
+    url.searchParams.set("board", trimmed);
+    window.location.href = url.toString();
+  }, [boardId]);
+
+  const handleCopyBoardId = React.useCallback(async () => {
+    if (!boardId) return;
+    try {
+      await navigator.clipboard.writeText(boardId);
+      alert("ボードIDをコピーしました。");
+    } catch {
+      window.prompt("ボードID:", boardId);
+    }
+  }, [boardId]);
 
   const [settingsSnapshot, setSettingsSnapshot] = useState<any | null>(null);
 
@@ -6141,6 +6236,48 @@ function App() {
                   </button>
                   <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
                     シャーシ番号を指定して川口車庫に強制復帰させます。画面から消えてしまったシャーシの復旧用（コンテナは維持されます）。
+                  </div>
+                </div>
+
+                <h3>ボードID</h3>
+                <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ width: 120 }}>現在のボード</div>
+                    <code
+                      style={{
+                        background: "#f3f4f6",
+                        padding: "4px 8px",
+                        borderRadius: 4,
+                        fontSize: 12,
+                        userSelect: "all",
+                      }}
+                    >
+                      {boardId || "(未設定)"}
+                    </code>
+                    <button
+                      className="btn-small"
+                      onClick={handleCopyBoardId}
+                      disabled={!boardId}
+                    >
+                      コピー
+                    </button>
+                    <button
+                      className="btn-small btn-primary"
+                      onClick={handleChangeBoardId}
+                    >
+                      ボードID変更
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>
+                    別の配車ボード（別会社・別環境）に切り替えるときのみ使用。変更するとページがリロードされます。
+                    Web 版のアドレスバー <code>?board=</code> の値を貼り付けてください。
                   </div>
                 </div>
 
