@@ -1228,6 +1228,19 @@ app.get("/api/debug-kintone", (_req, res) => {
   res.json({ count: lastKintoneContainers.length, grouped });
 });
 
+/** POST /api/admin/reset-sheet-acked — デバッグ用: sheet containers の acked を全て false に戻す */
+app.post("/api/admin/reset-sheet-acked", (_req, res) => {
+  let unacked = 0;
+  sheetContainerMemory = sheetContainerMemory.map((c) => {
+    if (c.acked) {
+      unacked++;
+      return { ...c, acked: false };
+    }
+    return c;
+  });
+  res.json({ ok: true, unacked });
+});
+
 /** GET /api/debug-sheets — デバッグ用：sheetContainerMemoryの内容を確認 */
 app.get("/api/debug-sheets", (_req, res) => {
   const grouped = {};
