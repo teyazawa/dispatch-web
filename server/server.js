@@ -991,6 +991,9 @@ async function fetchSheetContainers() {
     let seqNo = 1;
     let i = headerIdx + 2; // 上段・下段ヘッダーをスキップ
 
+    // sheetDate から MMDD 形式に (kintoneId 生成用)
+    const sheetDateMMDD = sheetDate.replace("/", "");
+
     while (i < allLines.length) {
       const rowA = allLines[i] || [];
       const rowB = allLines[i + 1] || [];
@@ -998,9 +1001,18 @@ async function fetchSheetContainers() {
       // 繰り返しヘッダー行をスキップ（2行分）
       if (looksLikeHeader(rowA)) { i += 2; continue; }
 
-      // コンテナ番号が空 → 空行としてスキップ
-      const contNo = cContNo >= 0 ? (rowA[cContNo] || "").trim() : "";
-      if (!contNo) { i += 2; continue; }
+      const contNo  = cContNo >= 0 ? (rowA[cContNo] || "").trim() : "";
+      const custVal = cCust   >= 0 ? (rowA[cCust]   || "").trim() : "";
+      const blbkVal = cBLBK   >= 0 ? (rowA[cBLBK]   || "").trim() : "";
+      const pickupRawA = cPickup >= 0 ? (rowA[cPickup] || "").trim() : "";
+      const workValA = cWork  >= 0 ? (rowA[cWork]  || "").trim() : "";
+      const workValB = cWork2 >= 0 ? (rowB[cWork2] || "").trim() : "";
+
+      // 行A・行Bの主要セルすべて空ならスキップ (コンテナ番号空欄=輸出分は通す — GAS _parsePasteSheet と整合)
+      if (!contNo && !custVal && !blbkVal && !pickupRawA && !workValA && !workValB) {
+        i += 2;
+        continue;
+      }
 
       // サイズ：種類 パース（例: "40 9'6:ドライ" → size=40, sizeRaw="40 9'6", kindCode="D"）
       const sizeTypeStr = cSizeType >= 0 ? (rowB[cSizeType] || "").trim() : "";
@@ -1010,15 +1022,19 @@ async function fetchSheetContainers() {
       const size     = sizeLeft.includes("40") ? "40" : "20";
       const kindCode = kindStrToCode(kindStr);
 
-      const pickupYard  = cPickup  >= 0 ? (rowA[cPickup]  || "").trim() : "";
+      const pickupYard  = pickupRawA;
       const dropoffYard = cDropoff >= 0 ? (rowB[cDropoff] || "").trim() : "";
 
       // 作業先: 下段の指示書備考列 → 上段の作業先列 の順で優先
-      const workVal = (cWork2 >= 0 ? (rowB[cWork2] || "").trim() : "") ||
-                      (cWork  >= 0 ? (rowA[cWork]  || "").trim() : "");
+      const workVal = workValB || workValA;
       // destination は 作業先（配送先）を使用。なければ得意先略称
-      const custVal = cCust >= 0 ? (rowA[cCust] || "").trim() : "";
       const destination = stripCompanyTokens(workVal || custVal);
+
+      // kintoneId (SHEET_MMDD_NNNN) を生成 — GAS pushSheetContainersToBoard と同じ命名規則。
+      // merge logic (load-sheet-containers) が kintoneId ベースで進捗を保持できるようにする。
+      const sheetKid = sheetDateMMDD
+        ? `SHEET_${sheetDateMMDD}_${String(seqNo).padStart(4, "0")}`
+        : "";
 
       containers.push({
         id: `sheet_${String(seqNo).padStart(4, "0")}`,
@@ -1041,6 +1057,7 @@ async function fetchSheetContainers() {
         dispatchFiles: [],
         step: 0,
         worker4: "",
+        kintoneId: sheetKid,
       });
 
       seqNo++;
@@ -1707,4 +1724,27 @@ app.post("/api/practice/reset", (_req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`API server listening on ${PORT}`);
+
+  // 起動時に貼付シートを自動読込して sheetContainerMemory を復元。
+  // Render の再起動・オートスリープで in-memory 変数が消えるため、
+  // 少なくとも「現在のシート日付分」は自動で復元される。
+  // GAS 経由で追記された他日付データは失うが、当日分だけでも見えるようにする応急対応。
+  fetchSheetContainers()
+    .then((containers) => {
+      if (containers.length > 0) {
+        sheetContainerMemory = containers.sort((a, b) => {
+          const da = String(a.date || "99/99");
+          const db = String(b.date || "99/99");
+          return da < db ? -1 : da > db ? 1 : 0;
+        });
+        console.log(
+          `[startup] auto-loaded ${containers.length} sheet containers from paste sheet`,
+        );
+      } else {
+        console.log("[startup] paste sheet is empty or unavailable, skipping auto-load");
+      }
+    })
+    .catch((err) => {
+      console.error("[startup] auto-load sheet containers failed:", err.message);
+    });
 });
