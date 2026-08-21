@@ -38,6 +38,12 @@ const DisplayModeContext = React.createContext<DisplayMode>("pc");
 
 /** デバイス自動判定 */
 function detectDisplayMode(): DisplayMode {
+  // Tauri (デスクトップ exe) は常に pc。タッチスクリーン付き Windows PC でも
+  //   マウス操作前提の native HTML5 drag (地域見出しの並び替え等) を有効化するため。
+  const isTauriDesktop =
+    typeof window !== "undefined" &&
+    ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+  if (isTauriDesktop) return "pc";
   const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
   if (isTouch && window.innerWidth <= 768) return "phone";
   if (isTouch) return "tablet";
@@ -995,7 +1001,17 @@ function DraggableGroupCard({
 
 function getOrCreateClientId() {
   const key = "dispatch-client-id";
-  const existing = localStorage.getItem(key);
+  // Tauri v2 では複数窓が同一 origin の localStorage を共有するため、
+  //   localStorage ベースの clientId だと全窓が同じ ID を持ってしまい、
+  //   Supabase Realtime の `updatedBy === clientIdRef.current` 判定で
+  //   他窓の更新まで「自分の更新」と誤認してスキップ → state が同期されない。
+  //   窓ごとに独立した sessionStorage を使うことで、この問題を回避する。
+  //   （sessionStorage は browsing context 単位で分離されるため各窓ごとに独立）
+  const isTauriDesktop =
+    typeof window !== "undefined" &&
+    ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+  const storage: Storage = isTauriDesktop ? sessionStorage : localStorage;
+  const existing = storage.getItem(key);
   if (existing) return existing;
 
   const id =
@@ -1003,7 +1019,7 @@ function getOrCreateClientId() {
       ? crypto.randomUUID()
       : `client-${Math.random().toString(16).slice(2)}-${Date.now()}`;
 
-  localStorage.setItem(key, id);
+  storage.setItem(key, id);
   return id;
 }
 
@@ -1369,14 +1385,22 @@ function App() {
         await listen("xdrag-applied", (evt) => {
           const p = evt.payload as {
             activeId: string;
-            overId: string;
+            overId: string | null;
             originLabel: string;
           };
+          // eslint-disable-next-line no-console
+          console.log("[xdrag-applied recv]", {
+            payload: p,
+            myLabel,
+            skip: p.originLabel === myLabel,
+            hasHandler: !!handleDragEndRef.current,
+          });
           if (p.originLabel === myLabel) return; // 送信元は自分で適用済み
           if (!handleDragEndRef.current) return;
+          // Fix #7: overId が null (=分離処理) の場合は over: null を渡す
           handleDragEndRef.current({
             active: { id: p.activeId },
-            over: { id: p.overId },
+            over: p.overId ? { id: p.overId } : null,
           });
           sourceLeftWindowRef.current = false;
         }),
@@ -1539,7 +1563,13 @@ function App() {
 
   // ── 表示モード（sensors より先に定義） ──
   //   Phase2 でヘッダーの切替UIは削除。displayMode は初期検出のみで固定。
+  //   Tauri (デスクトップ exe) は localStorage の値を無視して常に pc 固定。
+  //     旧セッションで tablet が保存されていた場合の救済も兼ねる。
   const [displayMode] = useState<DisplayMode>(() => {
+    const isTauriDesktop =
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+    if (isTauriDesktop) return "pc";
     const saved = localStorage.getItem("dispatch-display-mode");
     if (saved === "pc" || saved === "tablet" || saved === "phone") return saved;
     return detectDisplayMode();
@@ -3583,6 +3613,13 @@ function App() {
   };
 
   const deliveryScrollRef = useRef<HTMLDivElement>(null);
+  // Phase3+: 配送分の「空きスペース」を catch-all で受ける droppable。
+  //   特定 yard 枠外 (grid gap / padding) でも A+C 分離が発火するように。
+  //   deeper な yard-specific droppable が優先されるため、既存の 「delivery-DATE-YARD」
+  //   ドロップには影響しない (elementFromPoint / dnd-kit ともに最深部を優先)。
+  const { setNodeRef: setAnyDeliveryDropRef } = useDroppable({
+    id: "zone-delivery-any",
+  });
 
   // ヤードグループ（大井・青海・品川・本牧）
   const DEFAULT_YARD_GROUPS = ["大井", "青海", "中防", "品川", "本牧", "その他"];
@@ -3866,7 +3903,12 @@ function App() {
   const onYardDrop =
     (name: string) => (e: React.DragEvent<HTMLElement>) => {
       const from = draggingYardRef.current;
-      const half = dragOverHalfRef.current;
+      // Tauri v2 では drop 直前に dragleave が発火して ref が null 化するケースあり。
+      // マウス座標と currentTarget の rect から drop 時点で半分を再計算する。
+      const rect = e.currentTarget.getBoundingClientRect();
+      const halfFromMouse: "left" | "right" =
+        e.clientX >= rect.left + rect.width / 2 ? "right" : "left";
+      const half = dragOverHalfRef.current ?? halfFromMouse;
       draggingYardRef.current = null;
       dragOverHalfRef.current = null;
       setDraggingYard(null);
@@ -4284,6 +4326,15 @@ function App() {
 
   function handleDragEnd(event: any) {
     const { active, over } = event;
+    // eslint-disable-next-line no-console
+    console.log("[handleDragEnd]", {
+      activeId: String(active?.id ?? ""),
+      overId: String(over?.id ?? "(null)"),
+      groupsWithContainer: groups
+        .filter((g) => g.container)
+        .map((g) => ({ id: g.id, containerId: g.container?.id })),
+      sourceLeftWindow: sourceLeftWindowRef.current,
+    });
     // Phase3: cursor が自窓を出た後、dnd-kit が over=null で onDragEnd を発火するケースはスキップ。
     //   受信側 window の xdrag-end handler + xdrag-applied で drop 適用済み。
     //   over がある場合 (=xdrag-applied 経由の楽観的更新) は通常通り実行する。
@@ -4456,15 +4507,20 @@ function App() {
 
       // 配送分枠へ：A+C → CをC自身の日付で配送分へ、Aはコンテナ解除
       // delivery-DATE-YARD ゾーン上 or そこにある既存コンテナ上にドロップ
-      const deliveryOverId = overId.startsWith("delivery-")
-        ? overId
-        : overId.startsWith("cont-")
-          ? (() => {
-              const contId = overId.replace("cont-", "");
-              const hit = containers.find((c) => c.id === contId);
-              return hit ? `delivery-${hit.date}-${hit.pickupYardGroup}` : null;
-            })()
-          : null;
+      //   zone-delivery-any: 特定 yard 枠外 (gap/padding) にドロップした場合の catch-all
+      //   → container の pickupYardGroup へ自動振り分け
+      const deliveryOverId =
+        overId.startsWith("delivery-") || overId === "zone-delivery-any"
+          ? overId
+          : overId.startsWith("cont-")
+            ? (() => {
+                const contId = overId.replace("cont-", "");
+                const hit = containers.find((c) => c.id === contId);
+                return hit
+                  ? `delivery-${hit.date}-${hit.pickupYardGroup}`
+                  : null;
+              })()
+            : null;
 
       if (deliveryOverId) {
         if (!currentGroup.container) return;
@@ -4532,7 +4588,11 @@ function App() {
       const { container, source } = found;
 
       // ▼ ① 日付自動振分枠：コンテナが持っている date で配送列に戻す
-      if (overId === "zone-delivery-own-date") {
+      //   zone-delivery-any は「配送分の空きスペース」catch-all も同扱い (date/yard そのまま)
+      if (
+        overId === "zone-delivery-own-date" ||
+        overId === "zone-delivery-any"
+      ) {
         const updated: Container = { ...container }; // date はそのまま
 
         // 元の場所から削除
@@ -6394,6 +6454,55 @@ function App() {
               setActiveDragId(null);
               document.body.classList.remove("dragging"); // ✅ 追加
               handleDragEnd(e);
+              // Phase3+: 同一窓内 drop も他窓に通知して即時同期。
+              //   例: main window で chassis pool → delivery に drop したとき、
+              //       別窓 (drivers 分離窓) の state は Supabase realtime (~800ms) を待つ間 stale。
+              //       その間に別窓で cross-window drag すると stale state で A+C の A が保持される。
+              //   xdrag-applied を emit することで受信側 window の handleDragEnd を synthetic 呼出し、即時揃える。
+              //   cross-window 時の destination 側は dnd-kit 上で active drag が無く onDragEnd 発火しないので二重 emit にならない。
+              //   source 側は pointercancel 経由で over=null になり !e.over で skip。
+              if (isTauri) {
+                // Fix #7: cross-window drag の source 側 (over=null かつ sourceLeftWindow=true) は
+                //   destination 側から xdrag-applied が届くので emit skip。それ以外は over=null でも emit する。
+                //   理由: 「A+C を空きスペースに drop → 分離処理」(L4346 if(!over)) を別窓にも同期させる必要がある。
+                //   従来は over=null で emit skip されており、別窓の state が stale なままだった (Issue 4b の真因)。
+                if (!e.over && sourceLeftWindowRef.current) {
+                  // eslint-disable-next-line no-console
+                  console.log(
+                    "[xdrag-applied emit SKIPPED — cross-window source]",
+                    { activeId: String(e.active?.id ?? "") },
+                  );
+                } else {
+                  const capturedActiveId = String(e.active.id);
+                  const capturedOverId = e.over ? String(e.over.id) : null;
+                  (async () => {
+                    try {
+                      const [{ getCurrentWebviewWindow }, { emit }] =
+                        await Promise.all([
+                          import("@tauri-apps/api/webviewWindow"),
+                          import("@tauri-apps/api/event"),
+                        ]);
+                      const myLabel = getCurrentWebviewWindow().label;
+                      // eslint-disable-next-line no-console
+                      console.log("[xdrag-applied emit (same-window)]", {
+                        activeId: capturedActiveId,
+                        overId: capturedOverId,
+                        originLabel: myLabel,
+                      });
+                      await emit("xdrag-applied", {
+                        activeId: capturedActiveId,
+                        overId: capturedOverId,
+                        originLabel: myLabel,
+                      });
+                    } catch (err) {
+                      console.error(
+                        "xdrag-applied emit (same-window) failed",
+                        err,
+                      );
+                    }
+                  })();
+                }
+              }
             }}
           >
             {/* スマホ用タブバー（スクロールジャンプ方式） */}
@@ -7387,9 +7496,16 @@ function App() {
                   </h2>
 
                   {/* 配送分スクロールボックス
-                      Phase2: 1日表示 + 地域(pickupYardGroup)を横並び列に */}
+                      Phase2: 1日表示 + 地域(pickupYardGroup)を横並び列に
+                      Phase3+: delivery-scroll も zone-delivery-any の catch-all として設定。
+                        delivery-region-grid だけだと grid 外の余白/スクロール領域が反応しない。
+                        深い階層の yard-specific droppable が優先されるので既存挙動に影響なし。 */}
                   <div
-                    ref={deliveryScrollRef}
+                    ref={(node) => {
+                      deliveryScrollRef.current = node;
+                      setAnyDeliveryDropRef(node);
+                    }}
+                    data-drop-id="zone-delivery-any"
                     className="delivery-scroll"
                     style={{ flex: "1 1 0", minHeight: 0, overflow: "auto" }}
                   >
@@ -7646,6 +7762,7 @@ function App() {
                       posByCol.forEach((list) => list.sort((a, b) => a.row - b.row));
                       return (
                         <div
+                          data-drop-id="zone-delivery-any"
                           className="delivery-region-grid"
                           style={{
                             display: "flex",

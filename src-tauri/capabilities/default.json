@@ -4,7 +4,8 @@
   "description": "enables the default permissions",
   "windows": [
     "main",
-    "section-*"
+    "section-*",
+    "dispatch-table"
   ],
   "permissions": [
     "core:default",

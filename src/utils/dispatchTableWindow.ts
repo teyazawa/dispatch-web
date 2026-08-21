@@ -1,9 +1,35 @@
 let dispatchTableWindow: Window | null = null;
 
+function isTauri(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+  );
+}
+
 /**
  * 配車表ウィンドウを開く
  */
-export function openDispatchTable(): Window | null {
+export async function openDispatchTable(): Promise<Window | null> {
+  // Tauri 環境では WebviewWindow API を使う (window.open は tauri.localhost で失敗する)
+  if (isTauri()) {
+    const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+    const label = "dispatch-table";
+    const existing = await WebviewWindow.getByLabel(label);
+    if (existing) {
+      await existing.setFocus();
+      return null;
+    }
+    const params = window.location.search || "";
+    new WebviewWindow(label, {
+      url: `dispatch-table.html${params}`,
+      title: "配車表",
+      width: 1200,
+      height: 800,
+    });
+    return null;
+  }
+
   // 既に開いている場合はフォーカス
   if (dispatchTableWindow && !dispatchTableWindow.closed) {
     dispatchTableWindow.focus();
