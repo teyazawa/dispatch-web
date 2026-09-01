@@ -814,18 +814,18 @@ body.dragging {
   max-height: 26px;
 }
 
-/* A+C：3行になるため高さを拡大 */
+/* A+C：3行になるため高さを固定（プール枠/ドライバー枠で同じ見た目にする） */
 .chassis-card.group-loaded {
-  min-height: 48px; /* ← 26px から 48px に */
-  max-height: 56px; /* ← 40px から 56px に */
-  height: auto;
+  min-height: 54px;
+  max-height: 54px;
+  height: 54px;
 }
 
-/* ドライバーの C / A+C 枠：3行対応で高さを拡大 */
+/* ドライバーの C / A+C 枠：シャーシプール(slot-pool)と同じ高さに揃える */
 .card-container.slot-driver-group {
-  min-height: 56px; /* ← 40px から 56px に */
-  height: auto;
-  max-height: none;
+  min-height: 58px;
+  height: 58px;
+  max-height: 58px;
   padding: 2px 4px;
   align-items: flex-end;
 }
@@ -1011,6 +1011,7 @@ body.dragging {
 /* A+C のときのタイトル用（必要なら微調整用） */
 .card-title-container {
   font-size: 14px;
+  line-height: 1.15; /* ルート line-height:1.5 で 3 行が overflow して欠けるのを防ぐ */
 }
 
 /* A+C の2行目（コンテナ番号） */
@@ -1021,6 +1022,12 @@ body.dragging {
 /* A+C のときのシャーシサブテキスト */
 .card-sub-chassis .card-sub-text {
   font-size: 13px;
+}
+
+/* A+C カード内の2/3行目：行間を詰めて 3 行が 54px の中に収まるようにする */
+.chassis-card.group-loaded .card-sub {
+  margin-top: 0;
+  line-height: 1.15;
 }
 /* Cだけのときの行全体 */
 .chassis-only-row {
@@ -1190,11 +1197,11 @@ body.dragging {
   background: var(--practice-color) !important;
 }
 
-/* シャーシプールの枠を 56px に拡大（3行対応） */
+/* シャーシプールの枠：ドライバー枠(slot-driver-group)と同じ 58px に揃える */
 .card-container.slot-pool {
-  height: 60px;
-  min-height: 60px;
-  max-height: 60px;
+  height: 58px;
+  min-height: 58px;
+  max-height: 58px;
   width: var(--slot-pool-width);
   min-width: var(--slot-pool-width);
   max-width: var(--slot-pool-width);
