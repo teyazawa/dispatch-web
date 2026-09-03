@@ -11,7 +11,14 @@ type DispatchRow = {
   workplace: string;
 };
 
-type DriverName = string;
+type DriverKind = "owned" | "outsourced" | "unknown";
+
+type DriverOption = {
+  id: string;
+  name: string;
+  kind: DriverKind;
+  groupName: string;
+};
 
 // ドライバー割当 (案件index → カラム → ドライバーID)
 type DriverAssignment = Record<number, Record<string, string>>;
@@ -31,7 +38,11 @@ function formatDateForInput(d: Date): string {
 export default function DispatchTable() {
   const [date, setDate] = useState(() => formatDateForInput(new Date()));
   const [rows, setRows] = useState<DispatchRow[]>([]);
-  const [drivers, setDrivers] = useState<DriverName[]>([]);
+  const [drivers, setDrivers] = useState<DriverOption[]>([]);
+  const [hiddenGroups, setHiddenGroups] = useState<{
+    owned: string[];
+    outsourced: string[];
+  }>({ owned: [], outsourced: [] });
   const [assignments, setAssignments] = useState<DriverAssignment>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,17 +54,67 @@ export default function DispatchTable() {
     );
   }, [rows, noSortDir]);
 
-  // 作業者名一覧を取得（スプレッドシートのリストシートから）
+  // ドライバー一覧を kintone から取得(自車+傭車 両方)
   useEffect(() => {
-    fetch(`${API_BASE}/api/dispatch-workers`)
+    fetch(`${API_BASE}/api/drivers`)
       .then((r) => r.json())
       .then((data) => {
-        if (data.drivers) {
-          setDrivers(data.drivers);
-        }
+        const list: DriverOption[] = (data.drivers ?? []).map((d: any) => {
+          const rawType = (d.driverType ?? "").toString().trim();
+          const rawGroup = (d.driverGroup ?? "").toString().trim();
+          let kind: DriverKind = "unknown";
+          if (rawType === "自車" || rawType === "自社") kind = "owned";
+          else if (rawType === "傭車") kind = "outsourced";
+          return {
+            id: String(d.id),
+            name: String(d.name ?? ""),
+            kind,
+            groupName: rawGroup,
+          };
+        });
+        setDrivers(list);
       })
-      .catch((e) => console.error("作業者名取得失敗:", e));
+      .catch((e) => console.error("ドライバー取得失敗:", e));
   }, []);
+
+  // 練習モード hiddenGroups (ドライバー枠で表示OFFにしたグループ) を取得
+  useEffect(() => {
+    const fetchHidden = () => {
+      fetch(`${API_BASE}/api/practice/state`)
+        .then((r) => r.json())
+        .then((data) => {
+          const hg = data?.hiddenGroups ?? {};
+          setHiddenGroups({
+            owned: Array.isArray(hg.owned) ? hg.owned.map(String) : [],
+            outsourced: Array.isArray(hg.outsourced)
+              ? hg.outsourced.map(String)
+              : [],
+          });
+        })
+        .catch((e) => console.error("practice/state 取得失敗:", e));
+    };
+    fetchHidden();
+    const t = setInterval(fetchHidden, 10000);
+    return () => clearInterval(t);
+  }, []);
+
+  // 表示ONグループのみに絞ったドライバー
+  const { ownedDrivers, outsourcedDrivers } = useMemo(() => {
+    const hiddenOwned = new Set(hiddenGroups.owned);
+    const hiddenOutsourced = new Set(hiddenGroups.outsourced);
+    const owned: DriverOption[] = [];
+    const outsourced: DriverOption[] = [];
+    for (const d of drivers) {
+      if (d.kind === "owned") {
+        if (!hiddenOwned.has(d.groupName)) owned.push(d);
+      } else if (d.kind === "outsourced") {
+        if (!hiddenOutsourced.has(d.groupName)) outsourced.push(d);
+      } else {
+        owned.push(d);
+      }
+    }
+    return { ownedDrivers: owned, outsourcedDrivers: outsourced };
+  }, [drivers, hiddenGroups]);
 
   // 配車データを取得
   const fetchData = useCallback(async () => {
@@ -225,11 +286,24 @@ export default function DispatchTable() {
                         }}
                       >
                         <option value="">--</option>
-                        {drivers.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
+                        {ownedDrivers.length > 0 && (
+                          <optgroup label="自車">
+                            {ownedDrivers.map((d) => (
+                              <option key={d.id} value={d.name}>
+                                {d.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {outsourcedDrivers.length > 0 && (
+                          <optgroup label="傭車">
+                            {outsourcedDrivers.map((d) => (
+                              <option key={d.id} value={d.name}>
+                                {d.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                     </td>
                   ))}
